@@ -1,0 +1,95 @@
+[gd_scene load_steps=2 format=3 uid="uid://bfighterview001"]
+
+[ext_resource type="Script" path="res://scenes/fighter_view.gd" id="1_fv"]
+
+[node name="FighterView" type="Node2D"]
+script = ExtResource("1_fv")
+
+[node name="Visual" type="Node2D" parent="."]
+
+[node name="Sprite2D" type="Sprite2D" parent="Visual"]
+texture_filter = 1
+
+[node name="Slash" type="Polygon2D" parent="Visual"]
+visible = false
+color = Color(1, 0.95, 0.7, 0.9)
+polygon = PackedVector2Array(24, -10, 90, -36, 110, -8, 90, 20, 24, 8)
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+
+[node name="UI" type="Node2D" parent="."]
+position = Vector2(-190, -220)
+
+[node name="StatusRow" type="HBoxContainer" parent="UI"]
+custom_minimum_size = Vector2(380, 24)
+offset_right = 380.0
+offset_bottom = 24.0
+theme_override_constants/separation = 8
+
+[node name="NameLabel" type="Label" parent="UI/StatusRow"]
+custom_minimum_size = Vector2(72, 0)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_override_font_sizes/font_size = 16
+text = "—"
+horizontal_alignment = 0
+vertical_alignment = 1
+
+[node name="HpWrap" type="Control" parent="UI/StatusRow"]
+custom_minimum_size = Vector2(260, 22)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+
+[node name="HpBar" type="ProgressBar" parent="UI/StatusRow/HpWrap"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+show_percentage = false
+
+[node name="HpLabel" type="Label" parent="UI/StatusRow/HpWrap"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_font_sizes/font_size = 11
+text = "0 / 0"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="BuffRow" type="HBoxContainer" parent="UI"]
+custom_minimum_size = Vector2(240, 22)
+offset_left = 80.0
+offset_top = 28.0
+offset_right = 380.0
+offset_bottom = 50.0
+theme_override_constants/separation = 4
+alignment = 0
+
+[node name="SkillRow" type="HBoxContainer" parent="UI"]
+custom_minimum_size = Vector2(240, 22)
+offset_left = 80.0
+offset_top = 54.0
+offset_right = 380.0
+offset_bottom = 76.0
+theme_override_constants/separation = 4
+alignment = 0
+
+[node name="TipPanel" type="PanelContainer" parent="UI"]
+visible = false
+z_index = 40
+offset_right = 180.0
+offset_bottom = 48.0
+mouse_filter = 2
+
+[node name="TipLabel" type="Label" parent="UI/TipPanel"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_font_sizes/font_size = 12
+text = ""

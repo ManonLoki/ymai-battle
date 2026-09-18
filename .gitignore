@@ -1,0 +1,9 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+
+# 导出产物（体积大，可随时重新导出）
+/Release/
+
+# macOS
+.DS_Store
