@@ -14,6 +14,8 @@ const RIGHT_ALIGNED_COLUMN := 3
 
 ## 已经在切回主菜单的路上，避免连按两次返回触发两次切场景。
 var _leaving := false
+## 当前榜单是哪一天的。从后台切回来时拿它和系统日期比，跨天了就重拉。
+var _shown_date := ""
 
 
 func _ready() -> void:
@@ -31,10 +33,15 @@ func _ready() -> void:
 	await _load_ranking()
 
 
-## 电视遥控器 BACK 键。
 func _notification(what: int) -> void:
+	# 电视遥控器 BACK 键。
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
 		_on_back_pressed()
+	# 从后台切回来：榜单只在进场景时拉过一次，挂了一整夜再回来就是昨天的。
+	# 日期变了就重新拉一次，不用玩家退出去再进来。
+	elif what == NOTIFICATION_APPLICATION_RESUMED and not _leaving and is_inside_tree():
+		if _shown_date != Time.get_date_string_from_system():
+			_load_ranking()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -88,6 +95,7 @@ func _load_ranking() -> void:
 
 ## 把聚合结果铺进表格。
 func _render(date: String, ranked: Array[RankedUser]) -> void:
+	_shown_date = date
 	%Title.text = "今日排行 · %s" % date
 	%Status.text = "%d 人上榜 · Token 即基础战力" % ranked.size()
 	# 上一次可能因为报错被染成红色，这里改回普通说明色。

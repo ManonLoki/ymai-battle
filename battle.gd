@@ -66,10 +66,14 @@ func _ready() -> void:
 	await _round_loop()
 
 
-## 电视遥控器 BACK 键。
 func _notification(what: int) -> void:
+	# 电视遥控器 BACK 键。
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
 		_on_back_pressed()
+	# 从后台切回来：可能已经跨天了。这里先把右侧战绩榜对齐到今天，
+	# 否则玩家会先看到昨天的场次，要等下一轮开打才刷新。
+	elif what == NOTIFICATION_APPLICATION_RESUMED and _is_live():
+		_sync_record_to_today()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -131,14 +135,22 @@ func _sync_record_to_today() -> void:
 
 
 ## 倒计时。期间玩家随时可以按返回走人，_wait 会替我们收手。
+##
+## 剩余秒数按真实时钟算，而不是每跳一次减 1：应用切到后台时整个进程会被
+## 系统挂起，帧不再推进，计时器跟着停摆。减法式倒计时在那种情况下会从
+## 中断的地方接着走，玩家切回来还得把剩下的秒数重新等一遍。
+## 盯着一个真实时间的截止点就没这问题——后台期间时间照走，切回来立刻开下一场。
 func _countdown(seconds: float, what: String) -> void:
 	%ResultPanel.visible = true
-	var remaining := seconds
-	while remaining > 0.0:
+	var deadline := Time.get_unix_time_from_system() + seconds
+	while true:
+		var remaining := deadline - Time.get_unix_time_from_system()
+		if remaining <= 0.0:
+			break
 		%NextRoundLabel.text = "%s %d 秒后开始" % [what, int(ceil(remaining))]
-		if not await _wait(1.0):
+		# 最多睡一秒；睡过头也没关系，上面会重新按真实时间算剩余。
+		if not await _wait(minf(1.0, remaining)):
 			return
-		remaining -= 1.0
 	%NextRoundLabel.text = ""
 
 
