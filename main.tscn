@@ -1,9 +1,9 @@
-[gd_scene load_steps=3 format=3 uid="uid://c0f7qcyp3vfky"]
+[gd_scene format=3 uid="uid://c0f7qcyp3vfky"]
 
-[ext_resource type="Script" path="res://main.gd" id="1_main"]
-[ext_resource type="Script" path="res://scripts/menu_parallax.gd" id="2_parallax"]
+[ext_resource type="Script" uid="uid://lxwfe8fb6jj2" path="res://main.gd" id="1_main"]
+[ext_resource type="Script" uid="uid://ea2moir38p3" path="res://scripts/menu_parallax.gd" id="2_parallax"]
 
-[node name="Main" type="Control"]
+[node name="Main" type="Control" unique_id=1121661043]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -12,7 +12,7 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_main")
 
-[node name="Background" type="ColorRect" parent="."]
+[node name="Background" type="ColorRect" parent="." unique_id=393623270]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
@@ -23,7 +23,8 @@ grow_vertical = 2
 mouse_filter = 2
 color = Color(0.051, 0.067, 0.09, 1)
 
-[node name="ParallaxClip" type="Control" parent="."]
+[node name="ParallaxClip" type="Control" parent="." unique_id=733230397]
+clip_contents = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -31,13 +32,12 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-clip_contents = true
 
-[node name="ParallaxBackdrop" type="Node2D" parent="ParallaxClip"]
+[node name="ParallaxBackdrop" type="Node2D" parent="ParallaxClip" unique_id=985303028]
 unique_name_in_owner = true
 script = ExtResource("2_parallax")
 
-[node name="Center" type="CenterContainer" parent="."]
+[node name="Center" type="CenterContainer" parent="." unique_id=948574787]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -45,40 +45,37 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="Menu" type="VBoxContainer" parent="Center"]
+[node name="Menu" type="VBoxContainer" parent="Center" unique_id=534493830]
 layout_mode = 2
 theme_override_constants/separation = 18
 
-[node name="Title" type="Label" parent="Center/Menu"]
+[node name="Title" type="Label" parent="Center/Menu" unique_id=2070076899]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 48
 text = "YMAI 大乱斗"
 horizontal_alignment = 1
 
-[node name="Spacer" type="Control" parent="Center/Menu"]
+[node name="Spacer" type="Control" parent="Center/Menu" unique_id=1635268993]
 custom_minimum_size = Vector2(0, 12)
 layout_mode = 2
 
-[node name="RankingButton" type="Button" parent="Center/Menu"]
+[node name="RankingButton" type="Button" parent="Center/Menu" unique_id=2088668834]
 unique_name_in_owner = true
 layout_mode = 2
-focus_mode = 2
 text = "查看排行"
 
-[node name="BattleButton" type="Button" parent="Center/Menu"]
+[node name="BattleButton" type="Button" parent="Center/Menu" unique_id=584564083]
 unique_name_in_owner = true
 layout_mode = 2
-focus_mode = 2
 text = "进入对战"
 
-[node name="QuitButton" type="Button" parent="Center/Menu"]
+[node name="QuitButton" type="Button" parent="Center/Menu" unique_id=312045863]
 unique_name_in_owner = true
 layout_mode = 2
-focus_mode = 2
 text = "退出游戏"
 
-[node name="VersionLabel" type="Label" parent="."]
+[node name="VersionLabel" type="Label" parent="." unique_id=1557389272]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 3
@@ -92,8 +89,6 @@ offset_right = -16.0
 offset_bottom = -16.0
 grow_horizontal = 0
 grow_vertical = 0
-mouse_filter = 2
 theme_override_font_sizes/font_size = 14
-text = ""
 horizontal_alignment = 2
 vertical_alignment = 2
