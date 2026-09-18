@@ -4,12 +4,17 @@ extends RefCounted
 ## 一名上场角色。战力（tokens）同时就是最大生命值，
 ## 技能效果全部按“加成之和”叠加，没有任何一条能把结果锁死。
 
+## 玩家名，战报和血条上显示的就是它。
 var username: String = ""
+## 当日 token 总量，既是战力也是最大生命。
 var tokens: int = 0
+## 当前血量。
 var hp: int = 1
+## 最大血量，等于 tokens（至少 1）。
 var max_hp: int = 1
 ## 用量最高的渠道，排行榜和战报用它显示主 agent。
 var channel: String = ""
+## channel 对应的展示名。
 var agent_name: String = ""
 ## 当天用过的全部渠道，按用量从高到低。
 var channels: PackedStringArray = PackedStringArray()
@@ -18,7 +23,9 @@ var channels: PackedStringArray = PackedStringArray()
 var agent_buffs: Array[SkillDef] = []
 ## 本场随机抽到的技能，擂主 8 个、挑战者 4 个。
 var skills: Array[SkillDef] = []
+## 是不是这一场的擂主（榜首）。体型、技能位、先天加成都看它。
 var is_champion: bool = false
+## 立绘编号，由用户名哈希决定，所以同一个人每场长相一致。
 var appearance_id: int = 0
 ## 要挨多少次干净命中才倒下。默认按一场单挑算，进入车轮战后由 WheelWar
 ## 按“这条血要扛几场”重新分配。单次伤害就是 max_hp / hits_to_down，
@@ -32,17 +39,26 @@ const CHAMPION_INNATE_DODGE := -0.05
 const CHAMPION_INNATE_DAMAGE_REDUCTION := 0.05
 const CHALLENGER_INNATE_DODGE := 0.05
 
+## 减伤总和的上限，留 10% 保证伤害永远打得进去。
+const MAX_DAMAGE_REDUCTION := 0.9
+
+## 剩余中毒回合数，每回合开头掉一次血。
 var poison_turns: int = 0
+## 剩余麻痹回合数，每回合直接跳过行动。
 var paralyze_turns: int = 0
+## 剩余混乱回合数，出手时有一半概率打自己。
 var confuse_turns: int = 0
+## 下一次行动会被跳过（定身）。只作用一次，用掉即清。
 var rooted_next: bool = false
 ## 是否还留着一次“浴火重生”。
 var rebirth_available: bool = false
 
 
+## 从排行榜条目建一名上场角色。技能和 buff 由 SkillGrant 另行发放。
 static func from_ranked(user: RankedUser, p_is_champion: bool) -> Fighter:
 	var fighter := Fighter.new()
 	fighter.username = user.username
+	# 负 token 当 0；血量至少 1，否则一上场就是死的。
 	fighter.tokens = maxi(0, user.tokens)
 	fighter.max_hp = maxi(1, fighter.tokens)
 	fighter.hp = fighter.max_hp
@@ -51,6 +67,7 @@ static func from_ranked(user: RankedUser, p_is_champion: bool) -> Fighter:
 	fighter.channels = user.channels
 	fighter.agent_buffs = []
 	fighter.is_champion = p_is_champion
+	# 用名字的哈希取模选立绘：同一个人每场都是同一张脸。
 	fighter.appearance_id = absi(user.username.hash()) % SpriteFactory.COUNT
 	return fighter
 
@@ -59,6 +76,7 @@ func is_alive() -> bool:
 	return hp > 0
 
 
+## 扣血，扣到 0 为止；负数伤害按 0 处理。
 func apply_damage(amount: int) -> void:
 	hp = maxi(0, hp - maxi(0, amount))
 
@@ -72,10 +90,12 @@ func apply_heal(amount: int) -> int:
 
 ## 倒下瞬间尝试复活一次；用掉之后这张技能就从卡组里移除。
 func try_rebirth() -> bool:
+	# 还活着、或者额度已经用掉了，都不触发。
 	if hp > 0 or not rebirth_available:
 		return false
 	hp = max_hp
 	rebirth_available = false
+	# 把这张牌从技能里摘掉，图标也会跟着消失。
 	var kept: Array[SkillDef] = []
 	for skill in skills:
 		if not skill.rebirth:
@@ -114,7 +134,7 @@ func stacked_damage_bonus() -> float:
 
 ## 减伤最多吃到 90%，留 10% 保证伤害永远打得进去。
 func stacked_damage_reduction() -> float:
-	return clampf(_sum("damage_reduction") + innate_damage_reduction(), 0.0, 0.9)
+	return clampf(_sum("damage_reduction") + innate_damage_reduction(), 0.0, MAX_DAMAGE_REDUCTION)
 
 
 func stacked_double() -> float:
@@ -149,11 +169,7 @@ func stacked_counter() -> float:
 	return _sum("counter_chance")
 
 
-func stacked_heal_chance() -> float:
-	return _sum("heal_chance")
-
-
-## 主 agent 的 buff，只用于战报署名；没有 agent 时回落到“无”。
+## 主 agent 的 buff，只用于头像悬停说明；没有 agent 时回落到“无”。
 func primary_agent_buff() -> SkillDef:
 	return agent_buffs[0] if agent_buffs.size() > 0 else SkillCatalog.none_buff()
 
@@ -171,26 +187,16 @@ func agent_buff_text() -> String:
 ## 带没带治疗技能。具体几率和回多少由 CombatResolver 按擂主 / 挑战者分别定，
 ## 所以这里只问“有没有”。
 func has_heal() -> bool:
-	for buff in agent_buffs:
-		if buff.heal_chance > 0.0:
-			return true
-	for skill in skills:
-		if skill.heal_chance > 0.0:
-			return true
-	return false
+	return _has_any("heal_chance")
 
 
+## 带没带吸血技能，同样只问有没有。
 func has_lifesteal() -> bool:
-	for buff in agent_buffs:
-		if buff.lifesteal:
-			return true
-	for skill in skills:
-		if skill.lifesteal:
-			return true
-	return false
+	return _has_any("lifesteal")
 
 
 ## 把所有 agent buff 和所有技能上的同名数值加起来。
+## 用属性名字符串索引，加技能时只要往 SkillCatalog 的表里补一行就行。
 func _sum(prop: String) -> float:
 	var total := 0.0
 	for buff in agent_buffs:
@@ -198,3 +204,14 @@ func _sum(prop: String) -> float:
 	for skill in skills:
 		total += float(skill.get(prop))
 	return total
+
+
+## buff 或技能里有没有任何一条把这个字段设成了真 / 非零。
+func _has_any(prop: String) -> bool:
+	for buff in agent_buffs:
+		if buff.get(prop):
+			return true
+	for skill in skills:
+		if skill.get(prop):
+			return true
+	return false

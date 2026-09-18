@@ -4,11 +4,14 @@ extends RefCounted
 ## 车轮战：榜首（擂主）留在左侧，其余人按随机顺序轮流上场挑战。
 ## 擂主的血量不会在换人时回满，所以越往后越吃紧。
 
+## 战斗状态：进行中 / 擂主倒下 / 挑战者全灭。
 enum Outcome { ONGOING, CHAMPION_DOWN, ALL_OPPONENTS_DOWN }
 
+## 擂主，全场就他一个，血条从头用到尾。
 var champion: Fighter
 ## 还没上场的挑战者，按出场顺序排列。
 var waiting: Array[Fighter] = []
+## 正在场上的那位挑战者，没人了就是 null。
 var current_opponent: Fighter
 ## 其余人的合计战力（RMS 口径，见 CombatResolver.aggregate_power）。
 var others_total_power: int = 0
@@ -20,19 +23,23 @@ var champion_hit: float = 0.5
 var outcome: Outcome = Outcome.ONGOING
 
 
+## 用一份排行榜开一场新的车轮战：榜首当擂主，其余人洗牌后排队上。
 func setup(ranked: Array[RankedUser], rng: RollSource) -> void:
 	waiting.clear()
 	current_opponent = null
 	outcome = Outcome.ONGOING
+	# 空榜单就什么都不做，outcome 留在 ONGOING，调用方自己判断人数。
 	if ranked.is_empty():
 		return
 	champion = Fighter.from_ranked(ranked[0], true)
+	# 第 2 名往后全是挑战者。
 	var challengers: Array[Fighter] = []
 	var powers: Array[int] = []
 	for i in range(1, ranked.size()):
 		var challenger := Fighter.from_ranked(ranked[i], false)
 		challengers.append(challenger)
 		powers.append(challenger.tokens)
+	# 出场顺序随机，同一份榜单每场打起来都不一样。
 	_shuffle(challengers, rng)
 	waiting = challengers
 	others_total_power = CombatResolver.aggregate_power(powers)
@@ -42,10 +49,12 @@ func setup(ranked: Array[RankedUser], rng: RollSource) -> void:
 	champion.hits_to_down = CombatResolver.HITS_PER_DUEL * waiting.size()
 	for fighter in waiting:
 		fighter.hits_to_down = CombatResolver.HITS_PER_DUEL
+	# 先发牌，再反解命中率——命中率要扣掉擂主多带的那几个 buff。
 	SkillGrant.apply(champion, rng)
 	for fighter in waiting:
 		SkillGrant.apply(fighter, rng)
 	champion_hit = CombatResolver.calibrated_hit_chance(win_rate, _champion_buff_edge(), waiting.size())
+	# 让第一位挑战者上场。
 	_advance_opponent()
 
 
@@ -62,18 +71,24 @@ func remaining_including_current() -> int:
 ## 推进一个回合：擂主先手，挑战者还活着就还手。
 func simulate_turn(rng: RollSource) -> Array[StrikeResult]:
 	var events: Array[StrikeResult] = []
+	# 已经打完、或者根本没开起来，就什么都不产出。
 	if outcome != Outcome.ONGOING or champion == null or current_opponent == null:
 		return events
+	# 擂主先手。
 	events.append_array(CombatResolver.resolve_action(champion, current_opponent, champion_hit, rng))
+	# 挑战者被打倒就直接换下一位，这回合到此为止。
 	if not current_opponent.is_alive():
 		_advance_opponent()
 		return events
+	# 擂主可能死在挑战者的反击下。
 	if not champion.is_alive():
 		outcome = Outcome.CHAMPION_DOWN
 		return events
+	# 挑战者还手。
 	events.append_array(CombatResolver.resolve_action(current_opponent, champion, champion_hit, rng))
 	if not champion.is_alive():
 		outcome = Outcome.CHAMPION_DOWN
+	# 挑战者可能死在擂主的反击下，同样要换人。
 	if current_opponent != null and not current_opponent.is_alive():
 		_advance_opponent()
 	return events
@@ -90,6 +105,7 @@ func _champion_buff_edge() -> float:
 	return float(champion.agent_buffs.size()) - float(total) / float(waiting.size())
 
 
+## 换下一位挑战者上场；队列空了就是挑战者全灭，擂主赢下整场。
 func _advance_opponent() -> void:
 	if waiting.is_empty():
 		current_opponent = null
@@ -98,6 +114,7 @@ func _advance_opponent() -> void:
 	current_opponent = waiting.pop_front()
 
 
+## Fisher-Yates 洗牌。掷点走 RollSource，同种子必然复现同样的出场顺序。
 static func _shuffle(fighters: Array[Fighter], rng: RollSource) -> void:
 	for i in range(fighters.size() - 1, 0, -1):
 		var j := rng.randi_range(0, i)

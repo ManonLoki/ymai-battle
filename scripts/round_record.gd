@@ -7,8 +7,10 @@ extends RefCounted
 ## 就一直留在这份记录里——哪怕一场没赢，也按 0 场显示。
 ## 存在 user:// 下，退出重进照样在；日期一换就整份作废重来，保证“当天有效”。
 
+## 存档位置。user:// 在 Android 上落在 app 的私有目录里。
 const SAVE_PATH := "user://daily_rounds.json"
 
+## 这份记录属于哪一天，格式 "YYYY-MM-DD"。
 var date: String = ""
 ## 当天打完的总场次。
 var rounds: int = 0
@@ -20,6 +22,7 @@ var champions: Dictionary = {}
 static func load_for(today: String, path: String = SAVE_PATH) -> RoundRecord:
 	var record := RoundRecord.new()
 	record.date = today
+	# 下面任何一步不对都直接返回这份空记录——存档坏了不该让游戏打不开。
 	if not FileAccess.file_exists(path):
 		return record
 	var file := FileAccess.open(path, FileAccess.READ)
@@ -31,6 +34,7 @@ static func load_for(today: String, path: String = SAVE_PATH) -> RoundRecord:
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return record
 	var data: Dictionary = parsed
+	# 关键的一步：存档是昨天的就当没有，当天战绩从零开始。
 	if str(data.get("date", "")) != today:
 		return record
 	record.rounds = maxi(0, int(data.get("rounds", 0)))
@@ -40,6 +44,7 @@ static func load_for(today: String, path: String = SAVE_PATH) -> RoundRecord:
 	var saved_map: Dictionary = saved
 	for key in saved_map:
 		var entry: Variant = saved_map[key]
+		# 单条坏了就跳过这一条，其余的照常读。
 		if typeof(entry) != TYPE_DICTIONARY:
 			continue
 		var row: Dictionary = entry
@@ -50,11 +55,19 @@ static func load_for(today: String, path: String = SAVE_PATH) -> RoundRecord:
 	return record
 
 
+## 这份记录是不是已经不属于 today 了（跨天了）。
+## 对战场景会一直开着不关，所以每轮开打前都要问一次。
+func is_stale(today: String) -> bool:
+	return date != today
+
+
 ## 记一场：这场的擂主是谁、他赢没赢。
 func record_round(champion_name: String, won: bool) -> void:
+	# 没擂主名字的场次不记，否则榜上会多出一个空条目。
 	if champion_name.is_empty():
 		return
 	rounds += 1
+	# 第一次上榜一的人现场建条目，从 0 开始记。
 	var entry: Dictionary = champions.get(champion_name, {"wins": 0, "rounds": 0})
 	entry["rounds"] = int(entry.get("rounds", 0)) + 1
 	if won:
@@ -77,11 +90,13 @@ func standings() -> Array[Dictionary]:
 			return int(a["wins"]) > int(b["wins"])
 		if int(a["rounds"]) != int(b["rounds"]):
 			return int(a["rounds"]) > int(b["rounds"])
+		# 名字兜底：三项全同也要有个确定的先后，否则每次刷新顺序会跳。
 		return str(a["username"]) < str(b["username"])
 	)
 	return rows
 
 
+## 落盘。写不进去只警告不报错——战绩丢了不值得把游戏搞崩。
 func save(path: String = SAVE_PATH) -> void:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:

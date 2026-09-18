@@ -18,10 +18,11 @@ const MAX_WIN_RATE := 0.80
 ## 双方需要的有效命中数因此相等，胜负就只由命中率和技能决定。
 const HITS_PER_DUEL := 4
 
-## 擂主技能位是挑战者的两倍（8 vs 4），这份优势换算成命中率约等于这么多。
-## 反解命中率时先扣掉它，实测胜率才不会整体偏向擂主。
-## 数值由 tests 里的蒙特卡洛回归标定，改技能池或技能位数量时要重新跑。
-const CHAMPION_SKILL_EDGE := 0.042
+## 擂主每场抽 5~8 张技能，挑战者只有 2~4 张（平均 6.5 vs 3）。
+## 这份优势换算成命中率约等于这么多，反解命中率时先扣掉它，
+## 实测胜率才不会整体偏向擂主。
+## 数值由 tests 里的蒙特卡洛回归标定，改技能池或技能张数区间时要重新跑。
+const CHAMPION_SKILL_EDGE := 0.0355
 
 ## 擂主的治疗回的是 5% 最大生命，而他的血条要扛 4×人数 次命中：
 ## 人越多，同样一次治疗折算成“普通命中”就越值钱（15 人榜单里一次≈2.8 次命中）。
@@ -45,7 +46,11 @@ const POISON_TICK_SHARE := 0.5
 ## 中毒 / 麻痹 / 混乱的持续回合数。
 const STATUS_TURNS := 3
 
+## 暴击伤害倍率。
 const CRIT_MULTIPLIER := 2.0
+
+## 混乱状态下打到自己的概率，剩下一半照常打对面。
+const CONFUSE_SELF_HIT_CHANCE := 0.5
 
 ## 吸血比例。擂主 30%、挑战者 50%：擂主的血条本来就要扛完全场，
 ## 同样的吸血比例落在他身上收益大得多，所以按身份分开给。
@@ -78,6 +83,7 @@ const WIN_RATE_EASE := Vector4(0.0, 0.12, 0.88, 1.0)
 static func aggregate_power(powers: Array[int]) -> int:
 	var sum_of_squares := 0.0
 	for power in powers:
+		# 负战力当 0 处理，脏数据不至于把开方搞崩。
 		var value := float(maxi(0, power))
 		sum_of_squares += value * value
 	return int(round(sqrt(sum_of_squares)))
@@ -89,6 +95,7 @@ static func aggregate_power(powers: Array[int]) -> int:
 ## 再过一遍对称的贝塞尔缓动，最后映射到 [MIN_WIN_RATE, MAX_WIN_RATE]。
 ## 因为缓动对称，r = 1 精确落在 50%，两端则收敛到 20% / 80% 而不是 0 / 100%。
 static func champion_win_rate(champion_power: int, others_power: int) -> float:
+	# 没有对手 / 擂主没战力这两种退化情形直接给端点，避免除零。
 	if others_power <= 0:
 		return MAX_WIN_RATE
 	if champion_power <= 0:
@@ -99,6 +106,7 @@ static func champion_win_rate(champion_power: int, others_power: int) -> float:
 	return lerpf(MIN_WIN_RATE, MAX_WIN_RATE, clampf(eased, 0.0, 1.0))
 
 
+## 标准三次贝塞尔求值，t ∈ [0, 1]。
 static func cubic_bezier(t: float, p0: float, p1: float, p2: float, p3: float) -> float:
 	var u := 1.0 - t
 	return u * u * u * p0 + 3.0 * u * u * t * p1 + 3.0 * u * t * t * p2 + t * t * t * p3
@@ -133,18 +141,18 @@ static func probit(p: float) -> float:
 	return 1.2517 * x + 0.371 * x * x * x
 
 
-## 把“这场仗擂主该赢多少次”的目标胜率，反解成他单次攻击的命中率。
-##
-## 中心点是 0.5 减去擂主的两项固有优势（技能位更多、buff 可能更多），
-## 扣掉之后双方才算真正五五开；再按目标胜率的正态分位左右挪 WIN_RATE_SPREAD。
-## buff_edge 是擂主的 buff 数减去挑战者的平均 buff 数，可正可负。
-## 一场仗要掷几十次骰子，命中率上几个百分点就已经是压倒性优势，
-## 所以算出来的命中率始终贴着 50% 附近——胜率是靠概率调出来的，不是锁出来的。
 ## 人数超过 BASE 之后，擂主每多一个对手要多让出的命中率。
 static func champion_endurance_edge(opponent_count: int) -> float:
 	return CHAMPION_ENDURANCE_EDGE_PER_OPPONENT * float(maxi(0, opponent_count - CHAMPION_ENDURANCE_EDGE_BASE))
 
 
+## 把“这场仗擂主该赢多少次”的目标胜率，反解成他单次攻击的命中率。
+##
+## 中心点是 0.5 减去擂主的三项固有优势（技能位更多、buff 可能更多、人多时更耐打），
+## 扣掉之后双方才算真正五五开；再按目标胜率的正态分位左右挪 WIN_RATE_SPREAD。
+## buff_edge 是擂主的 buff 数减去挑战者的平均 buff 数，可正可负。
+## 一场仗要掷几十次骰子，命中率上几个百分点就已经是压倒性优势，
+## 所以算出来的命中率始终贴着 50% 附近——胜率是靠概率调出来的，不是锁出来的。
 static func calibrated_hit_chance(win_rate: float, buff_edge: float = 0.0, opponent_count: int = 0) -> float:
 	var center := 0.5 - CHAMPION_SKILL_EDGE - AGENT_BUFF_HIT_EDGE * buff_edge - champion_endurance_edge(opponent_count)
 	return clampf(center + probit(win_rate) * WIN_RATE_SPREAD, MIN_HIT_CHANCE, MAX_HIT_CHANCE)
@@ -172,28 +180,34 @@ static func hit_chance(attacker: Fighter, defender: Fighter, champion_hit: float
 ## 最后才真正出手。返回这次行动产生的全部战报事件。
 static func resolve_action(actor: Fighter, foe: Fighter, champion_hit: float, rng: RollSource, allow_counter: bool = true) -> Array[StrikeResult]:
 	var events: Array[StrikeResult] = []
+	# 中毒先掉血，毒死了这一步就结束，连手都出不了。
 	if actor.poison_turns > 0:
 		events.append(_resolve_poison_tick(actor))
 		if not actor.is_alive():
 			return events
+	# 麻痹：整个行动跳过，回合数减一。
 	if actor.paralyze_turns > 0:
 		actor.paralyze_turns -= 1
 		events.append(_skip_event(actor, "paralyze"))
 		return events
+	# 定身只作用一次，用掉就清掉标记。
 	if actor.rooted_next:
 		actor.rooted_next = false
 		events.append(_skip_event(actor, "root"))
 		return events
 	var target := foe
 	var self_hit := false
+	# 混乱：有一半概率把这一手打到自己身上。
 	if actor.confuse_turns > 0:
 		actor.confuse_turns -= 1
-		if rng.randf() < 0.5:
+		if rng.randf() < CONFUSE_SELF_HIT_CHANCE:
 			target = actor
 			self_hit = true
+	# 打自己的时候不该触发“对方反击”，所以把反击一并关掉。
 	var strikes := resolve_strikes(actor, target, champion_hit, rng, allow_counter and not self_hit)
 	for strike in strikes:
 		strike.self_hit = self_hit
+		# 自伤时挨打方就是自己，战报里要写对名字。
 		if self_hit:
 			strike.defender_name = actor.username
 	events.append_array(strikes)
@@ -201,30 +215,53 @@ static func resolve_action(actor: Fighter, foe: Fighter, champion_hit: float, rn
 
 
 ## 一次出手的完整结算：首击 →（二连 / 三连追击）→ 治疗 → 对方反击。
-static func resolve_strikes(attacker: Fighter, defender: Fighter, champion_hit: float, rng: RollSource, allow_counter: bool = true) -> Array[StrikeResult]:
+##
+## allow_counter=false 表示这一手本身就是反击，不再引发反击的反击；
+## allow_combo=false 表示这一手不许掷连击——反击就是这么调的，
+## 于是连击只会从主动出手里长出来，不会在反击链上继续滚雪球。
+static func resolve_strikes(
+	attacker: Fighter,
+	defender: Fighter,
+	champion_hit: float,
+	rng: RollSource,
+	allow_counter: bool = true,
+	allow_combo: bool = true,
+) -> Array[StrikeResult]:
 	var events: Array[StrikeResult] = []
+	# extra_index=0 标记这是首击，连击只看首击打没打中。
 	var first := _one_strike(attacker, defender, champion_hit, rng, 0)
 	events.append(first)
-	if first.hit and (not first.defender_died) and defender != attacker:
-		var extras := 0
-		if attacker.stacked_double() > 0.0 and rng.randf() < attacker.stacked_double():
-			extras += 1
-		if attacker.stacked_triple() > 0.0 and rng.randf() < attacker.stacked_triple():
-			extras += 2
-		for i in range(extras):
+	# 打空、把人打死了、或者这一手是打自己，都不进连击。
+	if allow_combo and first.hit and (not first.defender_died) and defender != attacker:
+		for i in range(_roll_extra_strikes(attacker, rng)):
 			if not defender.is_alive():
 				break
 			# 追击同样要过命中判定，连击只是多给机会，不是保证打中。
+			# 这里直接调 _one_strike，所以追击自己不会再掷连击。
 			events.append(_one_strike(attacker, defender, champion_hit, rng, i + 1))
+	# 治疗在整轮出手结束后统一结算一次。
 	_apply_heal_skill(attacker, events, rng)
+	# 反击：只看首击有没有打中，而且挨打的人得还站着。
 	if allow_counter and first.hit and defender.is_alive() and defender.stacked_counter() > 0.0 and rng.randf() < defender.stacked_counter():
-		var counters := resolve_strikes(defender, attacker, champion_hit, rng, false)
+		# 反击既不能再反击，也不能掷连击：只还一下。
+		var counters := resolve_strikes(defender, attacker, champion_hit, rng, false, false)
 		for counter in counters:
 			counter.countered = true
 		events.append_array(counters)
 	return events
 
 
+## 首击命中后追加几下。三连和二连互斥、只掷一次：
+## 先看三连（+2），没中才看二连（+1），所以一次出手最多打三下。
+static func _roll_extra_strikes(attacker: Fighter, rng: RollSource) -> int:
+	if attacker.stacked_triple() > 0.0 and rng.randf() < attacker.stacked_triple():
+		return 2
+	if attacker.stacked_double() > 0.0 and rng.randf() < attacker.stacked_double():
+		return 1
+	return 0
+
+
+## 中毒的每回合掉血。攻守双方都记成中毒者自己，战报才知道这不是谁打的。
 static func _resolve_poison_tick(actor: Fighter) -> StrikeResult:
 	var tick := StrikeResult.new()
 	tick.attacker_name = actor.username
@@ -232,15 +269,18 @@ static func _resolve_poison_tick(actor: Fighter) -> StrikeResult:
 	tick.attacker_is_champion = actor.is_champion
 	tick.poison_tick = true
 	tick.hit = true
+	# 按“半次普通命中”掉血，至少 1 点。
 	tick.damage = maxi(1, int(round(float(strike_damage(actor)) * POISON_TICK_SHARE)))
 	actor.apply_damage(tick.damage)
 	actor.poison_turns -= 1
+	# 毒死也能触发浴火重生。
 	tick.revived = actor.try_rebirth()
 	tick.defender_hp_after = actor.hp
 	tick.defender_died = not actor.is_alive()
 	return tick
 
 
+## 麻痹 / 定身导致整个行动被跳过时的占位事件，reason 决定战报怎么写。
 static func _skip_event(actor: Fighter, reason: String) -> StrikeResult:
 	var result := StrikeResult.new()
 	result.attacker_name = actor.username
@@ -251,17 +291,17 @@ static func _skip_event(actor: Fighter, reason: String) -> StrikeResult:
 	return result
 
 
+## 一次单独的挥击：命中判定 → 绝对防御 → 伤害 → 吸血 → 复活 → 挂状态。
 static func _one_strike(attacker: Fighter, defender: Fighter, champion_hit: float, rng: RollSource, extra_index: int) -> StrikeResult:
 	var result := StrikeResult.new()
 	result.attacker_name = attacker.username
 	result.defender_name = defender.username
 	result.attacker_is_champion = attacker.is_champion
-	var signature := attacker.primary_agent_buff()
-	result.skill_id = signature.id
-	result.skill_name = signature.display_name
+	# extra_index 大于 0 就是连击追加出来的那几下。
 	result.combo = extra_index > 0
 	result.extra_index = extra_index
 
+	# 两条命中率：扣闪避前的和扣闪避后的，差值就是被闪掉的那一段点数。
 	var before_dodge := hit_chance_before_dodge(attacker, champion_hit)
 	var chance := hit_chance(attacker, defender, champion_hit)
 	var roll := rng.randf()
@@ -274,6 +314,7 @@ static func _one_strike(attacker: Fighter, defender: Fighter, champion_hit: floa
 		return result
 	result.hit = true
 
+	# 绝对防御：打中了但伤害归零，状态照样挂得上。
 	if defender.stacked_guard() > 0.0 and rng.randf() < defender.stacked_guard():
 		result.guarded = true
 		result.damage = 0
@@ -282,19 +323,25 @@ static func _one_strike(attacker: Fighter, defender: Fighter, champion_hit: floa
 		_apply_on_hit_status(attacker, defender, rng, result)
 		return result
 
+	# 伤害：基准值 →（暴击 ×2）→ 增伤 → 对方减伤。
 	var damage := float(strike_damage(defender))
 	if attacker.stacked_crit() > 0.0 and rng.randf() < attacker.stacked_crit():
 		result.crit = true
 		damage *= CRIT_MULTIPLIER
 	damage *= 1.0 + attacker.stacked_damage_bonus()
 	damage *= 1.0 - defender.stacked_damage_reduction()
+	# 至少打掉 1 点，减伤再高也不会变成挠痒痒。
 	result.damage = maxi(1, int(round(damage)))
 	defender.apply_damage(result.damage)
 	if attacker.has_lifesteal() and attacker != defender:
+		# 先把这一击折算成“相当于自己的多少次普通命中”，再按比例回血，
+		# 否则打小号造成的伤害换算到自己那条长血条上会是笔巨款。
 		var scale := float(strike_damage(attacker)) / float(maxi(1, strike_damage(defender)))
 		var stolen := maxi(1, int(round(float(result.damage) * lifesteal_ratio(attacker) * scale)))
 		result.heal_amount = attacker.apply_heal(stolen)
+		# 血满了就吸不进去，这时候不算触发吸血。
 		result.lifesteal = result.heal_amount > 0
+	# 掉到 0 血时试一次浴火重生，成功就不算死。
 	result.revived = defender.try_rebirth()
 	result.defender_hp_after = defender.hp
 	result.attacker_hp_after = attacker.hp
@@ -305,6 +352,7 @@ static func _one_strike(attacker: Fighter, defender: Fighter, champion_hit: floa
 
 ## 命中之后逐个掷骰，看是否挂上中毒 / 麻痹 / 混乱 / 定身。
 static func _apply_on_hit_status(attacker: Fighter, defender: Fighter, rng: RollSource, result: StrikeResult) -> void:
+	# 混乱自伤时不给自己上状态。
 	if attacker == defender:
 		return
 	if attacker.stacked_poison() > 0.0 and rng.randf() < attacker.stacked_poison():
@@ -316,20 +364,22 @@ static func _apply_on_hit_status(attacker: Fighter, defender: Fighter, rng: Roll
 	if attacker.stacked_confuse() > 0.0 and rng.randf() < attacker.stacked_confuse():
 		defender.confuse_turns = STATUS_TURNS
 		result.confused = true
+	# 定身只作用于对方的下一次行动，不按回合数计。
 	if attacker.stacked_root() > 0.0 and rng.randf() < attacker.stacked_root():
 		defender.rooted_next = true
-		result.rooted = true
 
 
 ## 治疗技能在整轮出手之后结算一次，成功则并入最后一条战报。
 static func _apply_heal_skill(attacker: Fighter, events: Array[StrikeResult], rng: RollSource) -> void:
 	if not attacker.has_heal() or events.is_empty():
 		return
+	# 没触发也要把血量同步进事件，血条才不会停在旧值上。
 	if rng.randf() >= heal_chance(attacker):
 		for event in events:
 			event.attacker_hp_after = attacker.hp
 		return
 	var healed := attacker.apply_heal(heal_amount(attacker))
+	# 回血挂在最后一条事件上，动画和文案都跟着它走。
 	var last: StrikeResult = events[events.size() - 1]
 	last.treated = true
 	last.heal_amount += healed

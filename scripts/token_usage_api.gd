@@ -4,19 +4,24 @@ extends Node
 ## 取当日 token 用量。返回 {"ok": bool, "data": Dictionary, "error": String}，
 ## 其中 data.channelUsage 是「设备 × 渠道 × 日期」的明细，
 ## 交给 RankingAggregator 按玩家聚合。
+##
+## 做成 Node 是因为 HTTPRequest 必须挂在场景树里；调用方负责 add_child + queue_free。
 
 const USAGE_URL := "https://codex-tracker.yunmai365.com/api/v1/token-usage"
 
 
 ## 拉一次接口。失败时不抛异常，统一用 ok=false + error 文案回报。
 func fetch_usage() -> Dictionary:
+	# HTTPRequest 用完即弃，避免复用时残留上一次的回调。
 	var http := HTTPRequest.new()
 	add_child(http)
+	# 电视上网络可能很慢，给足 45 秒。
 	http.timeout = 45.0
 	var err := http.request(USAGE_URL, PackedStringArray(["Accept: application/json"]), HTTPClient.METHOD_GET)
 	if err != OK:
 		http.queue_free()
 		return _fail("无法发起请求（错误码 %d）" % err)
+	# 信号返回 [result, response_code, headers, body]。
 	var completed: Array = await http.request_completed
 	http.queue_free()
 	if completed.size() < 4:
@@ -24,14 +29,18 @@ func fetch_usage() -> Dictionary:
 	var result := int(completed[0])
 	var code := int(completed[1])
 	var body: PackedByteArray = completed[3]
+	# 先看传输层有没有成功（DNS、超时、TLS 都在这一层）。
 	if result != HTTPRequest.RESULT_SUCCESS:
 		return _fail("网络失败（result=%d）" % result)
+	# 再看 HTTP 状态码。
 	if code != 200:
 		return _fail("HTTP %d" % code)
+	# 最后才解析 JSON，任何一步不对都按失败回报，不让脏数据流进排行榜。
 	var parsed: Variant = JSON.parse_string(body.get_string_from_utf8())
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return _fail("JSON 解析失败")
 	var payload: Dictionary = parsed
+	# 业务层自己还有一个 ok 字段，HTTP 200 不代表接口成功。
 	if not bool(payload.get("ok", false)):
 		return _fail("接口返回失败：%s" % str(payload.get("error", "")))
 	var data: Variant = payload.get("data", {})
@@ -40,5 +49,6 @@ func fetch_usage() -> Dictionary:
 	return {"ok": true, "data": data, "error": ""}
 
 
+## 统一的失败返回，保证调用方永远能拿到同一套字段。
 static func _fail(message: String) -> Dictionary:
 	return {"ok": false, "data": {}, "error": message}

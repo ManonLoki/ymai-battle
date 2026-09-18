@@ -1,10 +1,20 @@
 extends SceneTree
 
+## 启动冒烟测试。跑法：
+##   Godot --headless --path . --script tests/run_launch_smoke.gd
+##
+## 只回答一个问题：三个场景能不能加载出来、关键控件在不在。
+## 不碰网络、不打一场仗，所以几秒就跑完，适合做导出前的最后一道关。
+## 任何一步不对就 printerr 一个大写标记并 quit(1)，CI 靠这个标记定位。
+
+
 func _initialize() -> void:
+	# 延到下一帧再跑，让引擎先把 autoload 和 class_name 装好。
 	_run.call_deferred()
 
 
 func _run() -> void:
+	# 先把三个场景都加载一遍，任何一个资源坏了在这里就会暴露。
 	var packed_main := load("res://main.tscn") as PackedScene
 	var packed_ranking := load("res://ranking.tscn") as PackedScene
 	var packed_battle := load("res://battle.tscn") as PackedScene
@@ -12,8 +22,11 @@ func _run() -> void:
 		printerr("SCENE_LOAD_FAILED")
 		quit(1)
 		return
+
+	# 主菜单：三个按钮都得在，少一个电视上就有路走不通。
 	var main: Node = packed_main.instantiate()
 	root.add_child(main)
+	# 等一帧让 _ready 跑完，唯一名节点（%）才查得到。
 	await process_frame
 	if main.get_node_or_null("%RankingButton") == null or main.get_node_or_null("%BattleButton") == null:
 		printerr("MAIN_MENU_CONTROLS_MISSING")
@@ -25,8 +38,10 @@ func _run() -> void:
 		return
 	print("MAIN_MENU_OK")
 	main.queue_free()
+	# 再等一帧，让上一个场景真的被释放掉再摆下一个。
 	await process_frame
 
+	# 排行榜：只查返回按钮。这里不等它拉接口，那是 headless 测试的事。
 	var ranking: Node = packed_ranking.instantiate()
 	root.add_child(ranking)
 	await process_frame
@@ -38,6 +53,8 @@ func _run() -> void:
 	ranking.queue_free()
 	await process_frame
 
+	# 对战场景：返回按钮 + 擂主站位。没设 skip_autoload，
+	# 所以它会开始拉名单，但我们不等结果，查完控件就退。
 	var battle: Node = packed_battle.instantiate()
 	root.add_child(battle)
 	await process_frame

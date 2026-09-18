@@ -9,7 +9,9 @@ extends RefCounted
 ## 没有对应动作（4.7 默认的 ui_accept / ui_cancel 只绑了键盘）。
 ## install() 把这些补进输入表，三个场景共用同一套判断。
 
+## 遥控器的返回键。
 const BACK_KEY := KEY_BACK
+## 把自己报成手柄的遥控器上，A 是确认、B 是返回。
 const CONFIRM_BUTTON := JOY_BUTTON_A
 const CANCEL_BUTTON := JOY_BUTTON_B
 
@@ -17,7 +19,9 @@ const CANCEL_BUTTON := JOY_BUTTON_B
 ## 电视上要的运行时环境：按键映射 + 屏幕常亮。
 ## 幂等，每个场景 _ready 里都可以直接调。
 static func install() -> void:
+	# BACK 键并进 ui_cancel，于是遥控器返回和键盘 Esc 走同一个动作。
 	_add_key(&"ui_cancel", BACK_KEY)
+	# 手柄式遥控器的 A / B 也并进同两个动作。
 	_add_joy(&"ui_accept", CONFIRM_BUTTON)
 	_add_joy(&"ui_cancel", CANCEL_BUTTON)
 	# 一场接一场自动打，中途没人碰遥控器，系统会自动熄屏/进屏保。
@@ -33,6 +37,7 @@ static func is_back(event: InputEvent) -> bool:
 ## 会移动焦点或确认的输入。焦点掉了的时候用它兜一下。
 static func is_navigation(event: InputEvent) -> bool:
 	for action in [&"ui_up", &"ui_down", &"ui_left", &"ui_right", &"ui_accept"]:
+		# 第二个参数 allow_echo=true：按住不放的连发也算导航。
 		if event.is_action_pressed(action, true):
 			return true
 	return false
@@ -47,17 +52,20 @@ static func ensure_focus(fallback: Control) -> bool:
 	if viewport == null:
 		return false
 	var focused := viewport.gui_get_focus_owner()
+	# 已经有可见控件拿着焦点就什么都不做，别把玩家的选择抢走。
 	if focused != null and focused.is_visible_in_tree():
 		return false
 	fallback.grab_focus()
 	return true
 
 
+## 往某个动作上补一个键盘事件。动作不存在就先建，已经绑过同一个键就跳过。
 static func _add_key(action: StringName, key: Key) -> void:
 	if not InputMap.has_action(action):
 		InputMap.add_action(action)
 	for existing in InputMap.action_get_events(action):
 		var as_key := existing as InputEventKey
+		# keycode 和 physical_keycode 都比一遍：不同键盘布局下引擎填的是不同那个。
 		if as_key != null and (as_key.keycode == key or as_key.physical_keycode == key):
 			return
 	var event := InputEventKey.new()
@@ -65,6 +73,7 @@ static func _add_key(action: StringName, key: Key) -> void:
 	InputMap.action_add_event(action, event)
 
 
+## 同上，只是补的是手柄按键。
 static func _add_joy(action: StringName, button: JoyButton) -> void:
 	if not InputMap.has_action(action):
 		InputMap.add_action(action)

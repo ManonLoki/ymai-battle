@@ -1,12 +1,33 @@
 extends SceneTree
 
+## 全项目的 headless 回归测试。跑法：
+##   Godot --headless --path . --script tests/run_headless_tests.gd
+## 全过打印 ALL_ASSERTIONS_PASSED 并 quit(0)，否则打 TESTS_FAILED 并 quit(1)。
+##
+## 三类断言混在一起，看的时候注意区分：
+## 1. 纯逻辑：结算、聚合、文案，不需要场景树，最快也最多。
+## 2. 场景：真的 instantiate 出 .tscn 摆进 root，要 await process_frame 等布局。
+## 3. 源码文本：直接 FileAccess 读 .gd / .tscn 去 find 字符串，
+##    用来钉住“这个写法不许回退”（比如不许有 auto_hit、不许出现第二个外部域名）。
+##    改代码时如果这类断言挂了，先想清楚是真的破坏了约定，还是只是改了措辞。
+##
+## 注意 _test_win_rate_regression 是蒙特卡洛回归，跑 6 个阵容 × 240 场，
+## 占了整轮运行的绝大部分时间；改技能池或技能张数之后它会第一个报警。
+##
+## 另：用 --path . 跑一次会顺带把 export_presets.cfg 里的 keystore 配置刷掉，
+## 跑完记得 git checkout 还原 export_presets.cfg 和 project.godot。
+
+## 失败的断言说明，跑完统一报。为的是一次运行能看到全部问题。
 var _failures: PackedStringArray = PackedStringArray()
 
 
+## SceneTree 的入口。延到下一帧再跑，让引擎先把 autoload 和 class_name 装好。
 func _initialize() -> void:
 	_run.call_deferred()
 
 
+## 全部用例按顺序跑一遍，失败的收进 _failures，最后统一报。
+## 带 await 的那几个要摆场景、等帧，所以必须串行等。
 func _run() -> void:
 	_test_aggregator()
 	_test_player_identity_and_tokens()
@@ -45,6 +66,8 @@ func _run() -> void:
 		quit(1)
 
 
+## 断言。通过就打一行 PASS，失败则记账并往 stderr 打 FAIL，
+## 不中断后续用例——一次运行要能看到所有问题，而不是只看到第一个。
 func _assert(cond: bool, msg: String) -> void:
 	if cond:
 		print("PASS: ", msg)
@@ -53,6 +76,8 @@ func _assert(cond: bool, msg: String) -> void:
 		printerr("FAIL: ", msg)
 
 
+## 聚合器：同一个人在多台设备、多个渠道上的流水要并成一条，
+## 并且只认指定日期的记录。
 func _test_aggregator() -> void:
 	var date := "2026-09-18"
 	var usage := [
@@ -200,6 +225,7 @@ func _test_compact_numbers() -> void:
 	_assert(FileAccess.get_file_as_string("res://ranking.gd").find("_format_millions") < 0, "the old M-only formatter is gone")
 
 
+## 胜率曲线：战力比 1:1 精确落在 50%，两端收敛到 20%/80% 而不是 0/100%。
 func _test_win_rate() -> void:
 	# 胜率永远被夹在 [20%, 80%]：战力再悬殊也不能把结果锁死。
 	var extremes: Array[int] = [0, 1, 25, 100, 400, 10000, 1000000]
@@ -240,10 +266,13 @@ func _test_win_rate() -> void:
 	_assert(war_src.find("CombatResolver.champion_win_rate") >= 0, "wheel war uses the shipped win-rate function")
 
 
+## 造一名测试用角色，省掉每次手写 RankedUser 的样板。
 func _make_fighter(name: String, tokens: int, channel: String, champion: bool) -> Fighter:
 	return Fighter.from_ranked(_ranked(name, tokens, channel), champion)
 
 
+## 把角色身上所有技能和 buff 摘干净，只留先天属性。
+## 用于需要精确控制掷点序列的用例。
 func _disarm(fighter: Fighter) -> void:
 	fighter.agent_buffs = []
 	fighter.skills.clear()
@@ -255,6 +284,8 @@ func _disarm(fighter: Fighter) -> void:
 	fighter.hp = fighter.max_hp
 
 
+## 技能与 buff 的全部规则：数值区间、叠加、连击、状态、反击、
+## 吸血、治疗、复活，以及“没有任何必中必闪”这条底线。
 func _test_skills() -> void:
 	var rng_lo := RollSource.new(1)
 	rng_lo.push([0.0])
@@ -535,6 +566,7 @@ func _test_skills() -> void:
 	_assert(not combo_events[1].hit, "an extra swing can miss like any other")
 
 
+## 造一条排行榜记录。channel 留空表示这个人没有可识别的 agent。
 func _ranked(name: String, tokens: int, channel: String = "") -> RankedUser:
 	var user := RankedUser.new()
 	user.username = name
@@ -552,6 +584,8 @@ func _give_buffs(fighter: Fighter, buffs: Array[SkillDef]) -> void:
 	fighter.agent_buffs = buffs
 
 
+## 一串全是 0.0 的掷点，让接下来的判定必定命中。
+## count 要给够，一次行动可能连掷十几次。
 func _always_hits(count: int = 64) -> RollSource:
 	var rng := RollSource.new(1)
 	for i in count:
@@ -559,6 +593,7 @@ func _always_hits(count: int = 64) -> RollSource:
 	return rng
 
 
+## 车轮战的流程：擂主血条扛全场、挑战者逐个上、换人和终局判定。
 func _test_wheel_war() -> void:
 	var ranked: Array[RankedUser] = [
 		_ranked("champ", 100000000),
@@ -711,6 +746,7 @@ func _test_win_rate_regression() -> void:
 		_assert(absf(actual - target) < 0.12, "%s: measured win rate %.2f tracks its %.2f target" % [label, actual, target])
 
 
+## 主菜单：三个按钮都在，且能切到对应场景。
 func _test_main_menu() -> void:
 	var packed := load("res://main.tscn") as PackedScene
 	_assert(packed != null, "main.tscn loads")
@@ -739,6 +775,7 @@ func _test_main_menu() -> void:
 	await process_frame
 
 
+## 深度优先找出第一个 Sprite2D，用来取视差层的贴图。
 func _first_sprite(node: Node) -> Sprite2D:
 	if node is Sprite2D:
 		return node as Sprite2D
@@ -749,6 +786,7 @@ func _first_sprite(node: Node) -> Sprite2D:
 	return null
 
 
+## 主菜单的视差背景（三层各自以不同速度滚）和退出按钮。
 func _test_main_parallax_and_quit() -> void:
 	var packed := load("res://main.tscn") as PackedScene
 	_assert(packed != null, "main.tscn loads for parallax")
@@ -812,6 +850,7 @@ func _test_main_parallax_and_quit() -> void:
 	await process_frame
 
 
+## 从 .godot / .cfg 文本里抠出某个键的引号值，不依赖 ProjectSettings。
 func _first_quoted_setting(path: String, key: String) -> String:
 	var text := FileAccess.get_file_as_string(path)
 	for line in text.split("\n"):
@@ -821,10 +860,12 @@ func _first_quoted_setting(path: String, key: String) -> String:
 	return ""
 
 
+## project.godot 里配置的图标路径，uid:// 会被还原成 res:// 路径。
 func _configured_icon_path() -> String:
 	return _first_quoted_setting("res://project.godot", "config/icon")
 
 
+## 图里有多少个不透明像素，用来确认贴图不是一张空白。
 func _opaque_count(image: Image) -> int:
 	var n := 0
 	for y in image.get_height():
@@ -834,6 +875,7 @@ func _opaque_count(image: Image) -> int:
 	return n
 
 
+## 两张图是不是逐像素完全一致，用来确认视差三层不是同一张图。
 func _images_differ(a: Image, b: Image) -> bool:
 	if a.get_width() != b.get_width() or a.get_height() != b.get_height():
 		return true
@@ -844,6 +886,7 @@ func _images_differ(a: Image, b: Image) -> bool:
 	return false
 
 
+## 应用图标不是 Godot 默认机器人，以及自定义光标按下/抬起会换图。
 func _test_app_icon_and_cursors() -> void:
 	var icon_path := _configured_icon_path()
 	_assert(not icon_path.is_empty(), "project.godot config/icon is set")
@@ -896,6 +939,7 @@ func _test_app_icon_and_cursors() -> void:
 	await process_frame
 
 
+## 角色视图：五种动画、血条、图标行和悬停说明。
 func _test_fighter_anims() -> void:
 	var packed := load("res://scenes/fighter_view.tscn") as PackedScene
 	_assert(packed != null, "fighter_view.tscn loads")
@@ -947,6 +991,7 @@ func _test_fighter_anims() -> void:
 	await process_frame
 
 
+## 接口契约：URL、请求方式，以及全项目不许出现第二个外部域名。
 func _test_api_contract() -> void:
 	var api_src := FileAccess.get_file_as_string("res://scripts/token_usage_api.gd")
 	_assert(api_src.find("https://codex-tracker.yunmai365.com/api/v1/token-usage") >= 0, "API URL is the exact token-usage endpoint")
@@ -960,12 +1005,14 @@ func _test_api_contract() -> void:
 	_assert(extra.is_empty(), "no other yunmai365 paths: %s" % ",".join(extra))
 
 
+## 要扫描的源码文件清单（排除测试自己）。
 func _other_host_paths() -> PackedStringArray:
 	var found: PackedStringArray = PackedStringArray()
 	_scan_dir("res://", found)
 	return found
 
 
+## 递归收集一个目录下的 .gd / .tscn，供域名扫描使用。
 func _scan_dir(path: String, found: PackedStringArray) -> void:
 	var dir := DirAccess.open(path)
 	if dir == null:
@@ -997,12 +1044,14 @@ func _scan_dir(path: String, found: PackedStringArray) -> void:
 	dir.list_dir_end()
 
 
+## 战绩榜不靠字体里的奖牌字符，改用圆底 + 名次数字。
 func _test_no_medals() -> void:
 	var ranking_src := FileAccess.get_file_as_string("res://ranking.gd") + FileAccess.get_file_as_string("res://ranking.tscn")
 	for needle in ["medal", "badge", "金牌", "银牌", "铜牌", "勋章", "奖杯"]:
 		_assert(ranking_src.find(needle) < 0, "Ranking has no %s" % needle)
 
 
+## 把一串事件渲染成完整战报文本，方便按子串断言。
 func _joined_log(events: Array[StrikeResult]) -> String:
 	var battle: Node = (load("res://battle.gd") as GDScript).new()
 	CombatLog.annotate(events)
@@ -1013,6 +1062,7 @@ func _joined_log(events: Array[StrikeResult]) -> String:
 	return blob
 
 
+## 战报文案：暴击、闪避、连击、中毒、混乱自伤各自的固定说法。
 func _test_combat_log() -> void:
 	var win := 0.5
 	var attacker := _make_fighter("甲", 100, "", true)
@@ -1097,6 +1147,7 @@ func _test_combat_log() -> void:
 	_assert(miss_log.find("甲因为【混乱】挥空了") >= 0, "a missed self-hit says so instead of claiming damage")
 
 
+## buff 行和技能行的左边缘要对齐血条，而不是对齐名字。
 func _assert_icons_align_to_hp_bar(view: FighterView) -> void:
 	var bar_x := view.hp_bar.global_position.x
 	_assert(view.buff_row.get_child_count() >= 1, "buff row has an icon to align")
@@ -1116,11 +1167,13 @@ func _assert_icons_align_to_hp_bar(view: FighterView) -> void:
 			_assert(cur_b.global_position.x > prev_b.global_position.x, "buff icons flow left to right")
 
 
+## 名字和血条在同一个 StatusRow 里，血量文字嵌在血条内部。
 func name_label_parent_is_status(view: FighterView) -> bool:
 	var status := view.status_row
 	return view.name_label.get_parent() == status and view.hp_wrap.get_parent() == status and view.hp_label.get_parent() == view.hp_wrap and view.hp_bar.get_parent() == view.hp_wrap
 
 
+## 一个图标格子的悬停说明要同时包含技能名和效果描述。
 func _assert_icon_tooltip(node: Node, skill: SkillDef) -> void:
 	var rect := node as TextureRect
 	_assert(rect != null and rect.texture != null, "icon TextureRect has a texture")
@@ -1128,6 +1181,7 @@ func _assert_icon_tooltip(node: Node, skill: SkillDef) -> void:
 	_assert(rect.tooltip_text.is_empty(), "native tooltip_text is empty to avoid ghosting")
 
 
+## 图标加载、两行分开摆放，以及 battle.tscn 里几处关键坐标没被改回去。
 func _test_icons_and_layout() -> void:
 	for icon_id in SkillCatalog.all_icon_ids():
 		var path := SkillCatalog.icon_path(icon_id)
@@ -1153,6 +1207,7 @@ func _test_icons_and_layout() -> void:
 	_assert(FileAccess.file_exists("res://scenes/heal_fx.tscn"), "shared heal FX scene exists")
 
 
+## 12 种形象两两不同，且只有擂主头顶有金色王冠。
 func _test_appearances_and_crown() -> void:
 	_assert(SpriteFactory.COUNT >= 12, "pool size is at least 12")
 	var ids: Dictionary = {}
@@ -1192,6 +1247,7 @@ func _test_appearances_and_crown() -> void:
 	view.queue_free()
 
 
+## 把图压成一张“每个像素透不透明”的位图，用来比较轮廓。
 func _opaque_mask(image: Image) -> PackedByteArray:
 	var bits := PackedByteArray()
 	bits.resize(image.get_width() * image.get_height())
@@ -1203,6 +1259,7 @@ func _opaque_mask(image: Image) -> PackedByteArray:
 	return bits
 
 
+## 两张轮廓位图有多少个像素不一样。
 func _mask_diff(a: PackedByteArray, b: PackedByteArray) -> int:
 	var n := 0
 	for i in a.size():
@@ -1211,6 +1268,7 @@ func _mask_diff(a: PackedByteArray, b: PackedByteArray) -> int:
 	return n
 
 
+## 图的顶部一条带里有没有金色像素（王冠）。
 func _has_gold_crown(image: Image) -> bool:
 	var band := mini(10, image.get_height())
 	for y in band:
@@ -1221,6 +1279,8 @@ func _has_gold_crown(image: Image) -> bool:
 	return false
 
 
+## 整场演出跑通，战报正序排列；并且中途把场景摘走时，
+## 挂在 await 上的播放协程能自己收手，不会去碰已经没了的场景树。
 func _test_battle_playback() -> void:
 	var packed := load("res://battle.tscn") as PackedScene
 	var battle: Node = packed.instantiate()
@@ -1274,6 +1334,7 @@ func _test_battle_playback() -> void:
 	await process_frame
 
 
+## 结果面板的胜负文案和 MVP 评选，赢和输两种都要评。
 func _test_result_copy() -> void:
 	var packed := load("res://battle.tscn") as PackedScene
 	var battle: Node = packed.instantiate()
@@ -1302,6 +1363,8 @@ func _test_result_copy() -> void:
 	await process_frame
 
 
+## 顺手把 12 种形象 × 3 种姿势 × 有无王冠导成 PNG，
+## 放进 assets/characters 供人肉检查，不参与断言。
 func _export_character_pngs() -> void:
 	var abs_dir := ProjectSettings.globalize_path("res://assets/characters")
 	DirAccess.make_dir_recursive_absolute(abs_dir)
@@ -1407,6 +1470,7 @@ func _test_tv_remote() -> void:
 	_assert(ranking_src.find("%Scroll.scroll_vertical") >= 0, "the ranking list scrolls with the D-pad")
 
 
+## 造一个按键事件。
 func _key_event(key: Key) -> InputEventKey:
 	var event := InputEventKey.new()
 	event.keycode = key
@@ -1414,6 +1478,7 @@ func _key_event(key: Key) -> InputEventKey:
 	return event
 
 
+## 模拟按下并抬起一个键，走完整的输入分发。
 func _press_key(key: Key) -> void:
 	root.push_input(_key_event(key))
 	await process_frame
@@ -1423,6 +1488,7 @@ func _press_key(key: Key) -> void:
 	await process_frame
 
 
+## 造一条命中事件，用于给 DamageTally 喂数据。
 func _strike(attacker: String, defender: String, dmg: int, from_champion: bool) -> StrikeResult:
 	var event := StrikeResult.new()
 	event.attacker_name = attacker
