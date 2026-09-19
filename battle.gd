@@ -64,8 +64,8 @@ func _ready() -> void:
 	%Log.add_theme_stylebox_override("normal", log_box)
 	%RecordTitle.add_theme_color_override("font_color", ThemeHelper.MUTED)
 	# 透明底板会随背景明暗变化，2px 深色字边保证战报和榜单标题始终清楚。
-	_style_text_on_translucent_panel(%Log)
-	_style_text_on_translucent_panel(%RecordTitle)
+	ThemeHelper.style_readable_text(%Log)
+	ThemeHelper.style_readable_text(%RecordTitle)
 	# 先读一次当天战绩。_record 还是 null，所以这一句就是首次加载；
 	# 之后跨天再调它，换成新一天的。
 	_sync_record_to_today()
@@ -87,11 +87,6 @@ func _make_translucent_hud_panel() -> StyleBoxFlat:
 
 
 ## 半透明底板上的固定文字都套同一层深色描边；动态榜单行由 RecordBoard 自己套。
-func _style_text_on_translucent_panel(control: Control) -> void:
-	control.add_theme_color_override("font_outline_color", Color(ThemeHelper.BG, 0.96))
-	control.add_theme_constant_override("outline_size", 2)
-
-
 func _notification(what: int) -> void:
 	# 电视遥控器 BACK 键。
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST:

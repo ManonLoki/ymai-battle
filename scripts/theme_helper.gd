@@ -133,6 +133,14 @@ static func style_back_button(button: Button) -> void:
 	style_button(button, false, BACK_BUTTON_MIN_SIZE)
 
 
+## 浮在明亮背景 / 半透明底板上的文字：加一圈深色描边，免得被背景吞掉。
+## 战斗页的战报和战绩榜的行都用它——描边的颜色和粗细只在这里定一次。
+## 圆形实底上的徽章数字刻意不走这里：实底已经提供了足够对比度。
+static func style_readable_text(control: Control) -> void:
+	control.add_theme_color_override("font_outline_color", Color(BG, 0.96))
+	control.add_theme_constant_override("outline_size", 2)
+
+
 ## 运行时现造的 Label。四个场景都要按“文字 + 颜色 + 字号”造一堆，
 ## 主题覆盖的键名只在这里写一次。font_size 传 0 表示跟随父级主题。
 static func make_label(text: String, color: Color, font_size: int = 0) -> Label:

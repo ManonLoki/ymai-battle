@@ -51,12 +51,11 @@ static func _row(rank: int, row: Dictionary) -> Control:
 	return line
 
 
-## 榜单行浮在透明底板上，玩家名、胜场和空榜提示都加深色描边，避免被明亮背景吞掉。
-## 徽章数字刻意不走这里：圆形实底已经提供了足够对比度。
+## 榜单行浮在透明底板上，玩家名、胜场和空榜提示都要能从明亮背景里读出来。
+## 描边本身归 ThemeHelper.style_readable_text，战斗页的战报用的是同一份。
 static func _readable_label(text: String, color: Color, font_size: int) -> Label:
 	var label := ThemeHelper.make_label(text, color, font_size)
-	label.add_theme_color_override("font_outline_color", Color(ThemeHelper.BG, 0.96))
-	label.add_theme_constant_override("outline_size", 2)
+	ThemeHelper.style_readable_text(label)
 	return label
 
 

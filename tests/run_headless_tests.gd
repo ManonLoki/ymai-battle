@@ -1234,6 +1234,26 @@ func _test_wheel_war() -> void:
 	_assert(others_left >= 2, "remaining opponents are not all dead when champion falls")
 
 
+## 同一份榜单打 trials 场，返回 {"target": 目标胜率, "actual": 实测胜率}。
+## 两条胜率回归（6 阵容、1vN）共用这一段：种子怎么取、打到什么算赢、
+## 多少回合算跑飞，都只有这一处说了算，改抽样方式不用改两遍。
+func _measure_win_rate(roster: Array[RankedUser], trials: int, max_turns: int) -> Dictionary:
+	var wins := 0
+	var target := 0.0
+	for trial in range(trials):
+		var war := WheelWar.new()
+		var rng := RollSource.new(trial * 7919 + 13)
+		war.setup(roster, rng)
+		target = war.win_rate
+		var turns := 0
+		while war.outcome == WheelWar.Outcome.ONGOING and turns < max_turns:
+			war.simulate_turn(rng)
+			turns += 1
+		if war.outcome == WheelWar.Outcome.ALL_OPPONENTS_DOWN:
+			wins += 1
+	return {"target": target, "actual": float(wins) / float(maxi(1, trials))}
+
+
 ## 蒙特卡洛回归：实测胜率必须落在 [30%, 70%]，并且跟着目标胜率走。
 ## 改动技能池、技能位数量或伤害口径之后，这里会第一个报警，对应的标定常数是
 ## CombatResolver.CHAMPION_SKILL_EDGE_PER_SKILL / AGENT_BUFF_HIT_EDGE / WIN_RATE_SPREAD。
@@ -1289,20 +1309,9 @@ func _test_win_rate_regression() -> void:
 		# 120 次抽样的标准误约 4.5 个点，贴着 80% 上限的阵容会随机越界，
 		# 所以样本量提到 240，并按 2.5 个标准误给实测值留出抖动空间。
 		var trials := 240
-		var wins := 0
-		var target := 0.0
-		for trial in range(trials):
-			var war := WheelWar.new()
-			var rng := RollSource.new(trial * 7919 + 13)
-			war.setup(roster, rng)
-			target = war.win_rate
-			var turns := 0
-			while war.outcome == WheelWar.Outcome.ONGOING and turns < 4000:
-				war.simulate_turn(rng)
-				turns += 1
-			if war.outcome == WheelWar.Outcome.ALL_OPPONENTS_DOWN:
-				wins += 1
-		var actual := float(wins) / float(trials)
+		var measured := _measure_win_rate(roster, trials, 4000)
+		var target: float = measured["target"]
+		var actual: float = measured["actual"]
 		var noise := 2.5 * sqrt(0.25 / float(trials))
 		_assert(target >= CombatResolver.MIN_WIN_RATE and target <= CombatResolver.MAX_WIN_RATE, "%s: target win rate %.2f stays inside [30%%, 70%%]" % [label, target])
 		_assert(actual >= CombatResolver.MIN_WIN_RATE - noise, "%s: measured win rate %.2f is at or above the 30%% floor (target %.2f)" % [label, actual, target])
@@ -1337,20 +1346,9 @@ func _test_roster_size_regression() -> void:
 			user.agents.append(AgentChannels.agent_display_name(user.channel))
 			user.agent_name = user.agents[0]
 			roster.append(user)
-		var wins := 0
-		var target := 0.0
-		for trial in range(trials):
-			var war := WheelWar.new()
-			var rng := RollSource.new(trial * 7919 + 13)
-			war.setup(roster, rng)
-			target = war.win_rate
-			var turns := 0
-			while war.outcome == WheelWar.Outcome.ONGOING and turns < 20000:
-				war.simulate_turn(rng)
-				turns += 1
-			if war.outcome == WheelWar.Outcome.ALL_OPPONENTS_DOWN:
-				wins += 1
-		var actual := float(wins) / float(trials)
+		var measured := _measure_win_rate(roster, trials, 20000)
+		var target: float = measured["target"]
+		var actual: float = measured["actual"]
 		var label := "1v%d x%.0f" % [count, mult]
 		_assert(target >= CombatResolver.MIN_WIN_RATE and target <= CombatResolver.MAX_WIN_RATE, "%s: target %.2f stays inside [30%%, 70%%]" % [label, target])
 		_assert(absf(actual - target) < 0.15, "%s: measured %.2f tracks its %.2f target" % [label, actual, target])

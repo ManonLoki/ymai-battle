@@ -51,6 +51,9 @@ const CHAMPION_SKILL_EDGE_PER_SKILL := 0.030
 ## 人越多擂主越占便宜，得按人头扣。换算口径之后实测直接翻了个号。）
 ## 按**人数翻番**计，不按人头：从 1v3 到 1v10 的差别，和从 1v30 到 1v100 的差别
 ## 差不多大，线性按人头算会在几十人处就撞上封顶，再往上一视同仁。
+##
+## 这是「让实测追上目标」的一侧；定目标的那一侧是 CROWD_PRESSURE_*（人越多目标越低）。
+## 两边都按人数走但单位不同（这里是命中率，那里是胜率），改任意一边都要重跑蒙特卡洛。
 const CHAMPION_CROWD_RELIEF_BASE := 3
 const CHAMPION_CROWD_RELIEF_PER_DOUBLING := 0.010
 const CHAMPION_CROWD_RELIEF_CAP := 0.060
@@ -169,6 +172,10 @@ const WIN_RATE_ANCHOR_SATURATION := 0.95
 ## 1v10 落到 40%，1v100 落到 35%，不会变成“人多就没得打”。
 ## CAP 和锚点都由这份手感反推，不是蒙特卡洛标的——它定的是**目标**，
 ## 实测能不能贴住目标才是蒙特卡洛的事（见 tests 里的胜率回归）。
+##
+## 注意人数一共影响两处，改之前两处一起看：这里按人数**压低目标胜率**（意图），
+## 而 CHAMPION_CROWD_RELIEF_* 按人数**补命中率**（让实测追得上这个意图）。
+## 两条曲线的单位和形状都不一样，只调一边一定要重跑蒙特卡洛。
 const CROWD_PRESSURE_CAP := 0.175
 ## 压力曲线的锚点：到 ANCHOR 人时，压力走完 CAP 的 SATURATION。
 const CROWD_PRESSURE_ANCHOR := 100
@@ -206,7 +213,14 @@ static func crowd_pressure(challenger_count: int) -> float:
 
 ## 压力曲线的宽度：正好让 ANCHOR 人落在 tanh 的 SATURATION 上。
 static func crowd_pressure_log_width() -> float:
-	return log(float(CROWD_PRESSURE_ANCHOR)) / atanh(CROWD_PRESSURE_SATURATION)
+	return tanh_log_width(log(float(CROWD_PRESSURE_ANCHOR)), CROWD_PRESSURE_SATURATION)
+
+
+## 一条以对数为自变量的 tanh 曲线该多宽：让 log_span 之外的那个锚点
+## 正好落在 tanh 的 saturation 上。胜率曲线和人数压力曲线是同一道题，
+## 各推一遍就会各错一遍，所以只在这里推。
+static func tanh_log_width(log_span: float, saturation: float) -> float:
+	return log_span / atanh(saturation)
 
 
 ## 擂主的目标胜率 = 人均战力比给的强弱 − 人数压力，再夹回 [30%, 70%]。
@@ -241,7 +255,7 @@ static func win_rate_log_center() -> float:
 
 ## 曲线宽度：正好让两个锚点落在 tanh 的 ±SATURATION 上。
 static func win_rate_log_width() -> float:
-	return (log(WIN_RATE_RATIO_CEIL) - win_rate_log_center()) / atanh(WIN_RATE_ANCHOR_SATURATION)
+	return tanh_log_width(log(WIN_RATE_RATIO_CEIL) - win_rate_log_center(), WIN_RATE_ANCHOR_SATURATION)
 
 
 ## 一名角色被打掉多少次干净命中才倒下 → 每次命中打掉多少血。
