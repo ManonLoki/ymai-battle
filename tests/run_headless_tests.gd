@@ -162,6 +162,57 @@ func _test_buff_per_agent() -> void:
 	_assert(many.channels[0] == AgentChannels.CHANNEL_CODEX, "channels are ordered by usage")
 	_assert(one.channels.size() == 1, "a single-agent player keeps one channel")
 
+	# 同一场里，同一种 agent buff 也要**每人各掷各的**：
+	# 谁都可能这把 5%、别人 10%，不能一个渠道掷一次然后所有人共用。
+	var roster: Array[RankedUser] = []
+	for i in range(6):
+		var u := RankedUser.new()
+		u.username = "same%d" % i
+		u.tokens = 1000 - i
+		u.channels.append(AgentChannels.CHANNEL_CODEX)
+		u.channel = AgentChannels.CHANNEL_CODEX
+		u.agent_name = AgentChannels.agent_display_name(u.channel)
+		u.agents.append(u.agent_name)
+		roster.append(u)
+	var war := WheelWar.new()
+	war.setup(roster, RollSource.new(42))
+	var everyone: Array[Fighter] = war.waiting.duplicate()
+	if war.current_opponent != null:
+		everyone.append(war.current_opponent)
+	everyone.append(war.champion)
+	var amounts: Array[float] = []
+	for f in everyone:
+		_assert(f.agent_buffs.size() == 1, "%s carries exactly one CODEX buff" % f.username)
+		var amount: float = f.agent_buffs[0].crit_chance
+		_assert(amount >= SkillCatalog.AGENT_BUFF_MIN - 0.0001, "%s rolled at or above the buff floor (%.4f)" % [f.username, amount])
+		_assert(amount <= SkillCatalog.AGENT_BUFF_MAX + 0.0001, "%s rolled at or below the buff ceiling (%.4f)" % [f.username, amount])
+		amounts.append(amount)
+	var distinct := {}
+	for a in amounts:
+		distinct[snappedf(a, 0.000001)] = true
+	# 6 个人全同值的概率约等于 0；真出现就说明 buff 被共用了，不是运气问题。
+	_assert(distinct.size() > 1, "the same buff rolls a different amount per fighter (%d distinct of %d)" % [distinct.size(), amounts.size()])
+
+	# 一个人带多个渠道时，每个 buff 也各掷各的。
+	var multi := RankedUser.new()
+	multi.username = "multi"
+	multi.tokens = 900
+	for ch in [AgentChannels.CHANNEL_CODEX, AgentChannels.CHANNEL_GROK, AgentChannels.CHANNEL_CLAUDE]:
+		multi.channels.append(ch)
+		multi.agents.append(AgentChannels.agent_display_name(ch))
+	multi.channel = multi.channels[0]
+	multi.agent_name = AgentChannels.agent_display_name(multi.channel)
+	var buffs: Array[SkillDef] = SkillGrant.roll_agent_buffs(multi.channels, RollSource.new(7))
+	_assert(buffs.size() == 3, "a three-agent player gets three buffs")
+	var buff_amounts := {}
+	for b in buffs:
+		# 每个渠道写的是不同字段，取它们各自的那一个。
+		for prop in ["crit_chance", "dodge_bonus", "accuracy_bonus", "damage_reduction"]:
+			var v: float = b.get(prop)
+			if v > 0.0:
+				buff_amounts[snappedf(v, 0.000001)] = true
+	_assert(buff_amounts.size() > 1, "one player's several buffs are rolled independently")
+
 	var triple := Fighter.from_ranked(many, true)
 	var single := Fighter.from_ranked(one, false)
 	SkillGrant.apply(triple, RollSource.new(1))
@@ -178,9 +229,9 @@ func _test_buff_per_agent() -> void:
 	single.skills.clear()
 	_assert(triple.stacked_crit() > 0.0, "the CODEX buff still adds crit")
 	_assert(triple.stacked_accuracy() > 0.0, "the CLAUDE buff adds accuracy on top")
-	_assert(triple.stacked_dodge() > triple.innate_dodge(), "the GROK buff adds dodge on top")
-	# stacked_dodge 里含体型带来的先天闪避，所以这里和先天值比，而不是和 0 比。
-	_assert(single.stacked_accuracy() == 0.0 and is_equal_approx(single.stacked_dodge(), single.innate_dodge()), "a single-agent fighter only gets its own buff")
+	_assert(triple.stacked_dodge() > Fighter.BASE_DODGE + triple.innate_dodge(), "the GROK buff adds dodge on top of the 10% base")
+	_assert(single.stacked_accuracy() == 0.0, "a CODEX-only fighter has no accuracy buff")
+	_assert(is_equal_approx(single.stacked_dodge(), Fighter.BASE_DODGE + single.innate_dodge()), "a fighter without GROK still has the 10% base dodge")
 	_assert(triple.agent_buff_text().find(" + ") >= 0, "the report names every agent buff")
 	_assert(single.agent_buff_text().find(" + ") < 0, "a single buff needs no separator")
 
@@ -300,7 +351,6 @@ func _disarm(fighter: Fighter) -> void:
 	fighter.poison_turns = 0
 	fighter.paralyze_turns = 0
 	fighter.confuse_turns = 0
-	fighter.rooted_next = false
 	fighter.hp = fighter.max_hp
 
 
@@ -328,6 +378,13 @@ func _test_skills() -> void:
 
 	var champ_skills: Array[SkillDef] = SkillGrant.pick_skills(SkillCatalog.CHAMPION_SKILL_CAP, RollSource.new(3))
 	var chal_skills: Array[SkillDef] = SkillGrant.pick_skills(SkillCatalog.CHALLENGER_SKILL_CAP, RollSource.new(4))
+	_assert(SkillCatalog.CHAMPION_SKILL_MIN == 6 and SkillCatalog.CHAMPION_SKILL_CAP == 8, "champion skill count is 6-8")
+	var rng_champ_lo := RollSource.new(1)
+	rng_champ_lo.push([0])
+	_assert(SkillGrant.roll_skill_count(true, rng_champ_lo) == 6, "champion skill floor is 6")
+	var rng_champ_hi := RollSource.new(1)
+	rng_champ_hi.push([8])
+	_assert(SkillGrant.roll_skill_count(true, rng_champ_hi) == 8, "champion skill cap is 8")
 	_assert(champ_skills.size() <= 8 and champ_skills.size() > 0, "champion gets at most 8 skills")
 	_assert(chal_skills.size() <= 4 and chal_skills.size() > 0, "challenger gets at most 4 skills")
 	var seen := {}
@@ -338,7 +395,31 @@ func _test_skills() -> void:
 	for skill in chal_skills:
 		_assert(not seen.has(skill.id), "challenger skills are unique: %s" % skill.id)
 		seen[skill.id] = true
-	_assert(SkillCatalog.pool().size() == 16, "skill pool has 16 entries including lifesteal and heal")
+	_assert(SkillCatalog.pool().size() == 17, "skill pool dropped 定身; 麻痹 covers skip-turns")
+	var pool_ids: PackedStringArray = PackedStringArray()
+	for skill in SkillCatalog.pool():
+		pool_ids.append(skill.id)
+	_assert(pool_ids.find("skill_root") < 0, "定身 is no longer in the pool")
+	_assert(pool_ids.find("skill_paralyze") >= 0, "麻痹 stays as the 3-turn skip")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_crit").crit_chance, 0.10), "crit self-buff is 10%")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_hit").accuracy_bonus, 0.10), "hit self-buff is 10%")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_dmg").damage_bonus, 0.10), "damage self-buff is 10%")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_dodge").dodge_bonus, 0.10), "dodge bonus is 10%")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_dr").damage_reduction, 0.10), "damage reduction is 10%")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_guard").guard_chance, 0.10), "guard is 10%")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_poison").poison_chance, 0.20), "poison is 20%")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_paralyze").paralyze_chance, 0.20), "paralyze is 20%")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_confuse").confuse_chance, 0.20), "confuse is 20%")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_double").double_chance, 0.20), "double strike is 20%")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_triple").triple_chance, 0.10), "triple strike is 10%")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_counter").counter_chance, 0.20), "counter is 20%")
+	_assert(is_equal_approx(CombatResolver.CONFUSE_SELF_HIT_CHANCE, 0.50), "confused actions are 50% self-hit")
+	_assert(is_equal_approx(CombatResolver.ASSASSINATE_CHANCE_CHAMPION, 0.01), "champion assassinate is 1%")
+	_assert(is_equal_approx(CombatResolver.ASSASSINATE_CHANCE_CHALLENGER, 0.02), "challenger assassinate is 2%")
+	_assert(is_equal_approx(CombatResolver.ASSASSINATE_SHARE_CHALLENGER, 0.50), "challenger assassinate deals 50% max HP")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_lingbo").lingbo_chance, 0.05), "lingbo is 5%")
+	_assert(SkillCatalog.by_id("skill_assassinate").display_name == "幻影刺杀", "assassinate display name")
+	_assert(SkillCatalog.by_id("skill_lingbo").display_name == "凌波微步", "lingbo display name")
 
 	var win := 0.5
 	var attacker := _make_fighter("A", 100, "", true)
@@ -346,12 +427,12 @@ func _test_skills() -> void:
 	_disarm(attacker)
 	_disarm(defender)
 	var rng_plain := RollSource.new(1)
-	rng_plain.push([0.0])
+	rng_plain.push([0.0, 0.99])
 	var plain_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_plain)
 	var plain_damage := 0
 	for event in plain_events:
 		plain_damage += event.damage
-	_assert(plain_events.size() == 1 and plain_events[0].hit and not plain_events[0].crit, "no-skill hit is a single non-crit")
+	_assert(plain_events.size() == 1 and plain_events[0].hit and not plain_events[0].crit, "no-skill hit is a single non-crit when the crit die misses")
 
 	defender.hp = defender.max_hp
 	attacker.skills = [SkillCatalog.by_id("skill_crit")]
@@ -365,7 +446,7 @@ func _test_skills() -> void:
 	_disarm(defender)
 	attacker.skills = [SkillCatalog.by_id("skill_double")]
 	var rng_double := RollSource.new(1)
-	rng_double.push([0.0, 0.0])
+	rng_double.push([0.0, 0.99, 0.0, 0.0, 0.99])
 	var double_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_double)
 	_assert(double_events.size() == 2 and double_events[1].combo, "double strike adds one extra hit")
 
@@ -374,7 +455,7 @@ func _test_skills() -> void:
 	defender.hp = defender.max_hp
 	attacker.skills = [SkillCatalog.by_id("skill_triple")]
 	var rng_triple := RollSource.new(1)
-	rng_triple.push([0.0, 0.0])
+	rng_triple.push([0.0, 0.99, 0.0, 0.0, 0.99, 0.0, 0.99])
 	var triple_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_triple)
 	_assert(triple_events.size() == 3, "triple strike adds two extra hits")
 
@@ -388,28 +469,32 @@ func _test_skills() -> void:
 	var dodge_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_dodge)
 	_assert(not dodge_events[0].hit and dodge_events[0].dodged, "dodge buff turns a mid roll into a dodge")
 	_disarm(defender)
+	var rng_base_dodge := RollSource.new(1)
+	rng_base_dodge.push([0.4])
+	_assert(not CombatResolver.resolve_strikes(attacker, defender, win, rng_base_dodge)[0].hit, "0.4 still dodges on the 10% base dodge")
+	defender.hp = defender.max_hp
 	var rng_no_dodge := RollSource.new(1)
-	rng_no_dodge.push([0.4])
-	_assert(CombatResolver.resolve_strikes(attacker, defender, win, rng_no_dodge)[0].hit, "same 0.4 roll hits without dodge")
+	rng_no_dodge.push([0.20, 0.99])
+	_assert(CombatResolver.resolve_strikes(attacker, defender, win, rng_no_dodge)[0].hit, "a 0.20 roll hits without extra dodge")
 
 	var acc_buff := SkillCatalog.agent_buff_template(AgentChannels.CHANNEL_CLAUDE)
 	acc_buff.accuracy_bonus = 0.20
 	_give_buffs(attacker, [acc_buff])
 	defender.hp = defender.max_hp
 	var rng_acc := RollSource.new(1)
-	rng_acc.push([0.6])
-	_assert(CombatResolver.resolve_strikes(attacker, defender, win, rng_acc)[0].hit, "accuracy buff turns a 0.6 roll into a hit")
+	rng_acc.push([0.45, 0.99])
+	_assert(CombatResolver.resolve_strikes(attacker, defender, win, rng_acc)[0].hit, "accuracy buff turns a 0.45 roll into a hit")
 	_disarm(attacker)
 	defender.hp = defender.max_hp
 	var rng_miss := RollSource.new(1)
-	rng_miss.push([0.6])
-	_assert(not CombatResolver.resolve_strikes(attacker, defender, win, rng_miss)[0].hit, "same 0.6 roll misses without accuracy")
+	rng_miss.push([0.45])
+	_assert(not CombatResolver.resolve_strikes(attacker, defender, win, rng_miss)[0].hit, "same 0.45 roll dodges without accuracy")
 
 	_disarm(attacker)
 	_disarm(defender)
 	attacker.skills = [SkillCatalog.by_id("skill_poison")]
 	var rng_poison := RollSource.new(1)
-	rng_poison.push([0.0, 0.0])
+	rng_poison.push([0.0, 0.99, 0.0])
 	CombatResolver.resolve_strikes(attacker, defender, win, rng_poison)
 	_assert(defender.poison_turns == 3, "poison applies for 3 turns")
 	defender.paralyze_turns = 3
@@ -431,7 +516,7 @@ func _test_skills() -> void:
 	_disarm(defender)
 	attacker.confuse_turns = 3
 	var rng_conf := RollSource.new(1)
-	rng_conf.push([0.0, 0.0])
+	rng_conf.push([0.0, 0.0, 0.99])
 	var conf_events: Array[StrikeResult] = CombatResolver.resolve_action(attacker, defender, win, rng_conf)
 	var saw_self := false
 	for ev in conf_events:
@@ -448,6 +533,17 @@ func _test_skills() -> void:
 	var guard_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_guard)
 	_assert(guard_events[0].guarded and guard_events[0].damage == 0, "absolute guard negates all damage")
 	_assert(defender.hp == defender.max_hp, "guarded fighter keeps full HP")
+	_disarm(attacker)
+	_disarm(defender)
+	attacker.skills = [SkillCatalog.by_id("skill_poison"), SkillCatalog.by_id("skill_paralyze"), SkillCatalog.by_id("skill_confuse")]
+	defender.skills = [SkillCatalog.by_id("skill_guard")]
+	var rng_guard_clean := RollSource.new(1)
+	rng_guard_clean.push([0.0, 0.0])
+	var guard_clean: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_guard_clean)
+	_assert(guard_clean[0].guarded, "guard still triggers when the attacker holds on-hit statuses")
+	_assert(not guard_clean[0].poisoned and not guard_clean[0].paralyzed and not guard_clean[0].confused, "guarded hits apply no extra effects")
+	_assert(defender.poison_turns == 0 and defender.paralyze_turns == 0 and defender.confuse_turns == 0, "guarded target is not statused")
+	_assert(SkillCatalog.by_id("skill_confuse").description.find("50%") >= 0, "混乱 tooltip names the 50% self-hit")
 
 	_disarm(attacker)
 	_disarm(defender)
@@ -455,13 +551,13 @@ func _test_skills() -> void:
 	defender.rebirth_available = true
 	defender.hp = 1
 	var rng_rebirth := RollSource.new(1)
-	rng_rebirth.push([0.0])
+	rng_rebirth.push([0.0, 0.99])
 	var rebirth_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_rebirth)
 	_assert(rebirth_events[0].revived, "rebirth revives on lethal hit")
 	_assert(defender.hp == defender.max_hp, "rebirth restores full HP")
 	_assert(not defender.rebirth_available, "rebirth is consumed")
 	var rng_rebirth2 := RollSource.new(1)
-	rng_rebirth2.push([0.0])
+	rng_rebirth2.push([0.0, 0.99])
 	defender.hp = 1
 	var rebirth2: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_rebirth2)
 	_assert(rebirth2[0].defender_died and not rebirth2[0].revived, "consumed rebirth does not revive again")
@@ -470,7 +566,7 @@ func _test_skills() -> void:
 	_disarm(defender)
 	defender.skills = [SkillCatalog.by_id("skill_counter")]
 	var rng_counter := RollSource.new(1)
-	rng_counter.push([0.0, 0.0, 0.0])
+	rng_counter.push([0.0, 0.99, 0.0, 0.0, 0.99])
 	var counter_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_counter)
 	var saw_counter := false
 	for ev in counter_events:
@@ -481,45 +577,34 @@ func _test_skills() -> void:
 
 	_disarm(attacker)
 	_disarm(defender)
-	attacker.skills = [SkillCatalog.by_id("skill_root")]
-	var rng_root := RollSource.new(1)
-	rng_root.push([0.0, 0.0])
-	CombatResolver.resolve_strikes(attacker, defender, win, rng_root)
-	_assert(defender.rooted_next, "root marks the next action as skipped")
-	var root_events: Array[StrikeResult] = CombatResolver.resolve_action(defender, attacker, win, RollSource.new(1))
-	_assert(root_events[0].skip_reason == StrikeResult.SKIP_ROOT, "root skips the next action")
-	_assert(not defender.rooted_next, "root is consumed after one skip")
-
-	_disarm(attacker)
-	_disarm(defender)
 	attacker.skills = [SkillCatalog.by_id("skill_lifesteal")]
 	attacker.hp = 40
 	var rng_ls := RollSource.new(1)
-	rng_ls.push([0.0])
+	rng_ls.push([0.0, 0.99])
 	var ls_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_ls)
 	var ls_scale := float(CombatResolver.strike_damage(attacker)) / float(maxi(1, CombatResolver.strike_damage(defender)))
 	var stolen := maxi(1, int(round(float(ls_events[0].damage) * CombatResolver.lifesteal_ratio(attacker) * ls_scale)))
 	_assert(ls_events[0].lifesteal, "lifesteal flags when the skill is held")
-	_assert(ls_events[0].heal_amount == stolen, "吸血按本方比例回血（擂主 30% / 挑战者 50%）")
+	_assert(ls_events[0].heal_amount == stolen, "吸血按本方比例回血（擂主 25% / 挑战者 50%）")
 	_assert(attacker.hp == 40 + stolen, "attacker HP rises by the lifesteal amount")
 	_disarm(attacker)
 	_disarm(defender)
 	attacker.hp = 40
 	var rng_nols := RollSource.new(1)
-	rng_nols.push([0.0])
+	rng_nols.push([0.0, 0.99])
 	var nols: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_nols)
 	_assert(not nols[0].lifesteal and nols[0].heal_amount == 0, "no lifesteal skill means no heal from that hit")
 	_assert(attacker.hp == 40, "attacker HP unchanged without lifesteal")
 
-	# 治疗改成按最大生命的百分比：擂主 10% 概率回 5%，挑战者 15% 概率回 10%。
+	# 治疗触发率双方 20%；擂主回 5% 最大生命，挑战者回 10% 最大生命。
 	var short_bar := _make_fighter("short", 1000, "", false)
 	var long_bar := _make_fighter("long", 1000, "", true)
 	long_bar.hits_to_down = CombatResolver.HITS_PER_DUEL * 10
 	_assert(CombatResolver.heal_amount(long_bar) == 50, "擂主一次治疗回 5% 最大生命")
 	_assert(CombatResolver.heal_amount(short_bar) == 100, "挑战者一次治疗回 10% 最大生命")
-	_assert(is_equal_approx(CombatResolver.heal_chance(long_bar), 0.10), "擂主治疗触发率 10%")
-	_assert(is_equal_approx(CombatResolver.heal_chance(short_bar), 0.15), "挑战者治疗触发率 15%")
-	_assert(is_equal_approx(CombatResolver.lifesteal_ratio(long_bar), 0.30), "擂主吸血 30%")
+	_assert(is_equal_approx(CombatResolver.heal_chance(long_bar), 0.20), "擂主治疗触发率 20%")
+	_assert(is_equal_approx(CombatResolver.heal_chance(short_bar), 0.20), "挑战者治疗触发率 20%")
+	_assert(is_equal_approx(CombatResolver.lifesteal_ratio(long_bar), 0.25), "擂主吸血 25%")
 	_assert(is_equal_approx(CombatResolver.lifesteal_ratio(short_bar), 0.50), "挑战者吸血 50%")
 	_assert(CombatResolver.heal_amount(long_bar) != CombatResolver.strike_damage(long_bar), "治疗不再跟单次命中挂钩，改看最大生命")
 	_assert(float(CombatResolver.heal_amount(short_bar)) / float(short_bar.max_hp) < 0.5, "one heal is never half a health bar")
@@ -528,7 +613,7 @@ func _test_skills() -> void:
 	attacker.skills = [SkillCatalog.by_id("skill_heal")]
 	attacker.hp = 10
 	var rng_heal := RollSource.new(1)
-	rng_heal.push([0.0, 0.0])
+	rng_heal.push([0.0, 0.99, 0.0])
 	var heal_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_heal)
 	var last_heal: StrikeResult = heal_events[heal_events.size() - 1]
 	_assert(last_heal.treated, "heal skill can proc after an attack")
@@ -539,7 +624,7 @@ func _test_skills() -> void:
 	_disarm(defender)
 	attacker.hp = 10
 	var rng_noheal := RollSource.new(1)
-	rng_noheal.push([0.0, 0.0])
+	rng_noheal.push([0.0, 0.99, 0.99])
 	var noheal: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_noheal)
 	_assert(not noheal[noheal.size() - 1].treated, "same rolls do not heal without the skill")
 	_assert(attacker.hp == 10, "HP unchanged without heal skill")
@@ -568,7 +653,8 @@ func _test_skills() -> void:
 		foe.hp = foe.max_hp
 		var rng_roll_one := RollSource.new(1)
 		rng_roll_one.push([0.999])
-		_assert(not CombatResolver.resolve_strikes(champ, foe, hit, rng_roll_one)[0].hit, "roll 0.999 always misses, whatever the target (%.2f)" % target)
+		var high_miss: StrikeResult = CombatResolver.resolve_strikes(champ, foe, hit, rng_roll_one)[0]
+		_assert(not high_miss.hit and high_miss.dodged, "roll 0.999 is a dodge, never a whiff (target %.2f)" % target)
 
 	# 连击是“多一次机会”，不是“保证打中”——追击同样要过命中判定。
 	var combo_src := FileAccess.get_file_as_string("res://scripts/combat_resolver.gd")
@@ -579,11 +665,114 @@ func _test_skills() -> void:
 	_disarm(combo_target)
 	combo_attacker.skills = [SkillCatalog.by_id("skill_double")]
 	var rng_combo := RollSource.new(1)
-	# 首击命中 -> 二连击触发 -> 追击掷到 0.999 落空。
-	rng_combo.push([0.0, 0.0, 0.999])
+	# 首击命中 -> 暴击未中 -> 二连击触发 -> 追击掷到 0.999 落空。
+	rng_combo.push([0.0, 0.99, 0.0, 0.999])
 	var combo_events: Array[StrikeResult] = CombatResolver.resolve_strikes(combo_attacker, combo_target, 0.5, rng_combo)
 	_assert(combo_events.size() == 2 and combo_events[1].combo, "the double-strike extra swing is still rolled")
 	_assert(not combo_events[1].hit, "an extra swing can miss like any other")
+
+	# 幻影刺杀：在本会闪掉的点数上仍命中，并把 HP 打到 0。从完整 resolve_strikes 进，不从“已经命中之后”开始。
+	_disarm(attacker)
+	_disarm(defender)
+	attacker.skills = [SkillCatalog.by_id("skill_assassinate")]
+	var dodge_for_kill := SkillCatalog.agent_buff_template(AgentChannels.CHANNEL_GROK)
+	dodge_for_kill.dodge_bonus = 0.25
+	_give_buffs(defender, [dodge_for_kill])
+	var rng_ass := RollSource.new(1)
+	rng_ass.push([0.4, 0.0])
+	var ass_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_ass)
+	_assert(ass_events.size() == 1 and ass_events[0].hit, "assassinate hits on a roll that would otherwise dodge")
+	_assert(ass_events[0].assassinated, "assassinate flags the strike")
+	_assert(not ass_events[0].dodged, "assassinate ignores dodge")
+	_assert(defender.hp == 0 and ass_events[0].defender_died, "champion assassinate without rebirth knocks the target out")
+
+	_disarm(attacker)
+	_disarm(defender)
+	attacker.skills = [SkillCatalog.by_id("skill_assassinate")]
+	defender.skills = [SkillCatalog.by_id("skill_rebirth")]
+	defender.rebirth_available = true
+	_give_buffs(defender, [dodge_for_kill])
+	var rng_ass_rb := RollSource.new(1)
+	rng_ass_rb.push([0.4, 0.0])
+	var ass_rb: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_ass_rb)
+	_assert(ass_rb[0].assassinated and ass_rb[0].revived, "assassinate with rebirth revives instead of a kill")
+	_assert(defender.is_alive() and defender.hp == defender.max_hp, "rebirth restores full HP after assassinate")
+	_assert(not ass_rb[0].defender_died, "a revived target is not counted as downed")
+
+	# 追击不掷幻影刺杀：首击未刺杀、追击落在闪避段，不得变成刺杀。
+	_disarm(attacker)
+	_disarm(defender)
+	attacker.skills = [SkillCatalog.by_id("skill_assassinate"), SkillCatalog.by_id("skill_double")]
+	_give_buffs(defender, [dodge_for_kill])
+	defender.hits_to_down = 20
+	defender.hp = defender.max_hp
+	var rng_ass_follow := RollSource.new(1)
+	rng_ass_follow.push([0.0, 0.99, 0.99, 0.0, 0.4])
+	var ass_follow: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_ass_follow)
+	_assert(ass_follow.size() == 2 and ass_follow[1].combo, "double still adds a follow-up after a non-assassinate opener")
+	_assert(not ass_follow[1].assassinated, "follow-up swings do not roll assassinate")
+	_assert(ass_follow[1].dodged and not ass_follow[1].hit, "the follow-up still respects dodge")
+
+	# 挑战者的幻影刺杀：2% 触发，无视闪避，打最大生命的一半，不是秒杀。
+	var chal_killer := _make_fighter("chal", 1000, "", false)
+	var boss_target := _make_fighter("boss", 1000, "", true)
+	_disarm(chal_killer)
+	_disarm(boss_target)
+	chal_killer.skills = [SkillCatalog.by_id("skill_assassinate")]
+	_give_buffs(boss_target, [dodge_for_kill])
+	boss_target.hits_to_down = 20
+	boss_target.hp = boss_target.max_hp
+	_assert(is_equal_approx(CombatResolver.assassinate_chance(chal_killer), 0.02), "challenger rolls 2% assassinate")
+	_assert(is_equal_approx(CombatResolver.assassinate_chance(attacker), 0.01), "champion rolls 1% assassinate")
+	var expected_cut := CombatResolver.assassinate_damage(chal_killer, boss_target)
+	var rng_chal_ass := RollSource.new(1)
+	rng_chal_ass.push([0.4, 0.0])
+	var chal_ass: Array[StrikeResult] = CombatResolver.resolve_strikes(chal_killer, boss_target, win, rng_chal_ass)
+	_assert(chal_ass[0].assassinated and chal_ass[0].hit and not chal_ass[0].dodged, "challenger assassinate still ignores dodge")
+	_assert(chal_ass[0].damage == expected_cut, "challenger assassinate deals the shipped 50% max HP cut")
+	_assert(expected_cut * 2 == boss_target.max_hp, "challenger assassinate cut is half the target max HP")
+	_assert(boss_target.hp == boss_target.max_hp - expected_cut and boss_target.is_alive(), "challenger assassinate is not a one-shot on a full bar")
+	_assert(not chal_ass[0].defender_died, "a half-bar cut does not count as downed")
+
+	# 凌波微步：本下闪避并立刻还击。
+	_disarm(attacker)
+	_disarm(defender)
+	defender.skills = [SkillCatalog.by_id("skill_lingbo")]
+	var rng_lb := RollSource.new(1)
+	rng_lb.push([0.0, 0.0, 0.0])
+	var lb_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_lb)
+	_assert(lb_events[0].dodged and lb_events[0].lingbo and not lb_events[0].hit, "lingbo dodges a swing that would have hit")
+	_assert(lb_events.size() >= 2 and lb_events[1].countered, "lingbo is followed by a counter swing")
+	_assert(not lb_events[1].combo, "lingbo counter does not combo")
+	_assert(not lb_events[1].lingbo, "the counter swing does not roll lingbo again")
+
+	# 追击不掷凌波微步。
+	_disarm(attacker)
+	_disarm(defender)
+	attacker.skills = [SkillCatalog.by_id("skill_double")]
+	defender.skills = [SkillCatalog.by_id("skill_lingbo")]
+	defender.hits_to_down = 20
+	defender.hp = defender.max_hp
+	var rng_lb_follow := RollSource.new(1)
+	rng_lb_follow.push([0.0, 0.99, 0.99, 0.0, 0.0, 0.99])
+	var lb_follow: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_lb_follow)
+	_assert(lb_follow.size() == 2 and lb_follow[1].combo, "double follow-up still happens when lingbo misses the opener")
+	_assert(lb_follow[1].hit and not lb_follow[1].lingbo, "follow-up swings do not roll lingbo")
+
+	# 二连 + 三连同时成功 = 5 连；追击不再追加连击。
+	_disarm(attacker)
+	_disarm(defender)
+	attacker.skills = [SkillCatalog.by_id("skill_double"), SkillCatalog.by_id("skill_triple")]
+	defender.hits_to_down = 20
+	defender.hp = defender.max_hp
+	var rng_five := RollSource.new(1)
+	for i in 12:
+		rng_five.push([0.0])
+	var five_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_five)
+	_assert(five_events.size() == 5, "double+triple merge into five swings")
+	_assert(not five_events[0].combo and five_events[0].extra_index == 0, "five-hit opener is the shared first swing")
+	for i in range(1, 5):
+		_assert(five_events[i].combo and five_events[i].extra_index == i, "follow-up %d is a combo swing" % i)
 
 
 ## 造一条排行榜记录。channel 留空表示这个人没有可识别的 agent。
@@ -649,8 +838,15 @@ func _test_wheel_war() -> void:
 	names.sort()
 	_assert(",".join(names) == "b,c,d", "right-side queue is a permutation of non-champions")
 
-	# 每次判定都掷 0，双方必然命中，于是擂主先手的优势把对手逐个清掉。
+	# 每次判定都掷 0，双方必然命中。挑战者永远先手；擂主靠更长血条把对手逐个清掉。
+	var opener: Fighter = war.current_opponent
+	var first_events: Array[StrikeResult] = war.simulate_turn(_always_hits())
+	_assert(first_events.size() >= 1, "a turn produces strike events")
+	_assert(first_events[0].attacker_name == opener.username, "challenger always acts first")
+	_assert(first_events[0].attacker_name != war.champion.username, "champion does not open the turn")
 	var downed := 0
+	if opener != null and not opener.is_alive():
+		downed += 1
 	while war.outcome == WheelWar.Outcome.ONGOING:
 		_assert(war.active_opponent_count() <= 1, "never more than one opponent in play")
 		var before: Fighter = war.current_opponent
@@ -1071,6 +1267,48 @@ func _test_fighter_anims() -> void:
 	_assert_icons_align_to_hp_bar(view)
 	view.play_attack()
 	_assert(view.anim_player.current_animation == "attack", "playing attack selects the attack animation")
+	_assert(view.slash.visible, "attack shows the sword slash")
+	_assert(view.has_method("play_paralyze_fx") and view.has_method("play_confuse_fx") and view.has_method("play_assassinate_fx"), "fighter view exposes paralyze/confuse/assassinate fx")
+
+	var poison_fx: CPUParticles2D = view.get_node("Visual/PoisonFx")
+	var paralyze_fx: CPUParticles2D = view.get_node("Visual/ParalyzeFx")
+	var crit_fx: CPUParticles2D = view.get_node("Visual/CritFx")
+	var stun_fx: Node2D = view.get_node("Visual/StunFx")
+	var skull_fx: Node2D = view.get_node("Visual/SkullFx")
+	view.play_poison_fx()
+	_assert(poison_fx.color.r > 0.7 and poison_fx.color.g < 0.45, "poison particles are red")
+	_assert(poison_fx.emitting, "poison burst is emitting")
+	var heal_fx: CPUParticles2D = (load("res://scenes/heal_fx.tscn") as PackedScene).instantiate()
+	_assert(heal_fx.color.g > heal_fx.color.r and heal_fx.color.g > heal_fx.color.b, "heal particles are green and distinct from poison")
+	heal_fx.free()
+	view.play_paralyze_fx()
+	_assert(paralyze_fx.color.r > 0.8 and paralyze_fx.color.g > 0.7 and paralyze_fx.color.b < 0.4, "paralyze particles are yellow")
+	view.play_confuse_fx()
+	_assert(stun_fx.visible, "confuse shows a stun node above the head")
+	_assert(stun_fx.get_child_count() >= 3, "stun fx has circling stars")
+	view.play_crit_fx()
+	_assert(crit_fx.amount > FighterView.LEGACY_CRIT_AMOUNT, "crit explosion uses more particles than the old small burst")
+	_assert(crit_fx.emitting, "crit burst is emitting")
+	view.play_assassinate_fx()
+	_assert(skull_fx.visible, "assassinate shows a skull overlay")
+	_assert(_skull_is_red_x(skull_fx), "assassinate skull is a red X overlay")
+	view.play_dodge()
+	_assert(view.dodge_ghost_count() == CombatFx.GHOST_TOTAL, "dodge has 3 figures including the body")
+	var trail := view.get_node("Visual/Afterimages")
+	_assert(trail.get_child_count() == CombatFx.AFTERIMAGE_EXTRAS, "two afterimages plus the body")
+	var start_ghost: Sprite2D = trail.get_child(0)
+	var mid_ghost: Sprite2D = trail.get_child(1)
+	_assert(is_equal_approx(start_ghost.modulate.a, CombatFx.DODGE_START_ALPHA), "origin afterimage is 50% opaque")
+	_assert(start_ghost.texture == view.sprite.texture, "afterimages copy the current pose")
+	_assert(absf(start_ghost.position.x) <= 1.0, "first afterimage stays at the origin")
+	_assert(mid_ghost.modulate.a > start_ghost.modulate.a and mid_ghost.modulate.a < CombatFx.DODGE_END_ALPHA, "mid afterimage is between 50% and opaque")
+	view.anim_player.seek(0.12, true)
+	var dodge_x := absf(view.sprite.position.x)
+	var one_body := CombatFx.DODGE_BODY_LENGTHS * float(SpriteFactory.SIZE) * FighterView.BASE_SPRITE_SCALE
+	_assert(absf(dodge_x - one_body) <= 1.0, "dodge retreats about 1 body width (got %.1f, want %.1f)" % [dodge_x, one_body])
+	_assert(is_equal_approx(view.sprite.modulate.a, CombatFx.DODGE_END_ALPHA) or view.sprite.modulate.a >= 0.99, "the body at the dodge end is opaque")
+	_assert(absf(absf(mid_ghost.position.x) - dodge_x * 0.5) <= 1.0, "mid afterimage sits halfway to the dodge end")
+	_assert(is_equal_approx(view.displayed_body_width(), CombatFx.displayed_body_width(view.get_node("Visual").scale.x)), "displayed body width matches the shared helper")
 	view.queue_free()
 	await process_frame
 
@@ -1173,12 +1411,13 @@ func _test_combat_log() -> void:
 	rng_dodge.push([0.4])
 	var dodge_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, win, rng_dodge))
 	_assert(dodge_log.find("乙【闪避】了甲的伤害") >= 0, "dodge log uses XXX【闪避】了XXX的伤害")
+	_assert(FileAccess.get_file_as_string("res://scripts/combat_log.gd").find("没有打中") < 0, "combat log has no 失手/whiff wording")
 
 	_disarm(attacker)
 	_disarm(defender)
 	attacker.skills = [SkillCatalog.by_id("skill_double")]
 	var rng_double := RollSource.new(1)
-	rng_double.push([0.0, 0.0])
+	rng_double.push([0.0, 0.99, 0.0, 0.0, 0.99])
 	var double_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, win, rng_double))
 	_assert(double_log.find("甲对乙瞬间进攻了【两】次") >= 0, "double log uses 瞬间进攻了【两】次")
 
@@ -1186,15 +1425,43 @@ func _test_combat_log() -> void:
 	_disarm(defender)
 	attacker.skills = [SkillCatalog.by_id("skill_triple")]
 	var rng_triple := RollSource.new(1)
-	rng_triple.push([0.0, 0.0])
+	rng_triple.push([0.0, 0.99, 0.0, 0.0, 0.99, 0.0, 0.99])
 	var triple_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, win, rng_triple))
 	_assert(triple_log.find("甲对乙瞬间进攻了【三】次") >= 0, "triple log uses 瞬间进攻了【三】次")
 
 	_disarm(attacker)
 	_disarm(defender)
+	attacker.skills = [SkillCatalog.by_id("skill_double"), SkillCatalog.by_id("skill_triple")]
+	defender.hits_to_down = 20
+	defender.hp = defender.max_hp
+	var rng_five_log := RollSource.new(1)
+	for i in 12:
+		rng_five_log.push([0.0])
+	var five_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, win, rng_five_log))
+	_assert(five_log.find("甲对乙瞬间进攻了【五】次") >= 0, "merged combo log uses 瞬间进攻了【五】次")
+	_assert(five_log.find("瞬间进攻了【两】次") < 0 or five_log.find("甲对乙瞬间进攻了【五】次") >= 0, "five-hit log keeps the 五 wording")
+
+	_disarm(attacker)
+	_disarm(defender)
+	attacker.skills = [SkillCatalog.by_id("skill_assassinate")]
+	var rng_ass_log := RollSource.new(1)
+	rng_ass_log.push([0.0, 0.0])
+	var ass_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, win, rng_ass_log))
+	_assert(ass_log.find("甲对乙发动【幻影刺杀】") >= 0, "assassinate log names 幻影刺杀")
+
+	_disarm(attacker)
+	_disarm(defender)
+	defender.skills = [SkillCatalog.by_id("skill_lingbo")]
+	var rng_lb_log := RollSource.new(1)
+	rng_lb_log.push([0.0, 0.0, 0.0])
+	var lb_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, win, rng_lb_log))
+	_assert(lb_log.find("乙以【凌波微步】闪避了甲的伤害") >= 0, "lingbo log names 凌波微步")
+
+	_disarm(attacker)
+	_disarm(defender)
 	attacker.skills = [SkillCatalog.by_id("skill_poison")]
 	var rng_poison := RollSource.new(1)
-	rng_poison.push([0.0, 0.0])
+	rng_poison.push([0.0, 0.99, 0.0])
 	var poison_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, win, rng_poison))
 	_assert(poison_log.find("甲对乙造成了伤害，乙【中毒】了") >= 0, "poison log uses 造成了伤害，XXX【中毒】了")
 
@@ -1206,7 +1473,7 @@ func _test_combat_log() -> void:
 		SkillCatalog.by_id("skill_confuse"),
 	]
 	var rng_all := RollSource.new(1)
-	rng_all.push([0.0, 0.0, 0.0, 0.0])
+	rng_all.push([0.0, 0.99, 0.0, 0.0, 0.0])
 	var all_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, win, rng_all))
 	_assert(all_log.find("乙【中毒，麻痹，混乱】了") >= 0, "multi-status log joins 中毒，麻痹，混乱")
 
@@ -1214,7 +1481,7 @@ func _test_combat_log() -> void:
 	_disarm(defender)
 	attacker.confuse_turns = 3
 	var rng_self := RollSource.new(1)
-	rng_self.push([0.0, 0.0])
+	rng_self.push([0.0, 0.0, 0.99])
 	var self_events: Array[StrikeResult] = CombatResolver.resolve_action(attacker, defender, win, rng_self)
 	var self_log := _joined_log(self_events)
 	var self_damage := 0
@@ -1261,6 +1528,90 @@ func name_label_parent_is_status(view: FighterView) -> bool:
 	return view.name_label.get_parent() == status and view.hp_wrap.get_parent() == status and view.hp_label.get_parent() == view.hp_wrap and view.hp_bar.get_parent() == view.hp_wrap
 
 
+## 五族边框：同族外圈颜色一致，异族不一致；技能池每张图可加载且内部图案两两不同。
+func _assert_icon_family_borders() -> void:
+	var family_colors: Dictionary = {}
+	for family in SkillCatalog.ICON_FAMILIES:
+		var ids: Array = SkillCatalog.ICON_FAMILIES[family]
+		_assert(ids.size() >= 2, "family %s has at least two icons to compare" % family)
+		var ink := _icon_border_color(str(ids[0]))
+		family_colors[family] = ink
+		for icon_id in ids:
+			var color := _icon_border_color(str(icon_id))
+			_assert(color.is_equal_approx(ink), "family %s icon %s shares the family border" % [family, icon_id])
+			var tex := SkillCatalog.load_icon(str(icon_id))
+			_assert(tex != null and tex.get_width() > 0 and tex.get_height() > 0, "icon %s loads a non-empty texture" % icon_id)
+	var seen: Array[Color] = []
+	for family in family_colors:
+		var ink: Color = family_colors[family]
+		for other in seen:
+			_assert(not ink.is_equal_approx(other), "family %s border differs from other families" % family)
+		seen.append(ink)
+	var pool: Array[SkillDef] = SkillCatalog.pool()
+	_assert(pool.size() >= 17, "skill pool still has every remaining skill icon")
+	var masks: Array[PackedByteArray] = []
+	var ids: PackedStringArray = PackedStringArray()
+	for skill in pool:
+		var tex := SkillCatalog.load_icon(skill.icon_id)
+		_assert(tex != null and tex.get_width() > 0 and tex.get_height() > 0, "pool icon %s loads" % skill.icon_id)
+		var image := Image.new()
+		_assert(image.load(SkillCatalog.icon_path(skill.icon_id)) == OK, "pool icon %s has pixels" % skill.icon_id)
+		var mask := _icon_inner_occupancy(image)
+		var marks := 0
+		for bit in mask:
+			marks += int(bit)
+		_assert(marks >= 20, "pool icon %s has an inner glyph" % skill.icon_id)
+		for i in ids.size():
+			var diff := _mask_diff(masks[i], mask)
+			_assert(diff >= 40, "inner glyph of %s differs from %s (%d pixels)" % [skill.icon_id, ids[i], diff])
+		masks.append(mask)
+		ids.append(skill.icon_id)
+
+
+## 采样图标左边缘中点，那是烘焙时 rect() 描边的位置。
+func _icon_border_color(icon_id: String) -> Color:
+	var image := Image.new()
+	var err := image.load(SkillCatalog.icon_path(icon_id))
+	_assert(err == OK, "can load icon pixels for %s" % icon_id)
+	return image.get_pixel(2, int(image.get_height() / 2.0))
+
+
+## 边框以内相对底色的占位掩码。换色复制会得到同一份掩码，形状不同才会拉开像素差。
+func _icon_inner_occupancy(image: Image) -> PackedByteArray:
+	var bg := image.get_pixel(5, 5)
+	var bits := PackedByteArray()
+	for y in range(6, 26):
+		for x in range(6, 26):
+			var c := image.get_pixel(x, y)
+			var dist := maxf(absf(c.r - bg.r), maxf(absf(c.g - bg.g), absf(c.b - bg.b)))
+			bits.append(1 if c.a > 0.8 and dist > 0.14 else 0)
+	return bits
+
+
+## 红 X 骷髅：节点可见，且子树里有偏红的绘制。
+func _skull_is_red_x(skull: Node2D) -> bool:
+	if not skull.visible:
+		return false
+	for child in skull.get_children():
+		if child is Polygon2D:
+			var c: Color = (child as Polygon2D).color
+			if c.r > 0.7 and c.g < 0.4:
+				return true
+		if child is Sprite2D:
+			var sprite := child as Sprite2D
+			if sprite.texture == null:
+				continue
+			var img := sprite.texture.get_image()
+			if img == null:
+				continue
+			for y in mini(img.get_height(), 32):
+				for x in mini(img.get_width(), 32):
+					var c := img.get_pixel(x, y)
+					if c.a > 0.5 and c.r > 0.7 and c.g < 0.45:
+						return true
+	return false
+
+
 ## 一个图标格子的悬停说明要同时包含技能名和效果描述。
 func _assert_icon_tooltip(node: Node, skill: SkillDef) -> void:
 	var rect := node as TextureRect
@@ -1290,9 +1641,16 @@ func _test_icons_and_layout() -> void:
 	_assert(battle_gd.find("play_dodge") >= 0, "Battle plays dodge retreat on dodges")
 	_assert(battle_gd.find("play_poison_fx") >= 0, "Battle plays poison FX on poison")
 	_assert(battle_gd.find("play_heal_fx") >= 0, "Battle plays shared heal FX on lifesteal/heal")
+	_assert(battle_gd.find("play_paralyze_fx") >= 0 and battle_gd.find("event.paralyzed") >= 0, "Battle plays paralyze FX on paralyzed strikes")
+	_assert(battle_gd.find("play_confuse_fx") >= 0 and battle_gd.find("event.confused") >= 0, "Battle plays confuse stun on confused strikes")
+	_assert(battle_gd.find("play_assassinate_fx") >= 0 and battle_gd.find("event.assassinated") >= 0, "Battle plays skull FX on assassinate")
+	_assert(battle_gd.find("play_dodge") >= 0 and battle_gd.find("凌波") >= 0, "Battle reuses dodge FX for lingbo")
 	var fv_src := FileAccess.get_file_as_string("res://scenes/fighter_view.gd")
 	_assert(fv_src.find("HEAL_FX") >= 0 and fv_src.find("play_heal_fx") >= 0, "lifesteal and heal share HEAL_FX")
+	_assert(fv_src.find("CombatFx") >= 0, "fighter view reuses CombatFx for bursts/afterimages/skull")
 	_assert(FileAccess.file_exists("res://scenes/heal_fx.tscn"), "shared heal FX scene exists")
+	_assert(FileAccess.file_exists("res://assets/fx/skull_x.png"), "red X skull texture exists")
+	_assert_icon_family_borders()
 
 
 ## 12 种形象两两不同，且只有擂主头顶有金色王冠。
@@ -1742,10 +2100,32 @@ func _test_size_traits() -> void:
 	var challenger := _make_fighter("foe", 1000, "", false)
 	_disarm(boss)
 	_disarm(challenger)
-	_assert(is_equal_approx(boss.stacked_dodge(), -0.05), "擂主块头大，先天 -5% 闪避")
-	_assert(is_equal_approx(challenger.stacked_dodge(), 0.05), "挑战者身法灵活，先天 +5% 闪避")
-	_assert(is_equal_approx(boss.stacked_damage_reduction(), 0.05), "擂主先天 +5% 减伤")
+	_assert(is_equal_approx(boss.stacked_dodge(), 0.05), "擂主 10% 基础闪避再吃体型 -5%，合计 5%")
+	_assert(is_equal_approx(challenger.stacked_dodge(), 0.15), "挑战者 10% 基础闪避再加体型 +5%，合计 15%")
+	_assert(is_equal_approx(boss.stacked_crit(), 0.10), "擂主无技能也有 10% 基础暴击")
+	_assert(is_equal_approx(challenger.stacked_crit(), 0.10), "挑战者无技能也有 10% 基础暴击")
+	_assert(is_equal_approx(boss.stacked_counter(), 0.0), "反击没有全员基础")
+	_assert(is_equal_approx(challenger.stacked_counter(), 0.0), "挑战者反击仍为 0")
+	_assert(is_equal_approx(boss.stacked_damage_reduction(), 0.05), "擂主先天 +5% 减伤，没有全员基础减伤")
 	_assert(is_equal_approx(challenger.stacked_damage_reduction(), 0.0), "挑战者没有先天减伤")
+
+	# 无闪避技能时，落在闪避段的点数仍记闪避（挑战者 15% → 命中线 0.35）。
+	var rng_base_dodge := RollSource.new(1)
+	rng_base_dodge.push([0.40])
+	var base_dodge_ev: Array[StrikeResult] = CombatResolver.resolve_strikes(boss, challenger, 0.5, rng_base_dodge)
+	_assert(base_dodge_ev[0].dodged and not base_dodge_ev[0].hit, "base dodge procs without a dodge skill")
+	# 无暴击技能时也能暴击，伤害高于同一次非暴击。从完整 resolve_strikes 进。
+	challenger.hp = challenger.max_hp
+	var rng_base_crit := RollSource.new(1)
+	rng_base_crit.push([0.0, 0.0])
+	var base_crit_ev: Array[StrikeResult] = CombatResolver.resolve_strikes(boss, challenger, 0.5, rng_base_crit)
+	_assert(base_crit_ev[0].hit and base_crit_ev[0].crit, "base crit procs without a crit skill")
+	challenger.hp = challenger.max_hp
+	var rng_base_nocrit := RollSource.new(1)
+	rng_base_nocrit.push([0.0, 0.99])
+	var base_nocrit_ev: Array[StrikeResult] = CombatResolver.resolve_strikes(boss, challenger, 0.5, rng_base_nocrit)
+	_assert(base_nocrit_ev[0].hit and not base_nocrit_ev[0].crit, "the same opening hit roll is not a crit when the crit die misses")
+	_assert(base_crit_ev[0].damage > base_nocrit_ev[0].damage, "a base crit hits harder than the non-crit twin")
 
 	# 先天闪避直接反映在命中率上：同样 50% 底子，打擂主更容易命中。
 	var on_boss := CombatResolver.hit_chance(challenger, boss, 0.5)
@@ -1754,40 +2134,43 @@ func _test_size_traits() -> void:
 
 	# 技能叠在先天之上，不是二选一。
 	challenger.skills = [SkillCatalog.by_id("skill_dodge")]
-	_assert(is_equal_approx(challenger.stacked_dodge(), 0.10), "闪避技能叠在先天闪避之上")
+	_assert(is_equal_approx(challenger.stacked_dodge(), 0.25), "闪避技能叠在 10% 基础和体型修正之上")
 	boss.skills = [SkillCatalog.by_id("skill_dr")]
-	_assert(is_equal_approx(boss.stacked_damage_reduction(), 0.10), "减伤技能叠在先天减伤之上")
+	_assert(is_equal_approx(boss.stacked_damage_reduction(), 0.15), "减伤技能叠在先天减伤之上")
 
-	# 擂主的负闪避不会被写成“被闪掉”，只是更容易挨打。
+	# 没打中只有闪避，打空擂主也记成闪避，不会写成失手。
 	_disarm(boss)
 	_disarm(challenger)
 	var rng_miss := RollSource.new(1)
 	rng_miss.push([0.99])
 	var miss: Array[StrikeResult] = CombatResolver.resolve_strikes(challenger, boss, 0.5, rng_miss)
-	_assert(not miss[0].hit and not miss[0].dodged, "打空擂主只是失手，不会记成闪避")
+	_assert(not miss[0].hit and miss[0].dodged, "打空也是闪避，不存在失手")
+	_assert(_joined_log(miss).find("失手") < 0, "combat log never says 失手")
+	_assert(_joined_log(miss).find("【闪避】") >= 0, "a failed swing logs as 闪避")
 
 	# 擂主的先天减伤实打实削伤害。
 	var plain := _make_fighter("plain", 1000, "", false)
 	_disarm(plain)
 	plain.hits_to_down = boss.hits_to_down
 	var rng_dmg := RollSource.new(1)
-	rng_dmg.push([0.0])
+	rng_dmg.push([0.0, 0.99])
 	var on_boss_hit: Array[StrikeResult] = CombatResolver.resolve_strikes(challenger, boss, 0.9, rng_dmg)
 	var rng_dmg2 := RollSource.new(1)
-	rng_dmg2.push([0.0])
+	rng_dmg2.push([0.0, 0.99])
 	var on_plain_hit: Array[StrikeResult] = CombatResolver.resolve_strikes(challenger, plain, 0.9, rng_dmg2)
 	_assert(on_boss_hit[0].damage < on_plain_hit[0].damage, "同样一击，打在擂主身上被先天减伤削掉一截")
 
-	# 状态技统一提到 10%。
-	for skill_id in ["skill_poison", "skill_paralyze", "skill_confuse", "skill_root"]:
+	# 状态技统一提到 20%。
+	for skill_id in ["skill_poison", "skill_paralyze", "skill_confuse"]:
 		var skill := SkillCatalog.by_id(skill_id)
 		var chance := skill.poison_chance + skill.paralyze_chance + skill.confuse_chance + skill.root_chance
-		_assert(is_equal_approx(chance, 0.10), "%s 触发概率提到 10%%" % skill_id)
+		_assert(is_equal_approx(chance, 0.20), "%s 触发概率提到 20%%" % skill_id)
 
 	# 人越多，擂主那份按最大生命回血的续航越值钱，命中率上要按人头折价。
-	_assert(is_equal_approx(CombatResolver.champion_endurance_edge(5), 0.0), "5 人以内不额外折价")
-	_assert(CombatResolver.champion_endurance_edge(14) > 0.0, "人多了才开始折价")
-	_assert(CombatResolver.calibrated_hit_chance(0.5, 0.0, 0.0, 14) < CombatResolver.calibrated_hit_chance(0.5, 0.0, 0.0, 5), "同样目标胜率，人越多擂主的命中率给得越少")
+	_assert(is_equal_approx(CombatResolver.champion_endurance_edge(2), 0.0), "两人单挑不额外折价")
+	_assert(CombatResolver.champion_endurance_edge(5) > 0.0, "人多了才开始折价")
+	_assert(CombatResolver.champion_endurance_edge(14) <= CombatResolver.CHAMPION_ENDURANCE_EDGE_CAP + 0.0001, "大榜单的续航折价有封顶")
+	_assert(CombatResolver.calibrated_hit_chance(0.5, 0.0, 0.0, 14) < CombatResolver.calibrated_hit_chance(0.5, 0.0, 0.0, 2), "同样目标胜率，人越多擂主的命中率给得越少")
 	# 技能张数差改成按张计价：多摸一张就多让一点命中率，不再用平均张数硬编。
 	_assert(CombatResolver.calibrated_hit_chance(0.5, 0.0, 4.0) < CombatResolver.calibrated_hit_chance(0.5, 0.0, 2.0), "多摸一张技能就要多让出一点命中率")
 	_assert(is_equal_approx(CombatResolver.calibrated_hit_chance(0.5, 0.0, 0.0), 0.5), "张数持平时中心点就是五五开")

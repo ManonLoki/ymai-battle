@@ -2,7 +2,8 @@ class_name CombatResolver
 extends RefCounted
 
 ## 战斗结算。这里的设计底线：任何一次判定都是掷骰子，
-## 没有“必中”“必闪”“锁血”之类把结果写死的效果。
+## 没有把结果写死的效果——唯一例外是掷中的【幻影刺杀】，
+## 它仍要先过 1% 的骰子，中了才无视闪避把对方打到 0 血。
 ## 战力差、技能数值和概率共同决定胜负，胜率永远留在 [30%, 70%] 之间。
 
 ## 单次攻击命中率的上下限，保证再劣势也有 5% 的翻盘空间。
@@ -27,19 +28,20 @@ const HITS_PER_DUEL := 4
 ## 那些场次仍按“多 3.5 张”计价，凭空多吃一口。改成按张计价之后，
 ## WheelWar 把这一场真实的张数差喂进来，发牌区间就成了自由参数。
 ## 数值仍由 tests 里的蒙特卡洛回归标定，改技能池本身时要重新跑。
-const CHAMPION_SKILL_EDGE_PER_SKILL := 0.0085
+const CHAMPION_SKILL_EDGE_PER_SKILL := 0.006
 
 ## 擂主的治疗回的是 5% 最大生命，而他的血条要扛 4×人数 次命中：
 ## 人越多，同样一次治疗折算成“普通命中”就越值钱（15 人榜单里一次≈2.8 次命中）。
 ## 这份随场次拉长而膨胀的续航优势，超过 BASE 人之后按人头再扣一点命中率，
 ## 否则人多的大榜单里擂主会明显打超目标胜率。系数同样由蒙特卡洛标定。
-const CHAMPION_ENDURANCE_EDGE_BASE := 5
+const CHAMPION_ENDURANCE_EDGE_BASE := 2
 const CHAMPION_ENDURANCE_EDGE_PER_CHALLENGER := 0.004
+const CHAMPION_ENDURANCE_EDGE_CAP := 0.020
 
 ## 每个 agent 换一个 buff，所以 agent 数量本身就是战力的一部分。
 ## 擂主每比挑战者平均多带一个 buff，命中率就再让出这么多，
 ## 多开几个 agent 才不会变成白嫖胜率。同样由蒙特卡洛回归标定。
-const AGENT_BUFF_HIT_EDGE := 0.034
+const AGENT_BUFF_HIT_EDGE := 0.030
 
 ## 目标胜率每偏离 50% 一个标准正态分位，命中率就偏离中心这么多。
 ## 一场仗要掷几十次骰子，命中率上几个百分点就足以决定胜负，
@@ -48,12 +50,27 @@ const AGENT_BUFF_HIT_EDGE := 0.034
 ## 注意它是按十几人的真实榜单标的。人数很少时（比如只有一个挑战者）
 ## 整场只掷十几次骰子，随机性本身就把结果往 50% 拉，
 ## 实测胜率会比目标低几个点——这是短局固有的，不是标定没标准。
-const WIN_RATE_SPREAD := 0.080
+const WIN_RATE_SPREAD := 0.130
 
 ## 中毒每回合按“半次普通命中”掉血。
 const POISON_TICK_SHARE := 0.5
 ## 中毒 / 麻痹 / 混乱的持续回合数。
 const STATUS_TURNS := 3
+
+## 命中后可能给对方挂上的状态。每行是
+## [技能字段, Fighter 上的状态字段, 写进去的值, StrikeResult 上的标记（空串表示没有）]。
+## 加一种新状态只要往这里补一行，_apply_on_hit_status 不用动。
+##
+## 两条硬约束，改之前先读：
+## 1. **行的顺序就是掷骰顺序**。调换顺序等于改掉所有定种子测试的结果，
+##    以及蒙特卡洛标定出来的胜率。
+## 2. **概率为 0 时不许掷骰**（见 _apply_on_hit_status 里的守卫）。白掷一次
+##    会让这一场后面所有点数整体错位，同样会让定种子测试失去意义。
+const ON_HIT_STATUSES := [
+	["poison_chance", "poison_turns", STATUS_TURNS, "poisoned"],
+	["paralyze_chance", "paralyze_turns", STATUS_TURNS, "paralyzed"],
+	["confuse_chance", "confuse_turns", STATUS_TURNS, "confused"],
+]
 
 ## 暴击伤害倍率。
 const CRIT_MULTIPLIER := 2.0
@@ -61,22 +78,28 @@ const CRIT_MULTIPLIER := 2.0
 ## 混乱状态下打到自己的概率，剩下一半照常打对面。
 const CONFUSE_SELF_HIT_CHANCE := 0.5
 
-## 吸血比例。擂主 30%、挑战者 50%：擂主的血条本来就要扛完全场，
+## 吸血比例。擂主 25%、挑战者 50%：擂主的血条本来就要扛完全场，
 ## 同样的吸血比例落在他身上收益大得多，所以按身份分开给。
 ## 折算方式不变——先把这一击换算成“相当于自己多少次普通命中”再按比例回，
 ## 否则擂主打一个小号造成的伤害换算到自己那条长血条上会是笔巨款。
-const LIFESTEAL_RATIO_CHAMPION := 0.30
+const LIFESTEAL_RATIO_CHAMPION := 0.25
 const LIFESTEAL_RATIO_CHALLENGER := 0.50
 
-## 治疗：擂主 10% 概率回 5% 最大生命，挑战者 15% 概率回 10% 最大生命。
+## 治疗：双方都是 20% 概率；擂主回 5% 最大生命，挑战者回 10% 最大生命。
 ## 这里按最大生命的百分比算，不再按“几次普通命中”：
 ## 擂主的一次普通命中只占自己血条的 1/(4×人数)，5% 生命对他其实是笔大钱，
 ## 而挑战者一次命中就是 25% 生命，10% 反而是小补——这个倾斜是故意的，
 ## 擂主要靠续航扛完车轮战，挑战者靠的是爆发。胜率那边已经按这个重新标定过。
-const HEAL_CHANCE_CHAMPION := 0.10
-const HEAL_CHANCE_CHALLENGER := 0.15
+const HEAL_CHANCE_CHAMPION := 0.20
+const HEAL_CHANCE_CHALLENGER := 0.20
 const HEAL_SHARE_CHAMPION := 0.05
 const HEAL_SHARE_CHALLENGER := 0.10
+
+## 幻影刺杀：擂主 1% 秒杀；挑战者 2% 打对方最大生命的 50%。
+## 两边都无视闪避。技能表上的 assassinate_chance 只表示“有这招”，真正掷骰看这里。
+const ASSASSINATE_CHANCE_CHAMPION := 0.01
+const ASSASSINATE_CHANCE_CHALLENGER := 0.02
+const ASSASSINATE_SHARE_CHALLENGER := 0.50
 
 ## 胜率曲线的两个锚点，按战力比 r = 擂主 / 其余人合计战力（RMS 口径）定：
 ## r = CEIL（擂主一个人顶得上整场的合计战力）时贴着 MAX_WIN_RATE，
@@ -157,6 +180,18 @@ static func lifesteal_ratio(fighter: Fighter) -> float:
 	return LIFESTEAL_RATIO_CHAMPION if fighter.is_champion else LIFESTEAL_RATIO_CHALLENGER
 
 
+## 幻影刺杀的触发率，按身份分。
+static func assassinate_chance(fighter: Fighter) -> float:
+	return ASSASSINATE_CHANCE_CHAMPION if fighter.is_champion else ASSASSINATE_CHANCE_CHALLENGER
+
+
+## 幻影刺杀的伤害：擂主打到 0 血，挑战者打最大生命的一半。
+static func assassinate_damage(attacker: Fighter, defender: Fighter) -> int:
+	if attacker.is_champion:
+		return maxi(defender.hp, 1)
+	return maxi(1, int(round(float(defender.max_hp) * ASSASSINATE_SHARE_CHALLENGER)))
+
+
 ## 标准正态分位数（probit）的三次近似：z ≈ 1.2517x + 0.371x³，x = 2p - 1。
 ## 拟合区间是 [0.2, 0.8]，而胜率被夹在更窄的 [MIN_WIN_RATE, MAX_WIN_RATE] 里，
 ## 所以落在拟合区间内侧，不必引入完整的反误差函数。
@@ -165,9 +200,10 @@ static func probit(p: float) -> float:
 	return 1.2517 * x + 0.371 * x * x * x
 
 
-## 人数超过 BASE 之后，擂主每多一个对手要多让出的命中率。
+## 人数超过 BASE 之后，擂主每多一个对手要多让出的命中率，封顶以免大榜单把命中率打穿。
 static func champion_endurance_edge(challenger_count: int) -> float:
-	return CHAMPION_ENDURANCE_EDGE_PER_CHALLENGER * float(maxi(0, challenger_count - CHAMPION_ENDURANCE_EDGE_BASE))
+	var raw := CHAMPION_ENDURANCE_EDGE_PER_CHALLENGER * float(maxi(0, challenger_count - CHAMPION_ENDURANCE_EDGE_BASE))
+	return minf(raw, CHAMPION_ENDURANCE_EDGE_CAP)
 
 
 ## 把“这场仗擂主该赢多少次”的目标胜率，反解成他单次攻击的命中率。
@@ -184,7 +220,7 @@ static func calibrated_hit_chance(win_rate: float, buff_edge: float = 0.0, skill
 
 
 ## 只算攻击方命中加成、还没被闪避扣减的命中率。
-## 用于区分“自己失手”和“被对方闪掉”。
+## 没打中只可能是闪避或凌波微步，没有“自己失手”。
 ## 擂主拿反解出来的命中率，挑战者拿它的补集——双方的命中率之和恒为 1。
 static func hit_chance_before_dodge(attacker: Fighter, champion_hit_chance: float) -> float:
 	var base := champion_hit_chance if attacker.is_champion else 1.0 - champion_hit_chance
@@ -198,7 +234,7 @@ static func hit_chance(attacker: Fighter, defender: Fighter, champion_hit_chance
 	return clampf(raw, MIN_HIT_CHANCE, MAX_HIT_CHANCE)
 
 
-## 结算一名角色的一次行动：先跑中毒掉血，再判定麻痹 / 定身 / 混乱，
+## 结算一名角色的一次行动：先跑中毒掉血，再判定麻痹 / 混乱，
 ## 最后才真正出手。返回这次行动产生的全部战报事件。
 static func resolve_action(actor: Fighter, defender: Fighter, champion_hit_chance: float, rng: RollSource) -> Array[StrikeResult]:
 	var events: Array[StrikeResult] = []
@@ -211,11 +247,6 @@ static func resolve_action(actor: Fighter, defender: Fighter, champion_hit_chanc
 	if actor.paralyze_turns > 0:
 		actor.paralyze_turns -= 1
 		events.append(_skip_event(actor, StrikeResult.SKIP_PARALYZE))
-		return events
-	# 定身只作用一次，用掉就清掉标记。
-	if actor.rooted_next:
-		actor.rooted_next = false
-		events.append(_skip_event(actor, StrikeResult.SKIP_ROOT))
 		return events
 	var target := defender
 	var self_hit := false
@@ -248,8 +279,8 @@ static func resolve_strikes(
 	is_counter: bool = false,
 ) -> Array[StrikeResult]:
 	var events: Array[StrikeResult] = []
-	# extra_index=0 标记这是首击，连击只看首击打没打中。
-	var first := _one_strike(attacker, defender, champion_hit_chance, rng, 0)
+	# extra_index=0 标记这是首击。追击和反击都不许再掷连击类（含幻影刺杀 / 凌波微步）。
+	var first := _one_strike(attacker, defender, champion_hit_chance, rng, 0, not is_counter)
 	events.append(first)
 	# 打空、把人打死了、或者这一手是打自己，都不进连击。
 	if not is_counter and first.hit and (not first.defender_died) and defender != attacker:
@@ -257,12 +288,19 @@ static func resolve_strikes(
 			if not defender.is_alive():
 				break
 			# 追击同样要过命中判定，连击只是多给机会，不是保证打中。
-			# 这里直接调 _one_strike，所以追击自己不会再掷连击。
-			events.append(_one_strike(attacker, defender, champion_hit_chance, rng, i + 1))
+			# allow_techniques=false：追击不再掷任何连击类。
+			events.append(_one_strike(attacker, defender, champion_hit_chance, rng, i + 1, false))
 	# 治疗在整轮出手结束后统一结算一次。
 	_apply_heal_skill(attacker, events, rng)
-	# 反击：只看首击有没有打中，而且挨打的人得还站着。打自己时没有“对方”，也就没有反击。
-	if not is_counter and first.hit and defender != attacker and defender.is_alive() and defender.stacked_counter() > 0.0 and rng.randf() < defender.stacked_counter():
+	# 反击：凌波微步在未成击时也还一下；普通反击只看首击有没有打中。
+	# 挨打的人得还站着。打自己时没有“对方”，也就没有反击。
+	var should_counter := false
+	if not is_counter and defender != attacker and defender.is_alive():
+		if first.lingbo:
+			should_counter = true
+		elif first.hit and defender.stacked_counter() > 0.0 and rng.randf() < defender.stacked_counter():
+			should_counter = true
+	if should_counter:
 		# 反击既不能再反击，也不能掷连击：只还一下。
 		var counters := resolve_strikes(defender, attacker, champion_hit_chance, rng, true)
 		for counter in counters:
@@ -271,14 +309,17 @@ static func resolve_strikes(
 	return events
 
 
-## 首击命中后追加几下。三连和二连互斥、只掷一次：
-## 先看三连（+2），没中才看二连（+1），所以一次出手最多打三下。
+## 首击命中后追加几下。三连和二连各掷各的，可同时成功：
+## 名字次数之和再共享一次首击（2+3=5），所以一次出手最多打五下。
 static func _roll_extra_strikes(attacker: Fighter, rng: RollSource) -> int:
+	var named := 0
 	if attacker.stacked_triple() > 0.0 and rng.randf() < attacker.stacked_triple():
-		return 2
+		named += 3
 	if attacker.stacked_double() > 0.0 and rng.randf() < attacker.stacked_double():
-		return 1
-	return 0
+		named += 2
+	if named <= 0:
+		return 0
+	return named - 1
 
 
 ## 中毒的每回合掉血。攻守双方都记成中毒者自己，战报才知道这不是谁打的。
@@ -300,7 +341,7 @@ static func _resolve_poison_tick(actor: Fighter) -> StrikeResult:
 	return tick
 
 
-## 麻痹 / 定身导致整个行动被跳过时的占位事件，reason 决定战报怎么写。
+## 麻痹导致整个行动被跳过时的占位事件，reason 决定战报怎么写。
 static func _skip_event(actor: Fighter, reason: String) -> StrikeResult:
 	var result := StrikeResult.new()
 	result.attacker_name = actor.username
@@ -311,8 +352,17 @@ static func _skip_event(actor: Fighter, reason: String) -> StrikeResult:
 	return result
 
 
-## 一次单独的挥击：命中判定 → 绝对防御 → 伤害 → 吸血 → 复活 → 挂状态。
-static func _one_strike(attacker: Fighter, defender: Fighter, champion_hit_chance: float, rng: RollSource, extra_index: int) -> StrikeResult:
+## 一次单独的挥击：命中判定 →（幻影刺杀 / 凌波微步）→ 绝对防御 → 伤害 → 吸血 → 复活 → 挂状态。
+##
+## allow_techniques 只在主动首击上为真。追击和反击都不许再掷幻影刺杀、凌波微步。
+static func _one_strike(
+	attacker: Fighter,
+	defender: Fighter,
+	champion_hit_chance: float,
+	rng: RollSource,
+	extra_index: int,
+	allow_techniques: bool = true,
+) -> StrikeResult:
 	var result := StrikeResult.new()
 	result.attacker_name = attacker.username
 	result.defender_name = defender.username
@@ -321,26 +371,47 @@ static func _one_strike(attacker: Fighter, defender: Fighter, champion_hit_chanc
 	result.combo = extra_index > 0
 	result.extra_index = extra_index
 
-	# 两条命中率：扣闪避前的和扣闪避后的，差值就是被闪掉的那一段点数。
-	var before_dodge := hit_chance_before_dodge(attacker, champion_hit_chance)
 	var chance := hit_chance(attacker, defender, champion_hit_chance)
 	var roll := rng.randf()
-	if roll >= chance:
-		# 落在 [chance, before_dodge) 的点数是被闪避挡下的，再往上才是自己失手。
-		result.dodged = defender.stacked_dodge() > 0.0 and roll < before_dodge
+	# 幻影刺杀在命中骰之后掷，这样“本会闪掉的点数”仍然进队列，测试能证明它无视闪避。
+	var assassinated := false
+	if allow_techniques and attacker != defender and attacker.stacked_assassinate() > 0.0 and rng.randf() < assassinate_chance(attacker):
+		assassinated = true
+	# 凌波微步：非追击挥击打来时掷中，本下记为闪避并稍后还击。刺杀已中则无视闪避，不再掷。
+	if not assassinated and allow_techniques and attacker != defender and defender.stacked_lingbo() > 0.0 and rng.randf() < defender.stacked_lingbo():
+		result.dodged = true
+		result.lingbo = true
+		result.defender_hp_after = defender.hp
+		result.attacker_hp_after = attacker.hp
+		result.defender_died = not defender.is_alive()
+		return result
+	if not assassinated and roll >= chance:
+		# 没打中只有闪避，没有失手。凌波微步走上面的分支。
+		result.dodged = true
 		result.defender_hp_after = defender.hp
 		result.attacker_hp_after = attacker.hp
 		result.defender_died = not defender.is_alive()
 		return result
 	result.hit = true
 
-	# 绝对防御：打中了但伤害归零，状态照样挂得上。
+	if assassinated:
+		result.assassinated = true
+		# 擂主秒杀打到 0 血；挑战者打最大生命的一半。再走浴火重生。
+		result.damage = assassinate_damage(attacker, defender)
+		defender.apply_damage(result.damage)
+		result.revived = defender.try_rebirth()
+		result.defender_hp_after = defender.hp
+		result.attacker_hp_after = attacker.hp
+		result.defender_died = not defender.is_alive()
+		_apply_on_hit_status(attacker, defender, rng, result)
+		return result
+
+	# 绝对防御：打中了但伤害归零，不挂中毒/麻痹/混乱，也不吸血。
 	if defender.stacked_guard() > 0.0 and rng.randf() < defender.stacked_guard():
 		result.guarded = true
 		result.damage = 0
 		result.defender_hp_after = defender.hp
 		result.attacker_hp_after = attacker.hp
-		_apply_on_hit_status(attacker, defender, rng, result)
 		return result
 
 	# 伤害：基准值 →（暴击 ×2）→ 增伤 → 对方减伤。
@@ -370,23 +441,20 @@ static func _one_strike(attacker: Fighter, defender: Fighter, champion_hit_chanc
 	return result
 
 
-## 命中之后逐个掷骰，看是否挂上中毒 / 麻痹 / 混乱 / 定身。
+## 命中之后逐个掷骰，看是否挂上中毒 / 麻痹 / 混乱。
 static func _apply_on_hit_status(attacker: Fighter, defender: Fighter, rng: RollSource, result: StrikeResult) -> void:
 	# 混乱自伤时不给自己上状态。
 	if attacker == defender:
 		return
-	if attacker.stacked_poison() > 0.0 and rng.randf() < attacker.stacked_poison():
-		defender.poison_turns = STATUS_TURNS
-		result.poisoned = true
-	if attacker.stacked_paralyze() > 0.0 and rng.randf() < attacker.stacked_paralyze():
-		defender.paralyze_turns = STATUS_TURNS
-		result.paralyzed = true
-	if attacker.stacked_confuse() > 0.0 and rng.randf() < attacker.stacked_confuse():
-		defender.confuse_turns = STATUS_TURNS
-		result.confused = true
-	# 定身只作用于对方的下一次行动，不按回合数计。
-	if attacker.stacked_root() > 0.0 and rng.randf() < attacker.stacked_root():
-		defender.rooted_next = true
+	for status in ON_HIT_STATUSES:
+		var chance := attacker.stacked(str(status[0]))
+		# 概率为 0 就直接跳过，连骰子都不掷——见 ON_HIT_STATUSES 的约束 2。
+		if chance <= 0.0 or rng.randf() >= chance:
+			continue
+		defender.set(str(status[1]), status[2])
+		var flag := str(status[3])
+		if not flag.is_empty():
+			result.set(flag, true)
 
 
 ## 治疗技能在整轮出手之后结算一次，成功则并入最后一条战报。

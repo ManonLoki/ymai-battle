@@ -6,7 +6,7 @@ extends RefCounted
 ##
 ## 一次“行动”可能产出多条：中毒掉血、连击的每一下、对方的反击各算一条。
 
-## 出手方的名字；中毒 / 麻痹 / 定身这类自身事件里填的是当事人自己。
+## 出手方的名字；中毒 / 麻痹这类自身事件里填的是当事人自己。
 ## skip_reason 的两个取值。写和读都走常量，免得两头各拼一次字符串。
 const SKIP_PARALYZE := "paralyze"
 const SKIP_ROOT := "root"
@@ -16,10 +16,14 @@ var attacker_name: String = ""
 var defender_name: String = ""
 ## 出手方是不是擂主。battle.gd 靠它决定动画播在左边还是右边。
 var attacker_is_champion: bool = false
-## 是否打中。没打中时要看 dodged 区分“被闪开”和“自己失手”。
+## 是否打中。没打中时只有闪避或凌波微步，没有失手。
 var hit: bool = false
-## 没打中且是被对方闪避挡下的。
+## 没打中且是被对方闪避挡下的（含普通闪避；凌波微步也会把这个标上）。
 var dodged: bool = false
+## 这一下触发了幻影刺杀：无视闪避，把对方打到 0 血后再结算浴火重生。
+var assassinated: bool = false
+## 这一下被凌波微步闪掉，随后会跟一条反击。
+var lingbo: bool = false
 ## 是否暴击。
 var crit: bool = false
 ## 这一下是不是连击追加出来的（首击为 false）。

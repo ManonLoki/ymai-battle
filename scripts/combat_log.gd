@@ -33,8 +33,12 @@ static func line_for(event: StrikeResult) -> String:
 	var body := _body(event)
 	if event.burst_count < BURST_MIN:
 		return body
-	# 一次出手最多三下（_roll_extra_strikes 最多追加 2），所以只有这两种写法。
-	var times := "两" if event.burst_count == 2 else "三"
+	# 2 / 3 / 5 连各写一字；2、3 连沿用原说法。
+	var times := "两"
+	if event.burst_count == 3:
+		times = "三"
+	elif event.burst_count == 5:
+		times = "五"
 	var burst := "%s对%s瞬间进攻了【%s】次" % [event.attacker_name, event.defender_name, times]
 	# 首击本身也有话要说（暴击、上状态之类），接在后面。
 	return burst if body.is_empty() else burst + "\n" + body
@@ -53,8 +57,6 @@ static func _body(event: StrikeResult) -> String:
 	# 行动被跳过。
 	if event.skip_reason == StrikeResult.SKIP_PARALYZE:
 		return "%s 麻痹，无法行动" % event.attacker_name
-	if event.skip_reason == StrikeResult.SKIP_ROOT:
-		return "%s 被定身，错过行动" % event.attacker_name
 	# 混乱下打自己。
 	if event.self_hit:
 		# 混乱下的自伤同样要过命中和绝对防御判定，不是必定见血。
@@ -71,13 +73,15 @@ static func _body(event: StrikeResult) -> String:
 		elif event.defender_died:
 			self_line += "，倒下！"
 		return self_line
-	# 没打中：分“被闪开”和“自己失手”两种写法。
-	if event.dodged:
+	# 没打中只有凌波微步和闪避，没有失手。
+	if event.lingbo:
+		return "%s以【凌波微步】闪避了%s的伤害" % [event.defender_name, event.attacker_name]
+	if event.dodged or not event.hit:
 		return "%s【闪避】了%s的伤害" % [event.defender_name, event.attacker_name]
-	if not event.hit:
-		return "%s 失手，没有打中 %s" % [event.attacker_name, event.defender_name]
-	# 打中了。暴击和上状态各写一句，能同时出现。
+	# 打中了。幻影刺杀单独一句；暴击和上状态各写一句，能同时出现。
 	var chunks: PackedStringArray = PackedStringArray()
+	if event.assassinated:
+		chunks.append("%s对%s发动【幻影刺杀】" % [event.attacker_name, event.defender_name])
 	if event.crit:
 		chunks.append("%s对%s造成【暴击】伤害" % [event.attacker_name, event.defender_name])
 	var statuses: PackedStringArray = PackedStringArray()

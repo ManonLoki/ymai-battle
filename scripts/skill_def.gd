@@ -30,6 +30,10 @@ extends Resource
 @export var double_chance: float = 0.0
 ## 首击命中后额外再出手两次的概率，和 double 各掷各的，可以叠加。
 @export var triple_chance: float = 0.0
+## 非追击、非反击挥击上，无视闪避将对方打到 0 血的概率。
+@export var assassinate_chance: float = 0.0
+## 非追击、非反击被打时，闪避并立刻还击一次的概率。
+@export var lingbo_chance: float = 0.0
 ## 命中后打断对方下一次行动的概率。
 @export var root_chance: float = 0.0
 ## 命中后使对方中毒的概率，中毒会持续掉血。

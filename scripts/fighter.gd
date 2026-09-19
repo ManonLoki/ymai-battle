@@ -32,9 +32,12 @@ var appearance_id: int = 0
 ## 所以双方需要的有效命中总数是对等的。
 var hits_to_down: int = CombatResolver.HITS_PER_DUEL
 
-## 体型带来的先天差异，不占技能位，谁都改不掉：
-## 擂主块头大，闪避吃 5% 的亏，但皮糙肉厚多 5% 减伤；
-## 挑战者个子小、身法灵活，先天多 5% 闪避。
+## 全员都有的基础闪避 / 暴击，不占技能位。反击和减伤没有这份基础。
+const BASE_DODGE := 0.10
+const BASE_CRIT := 0.10
+## 体型带来的额外修正，叠在全员基础之上：
+## 擂主块头大，闪避再吃 5% 的亏，但皮糙肉厚多 5% 减伤；
+## 挑战者个子小、身法灵活，再多 5% 闪避。
 const CHAMPION_INNATE_DODGE := -0.05
 const CHAMPION_INNATE_DAMAGE_REDUCTION := 0.05
 const CHALLENGER_INNATE_DODGE := 0.05
@@ -48,8 +51,6 @@ var poison_turns: int = 0
 var paralyze_turns: int = 0
 ## 剩余混乱回合数，出手时有一半概率打自己。
 var confuse_turns: int = 0
-## 下一次行动会被跳过（定身）。只作用一次，用掉即清。
-var rooted_next: bool = false
 ## 是否还留着一次“浴火重生”。
 var rebirth_available: bool = false
 
@@ -105,7 +106,7 @@ func try_rebirth() -> bool:
 
 
 func stacked_crit() -> float:
-	return _sum("crit_chance")
+	return stacked("crit_chance") + BASE_CRIT
 
 
 ## 先天闪避：擂主是负的（更容易被打中），挑战者是正的。
@@ -118,55 +119,58 @@ func innate_damage_reduction() -> float:
 	return CHAMPION_INNATE_DAMAGE_REDUCTION if is_champion else 0.0
 
 
-## 可能是负数（擂主没带闪避技能时）。结算那边认得负值：
-## 命中率会因此上浮，而且不会被记成“闪避”，只会是实打实的命中。
+## 全员基础 10% + 体型修正 + 技能/buff。没抽到闪避技能也会闪。
 func stacked_dodge() -> float:
-	return _sum("dodge_bonus") + innate_dodge()
+	return stacked("dodge_bonus") + BASE_DODGE + innate_dodge()
 
 
 func stacked_accuracy() -> float:
-	return _sum("accuracy_bonus")
+	return stacked("accuracy_bonus")
 
 
 func stacked_damage_bonus() -> float:
-	return _sum("damage_bonus")
+	return stacked("damage_bonus")
 
 
 ## 减伤最多吃到 90%，留 10% 保证伤害永远打得进去。
 func stacked_damage_reduction() -> float:
-	return clampf(_sum("damage_reduction") + innate_damage_reduction(), 0.0, MAX_DAMAGE_REDUCTION)
+	return clampf(stacked("damage_reduction") + innate_damage_reduction(), 0.0, MAX_DAMAGE_REDUCTION)
 
 
 func stacked_double() -> float:
-	return _sum("double_chance")
+	return stacked("double_chance")
 
 
 func stacked_triple() -> float:
-	return _sum("triple_chance")
+	return stacked("triple_chance")
 
 
-func stacked_root() -> float:
-	return _sum("root_chance")
+func stacked_assassinate() -> float:
+	return stacked("assassinate_chance")
+
+
+func stacked_lingbo() -> float:
+	return stacked("lingbo_chance")
 
 
 func stacked_poison() -> float:
-	return _sum("poison_chance")
+	return stacked("poison_chance")
 
 
 func stacked_paralyze() -> float:
-	return _sum("paralyze_chance")
+	return stacked("paralyze_chance")
 
 
 func stacked_confuse() -> float:
-	return _sum("confuse_chance")
+	return stacked("confuse_chance")
 
 
 func stacked_guard() -> float:
-	return _sum("guard_chance")
+	return stacked("guard_chance")
 
 
 func stacked_counter() -> float:
-	return _sum("counter_chance")
+	return stacked("counter_chance")
 
 
 ## 战报里“某某（XX 暴击 · N 技能）”那一段的 buff 文案。
@@ -192,7 +196,11 @@ func has_lifesteal() -> bool:
 
 ## 把所有 agent buff 和所有技能上的同名数值加起来。
 ## 用属性名字符串索引，加技能时只要往 SkillCatalog 的表里补一行就行。
-func _sum(prop: String) -> float:
+##
+## 公开是因为表驱动的效果派发（CombatResolver.ON_HIT_STATUSES）只有字段名，
+## 拿不到对应的 stacked_xxx 具名方法。手写的调用点仍然走下面那些具名包装，
+## 它们有类型、也好搜。
+func stacked(prop: String) -> float:
 	var total := 0.0
 	for buff in agent_buffs:
 		total += float(buff.get(prop))

@@ -8,37 +8,57 @@ const ICON_DIR := "res://assets/icons/"
 ## 每场随机抽几张技能，不是每次都发满——同一个人连着当擂主，
 ## 手里的牌也会一场松一场紧，观感上每场都不一样。
 ## 擂主以一敌众，区间整体比挑战者高一档，这是他扛住车轮战的主要本钱。
-const CHAMPION_SKILL_MIN := 5
+const CHAMPION_SKILL_MIN := 6
 const CHAMPION_SKILL_CAP := 8
 const CHALLENGER_SKILL_MIN := 2
 const CHALLENGER_SKILL_CAP := 4
-## 中毒 / 麻痹 / 混乱 / 定身的触发概率，四个状态技共用一个值。
-const STATUS_CHANCE := 0.10
+## 中毒 / 麻痹 / 混乱的触发概率，三个状态技共用一个值。
+const STATUS_CHANCE := 0.20
+## 暴击 / 命中 / 增伤 / 闪避 / 减伤 / 绝对防御。
+const SELF_BUFF_CHANCE := 0.10
+## 图标边框五族。烘焙和测试都读这一份，避免边框颜色各写各的。
+const FAMILY_SELF := "self"
+const FAMILY_DEFENSE := "defense"
+const FAMILY_STATUS := "status"
+const FAMILY_RECOVER := "recover"
+const FAMILY_TECHNIQUE := "technique"
+const ICON_FAMILIES := {
+	FAMILY_SELF: ["skill_crit", "skill_hit", "skill_dmg"],
+	FAMILY_DEFENSE: ["skill_dodge", "skill_dr", "skill_guard"],
+	FAMILY_STATUS: ["skill_poison", "skill_paralyze", "skill_confuse"],
+	FAMILY_RECOVER: ["skill_rebirth", "skill_lifesteal", "skill_heal"],
+	FAMILY_TECHNIQUE: ["skill_triple", "skill_double", "skill_assassinate", "skill_lingbo", "skill_counter"],
+}
 
 ## 渠道专属 buff 的数值区间：每场随机落在 5%~10% 之间。
 const AGENT_BUFF_MIN := 0.05
 const AGENT_BUFF_MAX := 0.10
 
-## 技能池的数据表：[id, 名字, 说明, 生效字段, 数值]。
-## 生效字段是 SkillDef 上的属性名，和 Fighter._sum(prop) 用的是同一套名字——
+## 技能池的数据表：[id, 名字, 说明模板, 生效字段, 数值]。
+## 生效字段是 SkillDef 上的属性名，和 Fighter.stacked(prop) 用的是同一套名字——
 ## 加一个技能只要在这里补一行，不用动任何结算代码。
+##
+## 说明里**不许写死数字**，一律用 {占位符}（见 _describe）。这些数字有一半是
+## CombatResolver 里被蒙特卡洛标定过的常量，写死的话重标定一次 tooltip 就开始撒谎。
+## {pct} 是这一行自己的数值，其余占位符指向结算器里的对应常量。
 const POOL_SPECS := [
-	["skill_crit", "暴击+", "增加暴击概率 5%", "crit_chance", 0.05],
-	["skill_dodge", "闪避+", "增加闪避 5%", "dodge_bonus", 0.05],
-	["skill_hit", "命中+", "增加命中 5%", "accuracy_bonus", 0.05],
-	["skill_dr", "减伤+", "减伤 5%", "damage_reduction", 0.05],
-	["skill_dmg", "增伤+", "增伤 5%", "damage_bonus", 0.05],
-	["skill_double", "二连击", "10% 概率额外出手一次", "double_chance", 0.10],
-	["skill_triple", "三连击", "5% 概率额外出手两次", "triple_chance", 0.05],
-	["skill_root", "定身", "命中后 10% 打断目标下一次行动", "root_chance", STATUS_CHANCE],
-	["skill_poison", "中毒", "命中后 10% 使目标中毒 3 回合", "poison_chance", STATUS_CHANCE],
-	["skill_paralyze", "麻痹", "命中后 10% 麻痹目标 3 回合", "paralyze_chance", STATUS_CHANCE],
-	["skill_confuse", "混乱", "命中后 10% 使目标混乱 3 回合", "confuse_chance", STATUS_CHANCE],
-	["skill_guard", "绝对防御", "5% 触发时减免一切伤害", "guard_chance", 0.05],
+	["skill_crit", "暴击+", "增加暴击概率 {pct}", "crit_chance", SELF_BUFF_CHANCE],
+	["skill_dodge", "闪避+", "增加闪避 {pct}", "dodge_bonus", SELF_BUFF_CHANCE],
+	["skill_hit", "命中+", "增加命中 {pct}", "accuracy_bonus", SELF_BUFF_CHANCE],
+	["skill_dr", "减伤+", "减伤 {pct}", "damage_reduction", SELF_BUFF_CHANCE],
+	["skill_dmg", "增伤+", "增伤 {pct}", "damage_bonus", SELF_BUFF_CHANCE],
+	["skill_double", "二连击", "{pct} 概率额外出手一次", "double_chance", 0.20],
+	["skill_triple", "三连击", "{pct} 概率额外出手两次", "triple_chance", 0.10],
+	["skill_poison", "中毒", "命中后 {pct} 使目标中毒 {turns} 回合", "poison_chance", STATUS_CHANCE],
+	["skill_paralyze", "麻痹", "命中后 {pct} 麻痹目标 {turns} 回合", "paralyze_chance", STATUS_CHANCE],
+	["skill_confuse", "混乱", "命中后 {pct} 使目标混乱 {turns} 回合，每次行动 {confuse_self} 打自己", "confuse_chance", STATUS_CHANCE],
+	["skill_guard", "绝对防御", "{pct} 触发时减免一切伤害，且不附加任何效果", "guard_chance", SELF_BUFF_CHANCE],
 	["skill_rebirth", "浴火重生", "死亡后满血复活一次，随后报废", "rebirth", true],
-	["skill_counter", "反击", "被命中后 10% 反击一次", "counter_chance", 0.10],
-	["skill_lifesteal", "吸血", "命中后按伤害吸血：擂主 30%，挑战者 50%", "lifesteal", true],
-	["skill_heal", "治疗", "攻击后回血：擂主 10% 回 5% 生命，挑战者 15% 回 10% 生命", "heal_chance", 0.10],
+	["skill_counter", "反击", "被命中后 {pct} 反击一次", "counter_chance", 0.20],
+	["skill_lifesteal", "吸血", "命中后按伤害吸血：擂主 {lifesteal_champion}，挑战者 {lifesteal_challenger}", "lifesteal", true],
+	["skill_heal", "治疗", "攻击后回血：擂主 {heal_chance_champion} 回 {heal_share_champion} 生命，挑战者 {heal_chance_challenger} 回 {heal_share_challenger} 生命", "heal_chance", 0.20],
+	["skill_assassinate", "幻影刺杀", "非追击时无视闪避：擂主 {assassinate_chance_champion} 秒杀并结算浴火重生，挑战者 {assassinate_chance_challenger} 造成 {assassinate_share_challenger} 最大生命伤害", "assassinate_chance", 0.01],
+	["skill_lingbo", "凌波微步", "非追击被攻击时 {pct} 闪避并立刻反击一次", "lingbo_chance", 0.05],
 ]
 
 ## 渠道 buff 的数据表：channel -> [id, 名字, 生效字段]。
@@ -85,11 +105,41 @@ static func agent_buff_template(channel: String, amount: float = -1.0) -> SkillD
 static func pool() -> Array[SkillDef]:
 	var items: Array[SkillDef] = []
 	for spec in POOL_SPECS:
-		var skill := _make(spec[0], spec[1], spec[2])
+		var skill := _make(spec[0], spec[1], _describe(str(spec[2]), spec[4]))
 		# 表里第 4 项是属性名，第 5 项是值；概率和布尔开关都走这一条路。
 		skill.set(spec[3], spec[4])
 		items.append(skill)
 	return items
+
+
+## 把说明模板补成最终文案。所有数字都从这里注入，模板里一个也不写死。
+##
+## {pct} 是这条技能自己的数值；其余占位符全部指向 CombatResolver 的标定常量，
+## 所以重新标定之后 tooltip 自动跟着变，不会停留在旧数字上。
+## format 会忽略模板里没用到的键，一份字典喂给所有模板就够了。
+static func _describe(template: String, value: Variant) -> String:
+	return template.format({
+		"pct": _percent(value),
+		"turns": CombatResolver.STATUS_TURNS,
+		"lifesteal_champion": _percent(CombatResolver.LIFESTEAL_RATIO_CHAMPION),
+		"lifesteal_challenger": _percent(CombatResolver.LIFESTEAL_RATIO_CHALLENGER),
+		"heal_chance_champion": _percent(CombatResolver.HEAL_CHANCE_CHAMPION),
+		"heal_chance_challenger": _percent(CombatResolver.HEAL_CHANCE_CHALLENGER),
+		"heal_share_champion": _percent(CombatResolver.HEAL_SHARE_CHAMPION),
+		"heal_share_challenger": _percent(CombatResolver.HEAL_SHARE_CHALLENGER),
+		"assassinate_chance_champion": _percent(CombatResolver.ASSASSINATE_CHANCE_CHAMPION),
+		"assassinate_chance_challenger": _percent(CombatResolver.ASSASSINATE_CHANCE_CHALLENGER),
+		"assassinate_share_challenger": _percent(CombatResolver.ASSASSINATE_SHARE_CHALLENGER),
+		"confuse_self": _percent(CombatResolver.CONFUSE_SELF_HIT_CHANCE),
+	})
+
+
+## 比例写成百分数。布尔开关（浴火重生、吸血）没有百分比可言，给空串——
+## 它们的模板本来也不带 {pct}。
+static func _percent(value: Variant) -> String:
+	if typeof(value) == TYPE_BOOL:
+		return ""
+	return "%d%%" % roundi(float(value) * 100.0)
 
 
 ## 图标悬停时显示的两行文字。
@@ -107,6 +157,14 @@ static func _make(id: String, name: String, desc: String) -> SkillDef:
 	skill.description = desc
 	skill.icon_id = id
 	return skill
+
+
+## 图标所属边框族，agent buff 和不在表里的 id 返回空串。
+static func icon_family(icon_id: String) -> String:
+	for family in ICON_FAMILIES:
+		if icon_id in ICON_FAMILIES[family]:
+			return str(family)
+	return ""
 
 
 ## 全部图标 id，测试拿它检查 assets/icons 下有没有漏图。

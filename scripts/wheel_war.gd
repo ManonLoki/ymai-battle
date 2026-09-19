@@ -68,27 +68,26 @@ func remaining_including_current() -> int:
 	return waiting.size() + active_opponent_count()
 
 
-## 推进一个回合：擂主先手，挑战者还活着就还手。
+## 推进一个回合：挑战者永远先手，擂主还活着就还手。
 func simulate_turn(rng: RollSource) -> Array[StrikeResult]:
 	var events: Array[StrikeResult] = []
 	# 已经打完、或者根本没开起来，就什么都不产出。
 	if outcome != Outcome.ONGOING or champion == null or current_opponent == null:
 		return events
-	# 擂主先手。
-	events.append_array(CombatResolver.resolve_action(champion, current_opponent, champion_hit_chance, rng))
-	# 挑战者被打倒就直接换下一位，这回合到此为止。
-	if not current_opponent.is_alive():
-		_advance_opponent()
-		return events
-	# 擂主可能死在挑战者的反击下。
-	if not champion.is_alive():
-		outcome = Outcome.CHAMPION_DOWN
-		return events
-	# 挑战者还手。
+	# 挑战者永远先手。
 	events.append_array(CombatResolver.resolve_action(current_opponent, champion, champion_hit_chance, rng))
 	if not champion.is_alive():
 		outcome = Outcome.CHAMPION_DOWN
-	# 挑战者可能死在擂主的反击下，同样要换人。
+		return events
+	# 挑战者可能毒死或自杀，这回合擂主不再打这个人。
+	if not current_opponent.is_alive():
+		_advance_opponent()
+		return events
+	# 擂主还手。
+	events.append_array(CombatResolver.resolve_action(champion, current_opponent, champion_hit_chance, rng))
+	if not champion.is_alive():
+		outcome = Outcome.CHAMPION_DOWN
+	# 挑战者可能死在擂主的出手或反击下，同样要换人。
 	if current_opponent != null and not current_opponent.is_alive():
 		_advance_opponent()
 	return events
@@ -105,9 +104,9 @@ func _champion_buff_edge() -> float:
 	return float(champion.agent_buffs.size()) - float(total) / float(waiting.size())
 
 
-## 擂主这一场的技能张数比挑战者平均多几张。发牌张数每场重掷（擂主 5~8、挑战者 2~4），
+## 擂主这一场的技能张数比挑战者平均多几张。发牌张数每场重掷（擂主 6~8、挑战者 2~4），
 ## 所以这个差值每场都不一样，必须现算——按平均值硬编的话，
-## 擂主手气差只摸到 5 张的那些场次会按“多 3.5 张”被扣命中率，白亏。
+## 擂主手气差只摸到 6 张的那些场次会按“多 3.5 张”被扣命中率，白亏。
 func _champion_skill_edge() -> float:
 	if waiting.is_empty():
 		return 0.0

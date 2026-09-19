@@ -15,6 +15,8 @@ const HEAL_FX := preload("res://scenes/heal_fx.tscn")
 ## buff / 技能图标的边长和间距，_fit_row 算行宽时要用。
 const ICON_PX := 20
 const ICON_GAP := 4
+## 改前暴击粒子数，测试拿它对照“大爆炸”。
+const LEGACY_CRIT_AMOUNT := 28
 
 @onready var sprite: Sprite2D = $Visual/Sprite2D
 @onready var anim_player: AnimationPlayer = $AnimationPlayer
@@ -35,24 +37,54 @@ var _attack_tex: Texture2D
 var _hurt_tex: Texture2D
 ## 节点一开始所在的位置，动画结束后要归位。
 var _home: Vector2 = Vector2.ZERO
-## 暴击的金色粒子。
+## 暴击的金色大爆炸粒子。
 var _crit_fx: CPUParticles2D
-## 中毒的绿色粒子。
+## 中毒的红色粒子（和治疗绿粒子区分开）。
 var _poison_fx: CPUParticles2D
+## 麻痹的黄色粒子。
+var _paralyze_fx: CPUParticles2D
+## 混乱头顶眩晕。
+var _stun_fx: Node2D
+## 幻影刺杀盖在身上的红 X 骷髅。
+var _skull_fx: Node2D
+## 闪避 / 凌波微步的重影容器，不含本体。
+var _afterimages: Node2D
 ## 当前正在跑的染色 Tween。新特效来了要先把旧的 kill 掉，否则颜色会打架。
 var _fx_tween: Tween
+var _stun_tween: Tween
+var _skull_tween: Tween
 
 
 func _ready() -> void:
 	_home = position
 	_build_animations()
-	# 刀光平时藏着，出招动画里才亮一下。
+	# 刀光平时藏着，出招动画里才亮一下。剑形砍向面朝方向（即对手）。
 	slash.visible = false
-	# 两组粒子只建一次，之后反复 restart。
-	_crit_fx = _make_burst(Color(1.0, 0.82, 0.15, 1.0), 28, Vector2(0, 20))
-	_poison_fx = _make_burst(Color(0.35, 0.95, 0.28, 1.0), 16, Vector2(0, 40))
+	slash.polygon = PackedVector2Array([
+		Vector2(10, -4), Vector2(18, -14), Vector2(118, -38), Vector2(136, -8),
+		Vector2(118, 22), Vector2(18, 12), Vector2(10, 4), Vector2(0, 6),
+		Vector2(-8, 2), Vector2(-8, -2), Vector2(0, -6),
+	])
+	slash.color = Color(0.95, 0.95, 1.0, 0.95)
+	# 粒子 / 重影 / 眩晕 / 骷髅只建一次，之后反复 restart。中毒和麻痹共用爆发构建。
+	_crit_fx = CombatFx.make_burst(CombatFx.CRIT_COLOR, CombatFx.CRIT_AMOUNT, Vector2(0, 90), 9.0)
+	_crit_fx.name = "CritFx"
+	_poison_fx = CombatFx.make_burst(CombatFx.POISON_COLOR, CombatFx.STATUS_AMOUNT, Vector2(0, 40))
+	_poison_fx.name = "PoisonFx"
+	_paralyze_fx = CombatFx.make_burst(CombatFx.PARALYZE_COLOR, CombatFx.STATUS_AMOUNT, Vector2(0, 10))
+	_paralyze_fx.name = "ParalyzeFx"
+	_afterimages = Node2D.new()
+	_afterimages.name = "Afterimages"
+	# 重影垫在立绘后面，终点不透明的本体盖在最上面。
+	_afterimages.z_index = -1
+	_stun_fx = CombatFx.make_stun("StunFx")
+	_skull_fx = CombatFx.make_skull("SkullFx")
 	$Visual.add_child(_crit_fx)
 	$Visual.add_child(_poison_fx)
+	$Visual.add_child(_paralyze_fx)
+	$Visual.add_child(_afterimages)
+	$Visual.add_child(_stun_fx)
+	$Visual.add_child(_skull_fx)
 	# 这几个 Label 是场景里摆好的，得单独套上中文字体。
 	for label in [name_label, hp_label, tip_label]:
 		label.add_theme_font_override("font", ThemeHelper.UI_FONT)
@@ -97,6 +129,7 @@ func bind(fighter: Fighter, face_left: bool) -> void:
 	rotation = 0.0
 	position = _home
 	visible = true
+	_hide_transient_fx()
 	if anim_player.has_animation(&"idle"):
 		anim_player.play(&"idle")
 
@@ -194,13 +227,14 @@ func play_idle() -> void:
 		anim_player.play(&"idle")
 
 
-## 出招：换攻击立绘，亮出刀光。
+## 出招：换攻击立绘，亮出从自身砍向对手的剑。
 func play_attack() -> void:
 	sprite.texture = _attack_tex
 	slash.visible = true
 	# 每次都重置刀光的颜色和大小，暴击特效可能把它改过。
-	slash.color = Color(1, 1, 1, 0.85)
+	slash.color = Color(0.95, 0.95, 1.0, 0.95)
 	slash.scale = Vector2.ONE
+	slash.position = Vector2.ZERO
 	if anim_player.has_animation(&"attack"):
 		anim_player.play(&"attack")
 
@@ -218,24 +252,68 @@ func play_death() -> void:
 		anim_player.play(&"death")
 
 
-## 闪避：往后撤一步。
+## 闪避 / 凌波微步：后退约 1 个自身身位，原位到终点叠 3 个当前立绘。
 func play_dodge() -> void:
+	var offset := Vector2(CombatFx.dodge_sprite_offset(), 0.0)
+	CombatFx.spawn_afterimages(sprite, _afterimages, offset)
 	if anim_player.has_animation(&"dodge"):
 		anim_player.play(&"dodge")
+	var fade := create_tween()
+	fade.tween_interval(0.36)
+	fade.tween_callback(func() -> void:
+		if is_instance_valid(_afterimages):
+			NodeUtil.clear_children(_afterimages)
+	)
 
 
-## 暴击特效：金色粒子 + 金色刀光 + 立绘闪一下金。
+## 暴击特效：大爆炸粒子 + 金色刀光 + 立绘闪一下金。
 func play_crit_fx() -> void:
-	_burst(_crit_fx)
+	CombatFx.burst(_crit_fx)
 	slash.visible = true
 	slash.color = Color(1.0, 0.85, 0.2, 0.95)
 	_fx_tween = _restart_tint(Color(1.0, 0.92, 0.35), Color.WHITE, 0.28, true)
 
 
-## 中毒特效：绿色粒子 + 立绘泛绿，而且绿色不会完全褪掉（还在中毒里）。
+## 中毒特效：红色粒子 + 立绘泛红，和治疗绿粒子区分开。
 func play_poison_fx() -> void:
-	_burst(_poison_fx)
-	_fx_tween = _restart_tint(Color(0.45, 1.0, 0.4), Color(0.7, 1.0, 0.65), 0.35, false)
+	CombatFx.burst(_poison_fx)
+	_fx_tween = _restart_tint(Color(1.0, 0.35, 0.32), Color(1.0, 0.7, 0.68), 0.35, false)
+
+
+## 麻痹特效：黄色粒子 + 立绘泛黄。
+func play_paralyze_fx() -> void:
+	CombatFx.burst(_paralyze_fx)
+	_fx_tween = _restart_tint(Color(1.0, 0.95, 0.35), Color(1.0, 0.92, 0.55), 0.35, false)
+
+
+## 混乱特效：头顶眩晕星旋转。
+func play_confuse_fx() -> void:
+	_stun_fx.visible = true
+	_stun_fx.rotation = 0.0
+	if _stun_tween:
+		_stun_tween.kill()
+	_stun_tween = create_tween()
+	_stun_tween.set_loops()
+	_stun_tween.tween_property(_stun_fx, "rotation", TAU, 0.8)
+
+
+## 幻影刺杀：在对方身上盖红色画了 X 的骷髅。
+func play_assassinate_fx() -> void:
+	_skull_fx.visible = true
+	_skull_fx.modulate = Color(1, 1, 1, 1)
+	_skull_fx.scale = Vector2(0.6, 0.6)
+	if _skull_tween:
+		_skull_tween.kill()
+	_skull_tween = create_tween()
+	_skull_tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_skull_tween.tween_property(_skull_fx, "scale", Vector2.ONE, 0.18)
+	_skull_tween.tween_interval(0.45)
+	_skull_tween.tween_property(_skull_fx, "modulate:a", 0.0, 0.2)
+	_skull_tween.tween_callback(func() -> void:
+		if is_instance_valid(_skull_fx):
+			_skull_fx.visible = false
+			_skull_fx.modulate = Color.WHITE
+	)
 
 
 ## 回血特效：一次性粒子场景 + 立绘泛绿后回白。吸血和治疗共用。
@@ -269,32 +347,29 @@ func animation_names() -> PackedStringArray:
 	return PackedStringArray(["idle", "attack", "hurt", "death", "dodge"])
 
 
-## 建一组一次性爆发粒子。grav 决定粒子是往上飘还是往下落。
-func _make_burst(color: Color, amount: int, grav: Vector2) -> CPUParticles2D:
-	var particles := CPUParticles2D.new()
-	particles.emitting = false
-	particles.one_shot = true
-	# 接近 1 表示所有粒子几乎同时喷出，是“爆”不是“流”。
-	particles.explosiveness = 0.94
-	particles.amount = amount
-	particles.lifetime = 0.42
-	particles.direction = Vector2(0, -1)
-	particles.spread = 80.0
-	particles.gravity = grav
-	particles.initial_velocity_min = 50.0
-	particles.initial_velocity_max = 140.0
-	particles.scale_amount_min = 2.0
-	particles.scale_amount_max = 5.0
-	particles.color = color
-	# 跟着节点走，角色移动时粒子不会掉队。
-	particles.local_coords = true
-	return particles
+## 当前显示身宽（像素），闪避位移按它的 1 倍算。
+func displayed_body_width() -> float:
+	return CombatFx.displayed_body_width($Visual.scale.x)
 
 
-## 重新喷一次。restart 会把上一轮还没消失的粒子清掉。
-func _burst(particles: CPUParticles2D) -> void:
-	particles.restart()
-	particles.emitting = true
+## 含本体在内的重影个数。闪避播放后应为 3。
+func dodge_ghost_count() -> int:
+	return 1 + _afterimages.get_child_count()
+
+
+func _hide_transient_fx() -> void:
+	if _afterimages:
+		NodeUtil.clear_children(_afterimages)
+	if _stun_fx:
+		_stun_fx.visible = false
+		_stun_fx.rotation = 0.0
+	if _skull_fx:
+		_skull_fx.visible = false
+		_skull_fx.modulate = Color.WHITE
+	if _stun_tween:
+		_stun_tween.kill()
+	if _skull_tween:
+		_skull_tween.kill()
 
 
 ## 五种动画全部用代码建，场景文件里不存动画数据。
@@ -325,7 +400,7 @@ func _idle_anim() -> Animation:
 	return anim
 
 
-## 出招：前冲 + 微微转身 + 刀光淡入淡出。
+## 出招：前冲 + 微微转身 + 剑从自身砍向对手。
 func _attack_anim() -> Animation:
 	var anim := Animation.new()
 	anim.length = 0.36
@@ -342,12 +417,21 @@ func _attack_anim() -> Animation:
 	anim.track_insert_key(rot_track, 0.0, 0.0)
 	anim.track_insert_key(rot_track, 0.12, 0.18)
 	anim.track_insert_key(rot_track, 0.36, 0.0)
-	# 刀光只在最前面那一下亮。
+	# 剑只在最前面那一下亮，并往对手方向送出去。
 	var slash_track := anim.add_track(Animation.TYPE_VALUE)
 	anim.track_set_path(slash_track, NodePath("Visual/Slash:modulate:a"))
 	anim.track_insert_key(slash_track, 0.0, 0.0)
-	anim.track_insert_key(slash_track, 0.1, 1.0)
+	anim.track_insert_key(slash_track, 0.08, 1.0)
 	anim.track_insert_key(slash_track, 0.36, 0.0)
+	var slash_pos := anim.add_track(Animation.TYPE_VALUE)
+	anim.track_set_path(slash_pos, NodePath("Visual/Slash:position:x"))
+	anim.track_insert_key(slash_pos, 0.0, 0.0)
+	anim.track_insert_key(slash_pos, 0.14, 90.0)
+	anim.track_insert_key(slash_pos, 0.36, 40.0)
+	var slash_vis := anim.add_track(Animation.TYPE_VALUE)
+	anim.track_set_path(slash_vis, NodePath("Visual/Slash:visible"))
+	anim.track_insert_key(slash_vis, 0.0, true)
+	anim.track_insert_key(slash_vis, 0.36, false)
 	return anim
 
 
@@ -369,15 +453,16 @@ func _hurt_anim() -> Animation:
 	return anim
 
 
-## 闪避：往后撤一大步，顺便压扁一点表示发力。
+## 闪避：往后撤约 1 个身位，顺便压扁一点表示发力。
 func _dodge_anim() -> Animation:
 	var anim := Animation.new()
 	anim.length = 0.36
 	anim.loop_mode = Animation.LOOP_NONE
 	var pos_track := anim.add_track(Animation.TYPE_VALUE)
 	anim.track_set_path(pos_track, NodePath("Visual/Sprite2D:position:x"))
+	var dodge_x := CombatFx.dodge_sprite_offset()
 	anim.track_insert_key(pos_track, 0.0, 0.0)
-	anim.track_insert_key(pos_track, 0.12, -72.0)
+	anim.track_insert_key(pos_track, 0.12, dodge_x)
 	anim.track_insert_key(pos_track, 0.36, 0.0)
 	# 关键帧写的是绝对 scale，所以必须和 BASE_SPRITE_SCALE 对得上。
 	var scale_track := anim.add_track(Animation.TYPE_VALUE)

@@ -375,6 +375,8 @@ func _play_event(event: StrikeResult, champion: Fighter, opponent: Fighter) -> v
 		if event.poison_tick:
 			attacker_view.play_poison_fx()
 			attacker_view.set_hp(event.defender_hp_after, attacker.max_hp)
+		elif event.skip_reason == StrikeResult.SKIP_PARALYZE:
+			attacker_view.play_paralyze_fx()
 		_append_log(_event_text(event))
 		if event.revived:
 			attacker_view.play_idle()
@@ -388,10 +390,16 @@ func _play_event(event: StrikeResult, champion: Fighter, opponent: Fighter) -> v
 		return
 	if event.hit:
 		defender_view.set_hp(event.defender_hp_after, defender.max_hp)
+		if event.assassinated:
+			defender_view.play_assassinate_fx()
 		if event.crit:
 			defender_view.play_crit_fx()
 		if event.poisoned:
 			defender_view.play_poison_fx()
+		if event.paralyzed:
+			defender_view.play_paralyze_fx()
+		if event.confused:
+			defender_view.play_confuse_fx()
 		# 复活 / 倒下 / 挡下 / 普通挨打，四种反应互斥。
 		if event.revived:
 			defender_view.play_hurt()
@@ -403,6 +411,7 @@ func _play_event(event: StrikeResult, champion: Fighter, opponent: Fighter) -> v
 		else:
 			defender_view.play_hurt()
 	elif event.dodged:
+		# 普通闪避和凌波微步共用后退 + 重影；凌波的还击是随后那条反击事件上的斩击。
 		defender_view.play_dodge()
 	else:
 		defender_view.play_idle()
