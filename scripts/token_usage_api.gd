@@ -48,6 +48,12 @@ static func transport_error_message(result: int) -> String:
 	return "网络失败（result=%d）" % result
 
 
+## 业务层拒绝可能携带服务端自定义 error，但它属于不可信响应正文，不能直接
+## 显示给用户。这里故意忽略完整 payload，只返回稳定的本地文案。
+static func api_rejection_message(_payload: Dictionary) -> String:
+	return "接口返回失败"
+
+
 ## 拉一次接口。失败时不抛异常，统一用 ok=false + error 文案回报。
 func fetch_usage() -> Dictionary:
 	# HTTPRequest 用完即弃，避免复用时残留上一次的回调。
@@ -78,7 +84,7 @@ func fetch_usage() -> Dictionary:
 	var payload: Dictionary = parsed
 	# 业务层自己还有一个 ok 字段，HTTP 200 不代表接口成功。
 	if not bool(payload.get("ok", false)):
-		return _fail("接口返回失败：%s" % str(payload.get("error", "")))
+		return _fail(api_rejection_message(payload))
 	var data: Variant = payload.get("data", {})
 	if typeof(data) != TYPE_DICTIONARY:
 		return _fail("data 字段缺失")

@@ -2211,6 +2211,11 @@ func _test_api_contract() -> void:
 	_assert(too_large.find("8 MiB") >= 0, "an oversized response produces a visible size-limit error")
 	var redirected := TokenUsageApi.transport_error_message(HTTPRequest.RESULT_REDIRECT_LIMIT_REACHED)
 	_assert(redirected.find("重定向") >= 0 and redirected.find("拒绝") >= 0, "a redirect produces a visible refusal error")
+	var sensitive_server_error := "provider-secret-response-text"
+	var rejected := TokenUsageApi.api_rejection_message({"error": sensitive_server_error, "message": sensitive_server_error})
+	_assert(not rejected.is_empty(), "an API-level rejection produces a stable local error")
+	_assert(rejected.find(sensitive_server_error) < 0, "an API-level rejection never exposes server response text")
+	_assert(api_src.find('payload.get("error"') < 0 and api_src.find('payload.get("message"') < 0, "the API module never reads untrusted server error fields for display")
 	var ranking_src := FileAccess.get_file_as_string("res://scenes/ranking.gd")
 	var battle_src := FileAccess.get_file_as_string("res://scenes/battle.gd")
 	# 两个场景都只认 TokenUsageApi.fetch_ranking 这一个入口；

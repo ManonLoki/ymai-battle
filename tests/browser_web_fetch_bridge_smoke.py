@@ -353,8 +353,17 @@ def main() -> int:
                     stderr=subprocess.PIPE,
                     text=True,
                 )
-                websocket_url = _wait_for_page_target(debug_port, page_url)
-                _wait_for_browser_result(websocket_url)
+                try:
+                    websocket_url = _wait_for_page_target(debug_port, page_url)
+                    _wait_for_browser_result(websocket_url)
+                finally:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=5)
+                    process = None
         finally:
             if process is not None:
                 process.terminate()
