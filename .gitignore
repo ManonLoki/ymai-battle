@@ -2,6 +2,10 @@
 .godot/
 /android/
 
+# Python helper/test caches
+__pycache__/
+*.py[cod]
+
 # 导出产物（体积大，可随时重新导出）
 /Release/
 
