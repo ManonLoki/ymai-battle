@@ -94,8 +94,10 @@ static func make_focus(radius: int = 10) -> StyleBoxFlat:
 
 
 ## 统一的按钮样式。filled=true 是主按钮（实心主色），false 是次级按钮（描边）。
-static func style_button(button: Button, filled: bool = true) -> void:
-	button.custom_minimum_size = BUTTON_MIN_SIZE
+## 尺寸也一并定掉：想要小一号的按钮就传 min_size，别在调用点自己盖一遍，
+## 不然这里以后多加一条样式，那些「只抄走前半句」的页面就跟不上了。
+static func style_button(button: Button, filled: bool = true, min_size: Vector2 = BUTTON_MIN_SIZE) -> void:
+	button.custom_minimum_size = min_size
 	# 电视上靠方向键选按钮，必须能拿焦点。
 	button.focus_mode = Control.FOCUS_ALL
 	button.add_theme_stylebox_override("focus", make_focus(10))
@@ -126,11 +128,9 @@ static func style_line_edit(edit: LineEdit) -> void:
 	edit.add_theme_color_override("caret_color", ACCENT)
 
 
-## 次级“返回”按钮。style_button 会盖上主按钮的最小尺寸，所以必须紧跟着改回来——
-## 把这两步绑在一起，新加的页面就不会只抄走前半句。
+## 次级“返回”按钮：描边样式 + 比主按钮小一圈。
 static func style_back_button(button: Button) -> void:
-	style_button(button, false)
-	button.custom_minimum_size = BACK_BUTTON_MIN_SIZE
+	style_button(button, false, BACK_BUTTON_MIN_SIZE)
 
 
 ## 运行时现造的 Label。四个场景都要按“文字 + 颜色 + 字号”造一堆，

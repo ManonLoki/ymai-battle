@@ -121,12 +121,17 @@ const DESC_CONSTANTS := {
 }
 
 ## 渠道 buff 的数据表：channel -> 配置。字段名和 SPECS 一致（id / name / prop），
-## 多一个 label 用来拼说明；具体数值每场重掷，由 SkillGrant.roll_agent_buff 填进去。
+## 多两个：label 用来拼说明，hit_weight 是这个字段折算成命中当量的权重
+## （取值见 CombatResolver.AGENT_BUFF_WEIGHT_*，反解命中率时按它给擂主的 buff 计价）。
+## 具体数值每场重掷，由 SkillGrant.roll_agent_buff 填进去。
+##
+## **新加一行必须写 hit_weight**：漏了就是 0 当量，这个 buff 等于不用付命中率白拿，
+## 而且悄无声息——测试里有一条断言专门盯着这件事。
 const AGENT_BUFF_SPECS := {
-	AgentChannels.CHANNEL_CODEX: {"id": "buff_codex", "name": "CODEX 暴击", "prop": "crit_chance", "label": "暴击概率"},
-	AgentChannels.CHANNEL_CLAUDE: {"id": "buff_claude", "name": "CLAUDE 命中", "prop": "accuracy_bonus", "label": "命中概率"},
-	AgentChannels.CHANNEL_GROK: {"id": "buff_grok", "name": "GROK 闪避", "prop": "dodge_bonus", "label": "闪避概率"},
-	AgentChannels.CHANNEL_WORKBUDDY: {"id": "buff_workbuddy", "name": "WORKBUDDY 减伤", "prop": "damage_reduction", "label": "减伤"},
+	AgentChannels.CHANNEL_CODEX: {"id": "buff_codex", "name": "CODEX 暴击", "prop": "crit_chance", "label": "暴击概率", "hit_weight": CombatResolver.AGENT_BUFF_WEIGHT_CRIT},
+	AgentChannels.CHANNEL_CLAUDE: {"id": "buff_claude", "name": "CLAUDE 命中", "prop": "accuracy_bonus", "label": "命中概率", "hit_weight": CombatResolver.AGENT_BUFF_WEIGHT_HIT},
+	AgentChannels.CHANNEL_GROK: {"id": "buff_grok", "name": "GROK 闪避", "prop": "dodge_bonus", "label": "闪避概率", "hit_weight": CombatResolver.AGENT_BUFF_WEIGHT_HIT},
+	AgentChannels.CHANNEL_WORKBUDDY: {"id": "buff_workbuddy", "name": "WORKBUDDY 减伤", "prop": "damage_reduction", "label": "减伤", "hit_weight": CombatResolver.AGENT_BUFF_WEIGHT_REDUCTION},
 }
 
 ## id -> 在 SPECS 里的行号，查表 O(1)。
@@ -185,13 +190,17 @@ static func _from_spec(rank: int) -> SkillDef:
 
 
 ## 技能和渠道 buff 共用的建法：图标文件名和 id 同名，数值按 prop 写进去。
+## prop 和 hit_weight 也一并记在技能上，结算时就不用回头查表。
+## 技能牌的表里没有 hit_weight 这一列，留 0——它们按张计价，不走命中当量。
 static func _build(spec: Dictionary, value: Variant, description: String) -> SkillDef:
 	var skill := SkillDef.new()
 	skill.id = str(spec["id"])
 	skill.display_name = str(spec["name"])
 	skill.description = description
 	skill.icon_id = skill.id
-	skill.set(str(spec["prop"]), value)
+	skill.prop = str(spec["prop"])
+	skill.hit_weight = float(spec.get("hit_weight", 0.0))
+	skill.set(skill.prop, value)
 	return skill
 
 

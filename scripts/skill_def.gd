@@ -15,6 +15,12 @@ extends Resource
 @export var description: String = ""
 ## 对应 assets/icons/<icon_id>.png，空字符串表示不挂图标。
 @export var icon_id: String = ""
+## 这条定义写的是下面哪个字段（SkillCatalog 建它时按配置表填），空字符串表示没写任何字段。
+## 有了它就不用反过来遍历所有字段猜「这条 buff 到底加的是什么」。
+@export var prop: String = ""
+## prop 上每 1 点数值折算成多少命中当量，只有 agent buff 有；
+## 技能牌按张计价（CombatResolver.CHAMPION_SKILL_EDGE_PER_SKILL），所以留 0。
+@export var hit_weight: float = 0.0
 
 ## 暴击概率，命中后单独掷一次，中了伤害 ×CRIT_MULTIPLIER。
 @export var crit_chance: float = 0.0

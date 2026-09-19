@@ -22,7 +22,7 @@ static func read_dict(path: String) -> Dictionary:
 
 
 ## 往一份存档里合并几个字段，其余字段原样保留，然后整份写回。
-## settings.json 现在同时装着窗口模式和服务器地址，谁存自己那一项
+## settings.json 同时装着窗口模式和服务器地址（见 AppSettings），谁存自己那一项
 ## 都不该把别人的抹掉——所以存设置一律走这里，别再直接 write_dict。
 static func patch_dict(path: String, patch: Dictionary) -> bool:
 	var data := read_dict(path)

@@ -38,21 +38,8 @@ const CHAMPION_ENDURANCE_EDGE_BASE := 2
 const CHAMPION_ENDURANCE_EDGE_PER_CHALLENGER := 0.008
 const CHAMPION_ENDURANCE_EDGE_CAP := 0.030
 
-## agent buff 折算成命中当量时，各字段值多少。命中 / 闪避是直接加减命中率的，
-## 算一比一；暴击和减伤走的是伤害（暴击 ×2 相当于期望伤害 ×(1+p)，减伤 ×(1-p)），
-## 换算成“多打掉 / 少挨下几次”只值半个命中，所以按 0.5 折。
-##
-## 以前这里只数 buff 的**个数**，因为数值区间窄（5%~10%），哪种 buff 都差不多值钱。
-## 区间放宽到 5%~20% 之后，一个 20% 的闪避和一个 5% 的暴击差了三四倍，
-## 再按个数计价的话，手里全是闪避的那一边就白赚一截胜率。
-const AGENT_BUFF_HIT_WEIGHT := {
-	"accuracy_bonus": 1.0,
-	"dodge_bonus": 1.0,
-	"crit_chance": 0.5,
-	"damage_reduction": 0.5,
-}
-
 ## 擂主的 buff 命中当量每比挑战者平均高 1 点，命中率就让出这么多。
+## 「命中当量」怎么算见下面那三个权重常量（AGENT_BUFF_WEIGHT_*）。
 ## 多开几个 agent、或者掷到更高的数值，才不会变成白嫖胜率。
 ## 由 tests 里的蒙特卡洛回归标定，改 buff 区间或权重都要重新跑。
 const AGENT_BUFF_HIT_EDGE := 0.550
@@ -87,6 +74,24 @@ const ON_HIT_STATUSES := [
 
 ## 暴击伤害倍率。
 const CRIT_MULTIPLIER := 2.0
+
+## agent buff 折算成「命中当量」的权重。每条 buff 的权重写在
+## SkillCatalog.AGENT_BUFF_SPECS 的行里，取值就是下面这几个常量。
+##
+## 以前擂主的 buff 优势只数**个数**，因为数值区间窄（5%~10%），哪种 buff 都差不多
+## 值钱。区间放宽到 5%~20% 之后，一个 20% 的闪避和一个 5% 的暴击差了三四倍，
+## 再按个数计价，手里全是闪避的那一边就白赚一截胜率。
+##
+## 命中 / 闪避直接加减命中率，一比一。
+const AGENT_BUFF_WEIGHT_HIT := 1.0
+## 伤害口径折算成命中当量的系数：伤害多打 / 少挨一成，大约值半次命中——
+## 它只缩短自己这一侧的血条，另一侧照旧，所以不是一比一。由蒙特卡洛标定。
+const AGENT_BUFF_WEIGHT_PER_DAMAGE := 0.5
+## 暴击：每 1 点暴击率让期望伤害涨 (CRIT_MULTIPLIER - 1)，再按上面的系数折成当量。
+## 写成推导式是为了让暴击倍率和它的定价绑在一起——调倍率这里自动跟着变。
+const AGENT_BUFF_WEIGHT_CRIT := (CRIT_MULTIPLIER - 1.0) * AGENT_BUFF_WEIGHT_PER_DAMAGE
+## 减伤：每 1 点减伤就少挨 1 点伤害，和暴击倍率无关，所以直接就是那个系数。
+const AGENT_BUFF_WEIGHT_REDUCTION := AGENT_BUFF_WEIGHT_PER_DAMAGE
 
 ## 混乱状态下打到自己的概率，剩下一半照常打对面。
 const CONFUSE_SELF_HIT_CHANCE := 0.5
@@ -234,13 +239,17 @@ static func probit(p: float) -> float:
 	return 1.2517 * x + 0.371 * x * x * x
 
 
-## 一身 agent buff 折算成多少命中当量。按 AGENT_BUFF_HIT_WEIGHT 把各字段加权求和，
-## 掷出来的真实数值直接参与，所以手气好掷到高数值的那一场也会如实计价。
+## 一身 agent buff 折算成多少命中当量。每条 buff 自己带着「写的是哪个字段」和
+## 「这个字段值多少当量」（SkillCatalog 建它的时候写进去的），所以这里只要
+## 取一次值乘一次权重。掷出来的真实数值直接参与，手气好的那一场也会如实计价。
 static func agent_buff_hit_value(buffs: Array[SkillDef]) -> float:
 	var total := 0.0
 	for buff in buffs:
-		for prop in AGENT_BUFF_HIT_WEIGHT:
-			total += float(buff.get(prop)) * float(AGENT_BUFF_HIT_WEIGHT[prop])
+		# 技能牌的权重是 0（它们按张计价，见 CHAMPION_SKILL_EDGE_PER_SKILL），
+		# 空技能连 prop 都没有，两种都不参与当量。
+		if buff.hit_weight == 0.0 or buff.prop.is_empty():
+			continue
+		total += float(buff.get(buff.prop)) * buff.hit_weight
 	return total
 
 

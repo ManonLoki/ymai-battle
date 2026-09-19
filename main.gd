@@ -15,7 +15,7 @@ func _ready() -> void:
 	ThemeHelper.apply(self, 22)
 	# 主菜单是唯一的启动入口，所以上次选的窗口模式在这里应用一次就够了，
 	# 从设置页返回时顺带再确认一遍，代价只是一次幂等的 DisplayServer 调用。
-	WindowSettings.apply(WindowSettings.load_mode())
+	AppSettings.apply_mode(AppSettings.load_mode())
 	_style()
 	%RankingButton.pressed.connect(_on_ranking_pressed)
 	%BattleButton.pressed.connect(_on_battle_pressed)

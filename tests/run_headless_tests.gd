@@ -207,11 +207,8 @@ func _test_buff_per_agent() -> void:
 	_assert(buffs.size() == 3, "a three-agent player gets three buffs")
 	var buff_amounts := {}
 	for b in buffs:
-		# 每个渠道写的是不同字段，取它们各自的那一个。
-		for prop in ["crit_chance", "dodge_bonus", "accuracy_bonus", "damage_reduction"]:
-			var v: float = b.get(prop)
-			if v > 0.0:
-				buff_amounts[snappedf(v, 0.000001)] = true
+		# 每条 buff 自己记着写的是哪个字段，直接取那一个。
+		buff_amounts[snappedf(float(b.get(b.prop)), 0.000001)] = true
 	_assert(buff_amounts.size() > 1, "one player's several buffs are rolled independently")
 
 	var triple := Fighter.from_ranked(many, true)
@@ -242,6 +239,30 @@ func _test_buff_per_agent() -> void:
 	SkillGrant.apply(stranger, RollSource.new(1))
 	_assert(stranger.agent_buffs.is_empty(), "an unknown channel grants no buff")
 	_assert(stranger.stacked_crit() >= 0.0, "an unknown channel still resolves cleanly")
+
+	# 配置表里每一行都得给出命中当量的权重：漏写就是 0 当量，这个 buff 不用付
+	# 命中率就白拿，而且是悄悄地白拿，只有这条断言会喊。
+	var probe := SkillDef.new()
+	for channel in SkillCatalog.AGENT_BUFF_SPECS:
+		var spec: Dictionary = SkillCatalog.AGENT_BUFF_SPECS[channel]
+		var priced := str(spec["prop"])
+		_assert(probe.get(priced) != null, "%s writes a real SkillDef field (%s)" % [channel, priced])
+		_assert(float(spec.get("hit_weight", 0.0)) > 0.0, "%s's %s is priced above zero" % [channel, priced])
+		# 建出来的 buff 自己带着这两样，结算时不用回头查表。
+		var built := SkillCatalog.agent_buff_template(channel, 0.1)
+		_assert(built.prop == priced and is_equal_approx(built.hit_weight, float(spec["hit_weight"])), "%s carries its own prop and weight" % channel)
+	# 技能牌不走命中当量，按张计价，所以权重留 0。
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_crit").hit_weight, 0.0), "skill cards carry no hit weight")
+	# 当量就是按权重加权求和：闪避一比一，暴击按 (CRIT_MULTIPLIER-1) 折半。
+	var weighed: Array[SkillDef] = [
+		SkillCatalog.agent_buff_template(AgentChannels.CHANNEL_GROK, 0.2),
+		SkillCatalog.agent_buff_template(AgentChannels.CHANNEL_CODEX, 0.2),
+	]
+	var crit_share := 0.2 * (CombatResolver.CRIT_MULTIPLIER - 1.0) * CombatResolver.AGENT_BUFF_WEIGHT_PER_DAMAGE
+	_assert(is_equal_approx(CombatResolver.agent_buff_hit_value(weighed), 0.2 + crit_share), "hit value is the weighted sum of what was actually rolled")
+	# 空技能和技能牌都不该往当量里掺东西。
+	var unpriced: Array[SkillDef] = [SkillCatalog.none_buff(), SkillCatalog.by_id("skill_crit")]
+	_assert(is_equal_approx(CombatResolver.agent_buff_hit_value(unpriced), 0.0), "cards and the empty skill add no hit value")
 
 
 ## 数字紧凑写法：按大小自动挂 K / M / B，四舍五入到小数点后两位。
@@ -1215,28 +1236,28 @@ func _test_win_rate_regression() -> void:
 func _test_settings() -> void:
 	# 存取：写进临时文件再读回来，三种模式都要能原样往返。
 	var path := "user://test_settings.json"
-	for mode in WindowSettings.MODES:
-		WindowSettings.save_mode(mode, path)
-		_assert(WindowSettings.load_mode(path) == mode, "window mode %s survives a save/load round trip" % WindowSettings.display_name(mode))
+	for mode in AppSettings.MODES:
+		AppSettings.save_mode(mode, path)
+		_assert(AppSettings.load_mode(path) == mode, "window mode %s survives a save/load round trip" % AppSettings.mode_display_name(mode))
 	# 存档没有 / 坏了 / 是个没见过的值，都回落到默认，绝不让游戏开不起来。
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
-	_assert(WindowSettings.load_mode(path) == WindowSettings.DEFAULT_MODE, "a missing settings file falls back to the default mode")
+	_assert(AppSettings.load_mode(path) == AppSettings.DEFAULT_MODE, "a missing settings file falls back to the default mode")
 	var junk := FileAccess.open(path, FileAccess.WRITE)
 	junk.store_string("not json at all")
 	junk.close()
-	_assert(WindowSettings.load_mode(path) == WindowSettings.DEFAULT_MODE, "a corrupt settings file falls back to the default mode")
-	WindowSettings.save_mode(999, path)
-	_assert(WindowSettings.load_mode(path) == WindowSettings.DEFAULT_MODE, "an unknown mode value falls back to the default mode")
+	_assert(AppSettings.load_mode(path) == AppSettings.DEFAULT_MODE, "a corrupt settings file falls back to the default mode")
+	AppSettings.save_mode(999, path)
+	_assert(AppSettings.load_mode(path) == AppSettings.DEFAULT_MODE, "an unknown mode value falls back to the default mode")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 	# 只有窗口模式带边框，另外两种都是无边框的沉浸式。
-	_assert(WindowSettings.has_border(WindowSettings.Mode.WINDOWED), "windowed keeps the system border")
-	_assert(not WindowSettings.has_border(WindowSettings.Mode.MAXIMIZED), "maximized is borderless")
-	_assert(not WindowSettings.has_border(WindowSettings.Mode.FULLSCREEN), "fullscreen is borderless")
+	_assert(AppSettings.has_border(AppSettings.Mode.WINDOWED), "windowed keeps the system border")
+	_assert(not AppSettings.has_border(AppSettings.Mode.MAXIMIZED), "maximized is borderless")
+	_assert(not AppSettings.has_border(AppSettings.Mode.FULLSCREEN), "fullscreen is borderless")
 	# 三种模式各自映射到不同的 DisplayServer 窗口模式。
-	_assert(WindowSettings.window_mode_for(WindowSettings.Mode.WINDOWED) == DisplayServer.WINDOW_MODE_WINDOWED, "windowed maps to WINDOW_MODE_WINDOWED")
-	_assert(WindowSettings.window_mode_for(WindowSettings.Mode.MAXIMIZED) == DisplayServer.WINDOW_MODE_MAXIMIZED, "maximized maps to WINDOW_MODE_MAXIMIZED")
-	_assert(WindowSettings.window_mode_for(WindowSettings.Mode.FULLSCREEN) == DisplayServer.WINDOW_MODE_FULLSCREEN, "fullscreen maps to WINDOW_MODE_FULLSCREEN")
+	_assert(AppSettings.window_mode_for(AppSettings.Mode.WINDOWED) == DisplayServer.WINDOW_MODE_WINDOWED, "windowed maps to WINDOW_MODE_WINDOWED")
+	_assert(AppSettings.window_mode_for(AppSettings.Mode.MAXIMIZED) == DisplayServer.WINDOW_MODE_MAXIMIZED, "maximized maps to WINDOW_MODE_MAXIMIZED")
+	_assert(AppSettings.window_mode_for(AppSettings.Mode.FULLSCREEN) == DisplayServer.WINDOW_MODE_FULLSCREEN, "fullscreen maps to WINDOW_MODE_FULLSCREEN")
 
 	# 场景本身：三个模式按钮是按 MODES 现生成的，加一种模式不用改界面。
 	var packed := load("res://settings.tscn") as PackedScene
@@ -1251,11 +1272,11 @@ func _test_settings() -> void:
 	for child in list.get_children():
 		if child is Button:
 			buttons += 1
-	_assert(buttons == WindowSettings.MODES.size(), "every window mode gets a button (%d)" % buttons)
+	_assert(buttons == AppSettings.MODES.size(), "every window mode gets a button (%d)" % buttons)
 	# 服务器那一栏：输入框 + 保存 + 还原默认 + 一行说明当前用的是哪台。
 	var input := scene.get_node_or_null("%ServerInput") as LineEdit
 	_assert(input != null, "Settings has a server address field")
-	_assert(input.placeholder_text == ServerSettings.PLACEHOLDER, "the field shows the expected protocol://host:port/ form")
+	_assert(input.placeholder_text == AppSettings.SERVER_PLACEHOLDER, "the field shows the expected protocol://host:port/ form")
 	_assert(scene.get_node_or_null("%ServerSave") != null, "Settings has a save button for the server address")
 	_assert(scene.get_node_or_null("%ServerReset") != null, "Settings can restore the default server")
 	var status := scene.get_node_or_null("%ServerStatus") as Label
@@ -1270,46 +1291,45 @@ func _test_server_settings() -> void:
 	# 合法写法：带端口 / 不带端口 / 结尾斜杠 / 大写协议 / IPv6 / 首尾空白。
 	for text in ["http://192.168.1.10:8080/", "https://example.com", "HTTP://Example.com:80/",
 			"http://[::1]:9000", "  https://localhost:3000/  ", "http://box-1.lan:8000"]:
-		_assert(ServerSettings.is_valid(text), "%s is a usable base url" % text)
+		_assert(not AppSettings.normalize_base_url(text).is_empty(), "%s is a usable base url" % text)
 	# 不合法：空、缺协议、别的协议、带路径或查询串、端口越界、缺主机。
 	for text in ["", "   ", "example.com:8080", "ftp://example.com", "http://example.com/api/v1",
 			"http://example.com?x=1", "http://example.com:70000", "http://example.com:0", "http://:8080"]:
-		_assert(not ServerSettings.is_valid(text), "%s is rejected" % text)
+		_assert(AppSettings.normalize_base_url(text).is_empty(), "%s is rejected" % text)
 	# 规范化：去首尾空白、去结尾斜杠、协议小写，主机原样留着。
-	_assert(ServerSettings.normalize("  HTTPS://Example.com:8443/ ") == "https://Example.com:8443", "normalize trims, lowercases the scheme and drops the trailing slash")
-	_assert(ServerSettings.normalize("http://10.0.0.2:8080") == "http://10.0.0.2:8080", "an already normal base url survives unchanged")
-	_assert(ServerSettings.normalize("nonsense") == "", "an unusable base url normalizes to the empty string")
+	_assert(AppSettings.normalize_base_url("  HTTPS://Example.com:8443/ ") == "https://Example.com:8443", "normalize trims, lowercases the scheme and drops the trailing slash")
+	_assert(AppSettings.normalize_base_url("http://10.0.0.2:8080") == "http://10.0.0.2:8080", "an already normal base url survives unchanged")
+	_assert(AppSettings.normalize_base_url("nonsense") == "", "an unusable base url normalizes to the empty string")
 
 	var path := "user://test_server.json"
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
-	_assert(ServerSettings.load_base_url(path) == "", "no save file means no override")
-	_assert(not ServerSettings.has_override(path), "and the default server is in use")
-	ServerSettings.save_base_url("http://10.0.0.2:8000/", path)
-	_assert(ServerSettings.load_base_url(path) == "http://10.0.0.2:8000", "a saved base url comes back normalized")
-	_assert(ServerSettings.has_override(path), "a saved base url counts as an override")
+	_assert(AppSettings.load_base_url(path) == "", "no save file means no override")
+	_assert(TokenUsageApi.usage_url(AppSettings.load_base_url(path)) == TokenUsageApi.DEFAULT_USAGE_URL, "and the default server is in use")
+	AppSettings.save_base_url("http://10.0.0.2:8000/", path)
+	_assert(AppSettings.load_base_url(path) == "http://10.0.0.2:8000", "a saved base url comes back normalized")
+	_assert(TokenUsageApi.usage_url(AppSettings.load_base_url(path)).begins_with("http://10.0.0.2:8000"), "a saved base url is the one actually requested")
 	# 还原：清掉之后又回到默认。
-	ServerSettings.clear(path)
-	_assert(ServerSettings.load_base_url(path) == "" and not ServerSettings.has_override(path), "clearing restores the default server")
+	AppSettings.clear_base_url(path)
+	_assert(AppSettings.load_base_url(path) == "", "clearing restores the default server")
 	# 存个不合法的进去等于清掉，绝不会把坏地址留在存档里。
-	ServerSettings.save_base_url("http://10.0.0.2:8000", path)
-	ServerSettings.save_base_url("garbage", path)
-	_assert(ServerSettings.load_base_url(path) == "", "saving an unusable base url clears the override")
+	AppSettings.save_base_url("http://10.0.0.2:8000", path)
+	AppSettings.save_base_url("garbage", path)
+	_assert(AppSettings.load_base_url(path) == "", "saving an unusable base url clears the override")
 	# 手工写脏数据进存档，读出来也当没设过。
-	JsonStore.write_dict(path, {ServerSettings.BASE_URL_KEY: "://oops"})
-	_assert(ServerSettings.load_base_url(path) == "", "a corrupt saved value falls back to the default server")
+	JsonStore.write_dict(path, {AppSettings.BASE_URL_KEY: "://oops"})
+	_assert(AppSettings.load_base_url(path) == "", "a corrupt saved value falls back to the default server")
 	# 两项设置共用一份存档，谁都不许把对方冲掉。
-	WindowSettings.save_mode(WindowSettings.Mode.FULLSCREEN, path)
-	ServerSettings.save_base_url("https://box.lan:9443", path)
-	_assert(WindowSettings.load_mode(path) == WindowSettings.Mode.FULLSCREEN, "saving the server address keeps the window mode")
-	WindowSettings.save_mode(WindowSettings.Mode.WINDOWED, path)
-	_assert(ServerSettings.load_base_url(path) == "https://box.lan:9443", "saving the window mode keeps the server address")
+	AppSettings.save_mode(AppSettings.Mode.FULLSCREEN, path)
+	AppSettings.save_base_url("https://box.lan:9443", path)
+	_assert(AppSettings.load_mode(path) == AppSettings.Mode.FULLSCREEN, "saving the server address keeps the window mode")
+	AppSettings.save_mode(AppSettings.Mode.WINDOWED, path)
+	_assert(AppSettings.load_base_url(path) == "https://box.lan:9443", "saving the window mode keeps the server address")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 	# 最后一环：基址怎么变成真正请求的地址。
 	_assert(TokenUsageApi.usage_url("") == TokenUsageApi.DEFAULT_USAGE_URL, "no override means the built-in endpoint")
 	_assert(TokenUsageApi.usage_url("http://10.0.0.2:8000") == "http://10.0.0.2:8000" + TokenUsageApi.USAGE_PATH, "an override keeps the endpoint path")
 	_assert(TokenUsageApi.DEFAULT_USAGE_URL.ends_with(TokenUsageApi.USAGE_PATH), "both servers are asked for the same path")
-	_assert(ServerSettings.SAVE_PATH == WindowSettings.SAVE_PATH, "both settings live in one save file")
 
 
 ## 主菜单：三个按钮都在，且能切到对应场景。
@@ -1337,7 +1357,7 @@ func _test_main_menu() -> void:
 	_assert(ranking_script.find("ranking.tscn") >= 0, "Main can switch to Ranking")
 	_assert(ranking_script.find("battle.tscn") >= 0, "Main can switch to Battle")
 	_assert(ranking_script.find("settings.tscn") >= 0, "Main can switch to Settings")
-	_assert(ranking_script.find("WindowSettings.apply") >= 0, "Main applies the saved window mode on launch")
+	_assert(ranking_script.find("AppSettings.apply") >= 0, "Main applies the saved window mode on launch")
 
 	# 主场景角落显示版本号，取自 project.godot，不写死在界面里。
 	var configured := str(ProjectSettings.get_setting("application/config/version", ""))
