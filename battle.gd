@@ -53,8 +53,19 @@ func _ready() -> void:
 	result_box.set_border_width_all(2)
 	result_box.border_color = ThemeHelper.CARD
 	%ResultPanel.add_theme_stylebox_override("panel", result_box)
-	%RecordPanel.add_theme_stylebox_override("panel", ThemeHelper.make_flat(ThemeHelper.PANEL, 10))
+	# 底部两块信息板共用轻薄的半透明底，让卷轴背景能透出来；弱描边只负责
+	# 在高亮场景里勾出边界，不再用大面积深色遮住画面。
+	%RecordPanel.add_theme_stylebox_override("panel", _make_translucent_hud_panel())
+	var log_box := _make_translucent_hud_panel()
+	log_box.content_margin_left = 14
+	log_box.content_margin_right = 14
+	log_box.content_margin_top = 10
+	log_box.content_margin_bottom = 10
+	%Log.add_theme_stylebox_override("normal", log_box)
 	%RecordTitle.add_theme_color_override("font_color", ThemeHelper.MUTED)
+	# 透明底板会随背景明暗变化，2px 深色字边保证战报和榜单标题始终清楚。
+	_style_text_on_translucent_panel(%Log)
+	_style_text_on_translucent_panel(%RecordTitle)
 	# 先读一次当天战绩。_record 还是 null，所以这一句就是首次加载；
 	# 之后跨天再调它，换成新一天的。
 	_sync_record_to_today()
@@ -64,6 +75,21 @@ func _ready() -> void:
 	if skip_autoload:
 		return
 	await _round_loop()
+
+
+## 战报和战绩榜的统一玻璃底板。独立造两份 StyleBox，避免之后调整战报内边距时
+## 连带改变 RecordPanel 自己的布局。
+func _make_translucent_hud_panel() -> StyleBoxFlat:
+	var box := ThemeHelper.make_flat(Color(ThemeHelper.PANEL, 0.56), 10)
+	box.set_border_width_all(1)
+	box.border_color = Color(ThemeHelper.ACCENT, 0.26)
+	return box
+
+
+## 半透明底板上的固定文字都套同一层深色描边；动态榜单行由 RecordBoard 自己套。
+func _style_text_on_translucent_panel(control: Control) -> void:
+	control.add_theme_color_override("font_outline_color", Color(ThemeHelper.BG, 0.96))
+	control.add_theme_constant_override("outline_size", 2)
 
 
 func _notification(what: int) -> void:
@@ -202,6 +228,9 @@ func _fail_round(status_text: String, notice_text: String) -> bool:
 
 ## 用一份名单摆开战场并开打。
 func _start_war(ranked: Array[RankedUser]) -> void:
+	# 只有名单足够、真正要开战时才算新 Round 并换背景。挑图使用 BattleParallax
+	# 自己的 RandomNumberGenerator，和下面负责结算的 RollSource 完全隔离。
+	%BattleBackground.roll_background()
 	_rng = RollSource.new()
 	_tally = DamageTally.new()
 	_war = WheelWar.new()

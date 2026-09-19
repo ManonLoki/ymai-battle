@@ -6,7 +6,19 @@ extends RefCounted
 ## 它仍要先过按身份分的骰子，中了才无视闪避把对方打到 0 血。
 ## 战力差、技能数值和概率共同决定胜负，胜率永远留在 [30%, 70%] 之间。
 
+## 谁出手都从这个命中率起步，再按双方的命中 / 闪避加成和这一场的胜率偏移调整。
+const BASE_HIT_CHANCE := 0.90
+
+## 命中加成减掉对方闪避之后，净差达到这个值就必中。
+## 中间是线性的：净差 0 是 BASE_HIT_CHANCE，净差 FULL_HIT_EDGE 是 100%，
+## 所以 +10% 的净优势大约落在 95%。
+const FULL_HIT_EDGE := 0.20
+## 必中就是 100%，单独起个名字是为了让“这一击必中”在代码里有话可说。
+const CERTAIN_HIT_CHANCE := 1.0
+
 ## 单次攻击命中率的上下限，保证再劣势也有 5% 的翻盘空间。
+## 上限只夹“靠战力差推上去”的那部分：净差满 FULL_HIT_EDGE 的必中越过它，
+## 光靠胜率偏移则永远越不过——必中只能自己堆出来。
 const MIN_HIT_CHANCE := 0.05
 const MAX_HIT_CHANCE := 0.95
 
@@ -28,15 +40,20 @@ const HITS_PER_DUEL := 4
 ## 那些场次仍按“多 3.5 张”计价，凭空多吃一口。改成按张计价之后，
 ## WheelWar 把这一场真实的张数差喂进来，发牌区间就成了自由参数。
 ## 数值仍由 tests 里的蒙特卡洛回归标定，改技能池本身时要重新跑。
-const CHAMPION_SKILL_EDGE_PER_SKILL := 0.006
+const CHAMPION_SKILL_EDGE_PER_SKILL := 0.030
 
-## 擂主的治疗回的是 5% 最大生命，而他的血条要扛 4×人数 次命中：
-## 人越多，同样一次治疗折算成“普通命中”就越值钱（15 人榜单里一次≈2.8 次命中）。
-## 这份随场次拉长而膨胀的续航优势，超过 BASE 人之后按人头再扣一点命中率，
-## 否则人多的大榜单里擂主会明显打超目标胜率。系数同样由蒙特卡洛标定。
-const CHAMPION_ENDURANCE_EDGE_BASE := 2
-const CHAMPION_ENDURANCE_EDGE_PER_CHALLENGER := 0.008
-const CHAMPION_ENDURANCE_EDGE_CAP := 0.030
+## 人越多，擂主越吃亏：每位挑战者都是满血新人，他的血条却要一路连着算下去。
+## 基础命中提到 90% 之后这份吃亏更明显——一场仗的挥击次数少了一半，
+## 他没那么多回合把治疗、反击这些续航手段的收益攒出来。所以超过 BASE 人之后
+## 按人头**补**一点命中率，封顶以免大榜单补过头。系数由蒙特卡洛标定。
+##
+## （基础命中还是 50% 的那一版这里是反过来的：那时挥击多、治疗攒得出来，
+## 人越多擂主越占便宜，得按人头扣。换算口径之后实测直接翻了个号。）
+## 按**人数翻番**计，不按人头：从 1v3 到 1v10 的差别，和从 1v30 到 1v100 的差别
+## 差不多大，线性按人头算会在几十人处就撞上封顶，再往上一视同仁。
+const CHAMPION_CROWD_RELIEF_BASE := 3
+const CHAMPION_CROWD_RELIEF_PER_DOUBLING := 0.010
+const CHAMPION_CROWD_RELIEF_CAP := 0.060
 
 ## 擂主的 buff 命中当量每比挑战者平均高 1 点，命中率就让出这么多。
 ## 「命中当量」怎么算见下面那三个权重常量（AGENT_BUFF_WEIGHT_*）。
@@ -51,7 +68,7 @@ const AGENT_BUFF_HIT_EDGE := 0.550
 ## 注意它是按十几人的真实榜单标的。人数很少时（比如只有一个挑战者）
 ## 整场只掷十几次骰子，随机性本身就把结果往 50% 拉，
 ## 实测胜率会比目标低几个点——这是短局固有的，不是标定没标准。
-const WIN_RATE_SPREAD := 0.130
+const WIN_RATE_SPREAD := 0.220
 
 ## 中毒每回合按“半次普通命中”掉血。
 const POISON_TICK_SHARE := 0.5
@@ -130,16 +147,32 @@ const ASSASSINATE_CHANCE_CHAMPION := 0.01
 const ASSASSINATE_CHANCE_CHALLENGER := 0.02
 const ASSASSINATE_SHARE_CHALLENGER := 0.50
 
-## 胜率曲线的两个锚点，按战力比 r = 擂主 / 其余人合计战力（RMS 口径）定：
-## r = CEIL（擂主一个人顶得上整场的合计战力）时贴着 MAX_WIN_RATE，
-## r = FLOOR（只有合计战力的四分之一）时贴着 MIN_WIN_RATE。
-## 两个锚点的几何中点 r = 0.5 就是胜率正好 50% 的地方。
+## 胜率曲线的两个锚点，按**人均**战力比 s = 擂主 / 挑战者人均战力（RMS 口径）定：
+## s = CEIL（比人均强 4 倍）贴着上半程的 SATURATION，s = FLOOR（只有人均的四分之一）
+## 对称地贴着下半程；两个锚点的几何中点 s = 1，也就是“和人均一样强”正好五五开。
+##
+## 锚点以前定在「擂主 / 全场**合计**战力」上，人数就藏在 RMS 合计里
+## （N 个等战力的人合计是人均的 √N 倍）。这么算 1v1 里两个一模一样的人对打，
+## 擂主会被判到 69%——因为“一个人顶得上全场”在 1v1 里是白送的。
+## 现在战力比只管强弱，人多人少交给 crowd_pressure 单独算，两件事各归各的。
 const WIN_RATE_RATIO_FLOOR := 0.25
-const WIN_RATE_RATIO_CEIL := 1.0
+const WIN_RATE_RATIO_CEIL := 4.0
 ## 锚点处走完了上下限之间的百分之多少。留 5% 不走完，是为了让锚点之外
 ## 还能继续缓升 / 缓降——战力再往上堆或者再往下掉都仍有反馈，
 ## 只是收益和惩罚都变得极慢，不会一跨过锚点就彻底躺平。
 const WIN_RATE_ANCHOR_SATURATION := 0.95
+
+## 人数压力：围攻的人越多，擂主的目标胜率整体往下压这么多（按 log 人数走 tanh）。
+##
+## 人数和战力分开算，1v2 / 1v5 / 1v10 / 1v30 才各有各的难度，而不是过了十几人
+## 就一律贴着下限。压力有封顶，所以再多人也留得住参与感：等战力时 1v1 是 50%，
+## 1v10 落到 40%，1v100 落到 35%，不会变成“人多就没得打”。
+## CAP 和锚点都由这份手感反推，不是蒙特卡洛标的——它定的是**目标**，
+## 实测能不能贴住目标才是蒙特卡洛的事（见 tests 里的胜率回归）。
+const CROWD_PRESSURE_CAP := 0.175
+## 压力曲线的锚点：到 ANCHOR 人时，压力走完 CAP 的 SATURATION。
+const CROWD_PRESSURE_ANCHOR := 100
+const CROWD_PRESSURE_SATURATION := 0.86
 
 
 ## 车轮战里“其余人”的合计战力。
@@ -156,25 +189,49 @@ static func aggregate_power(powers: Array[int]) -> int:
 	return int(round(sqrt(sum_of_squares)))
 
 
-## 擂主的目标胜率，由战力比 r = 擂主 / 其余人合计战力 推出。
+## 挑战者的人均战力（RMS 口径）。合计是 √(Σx²)，除以 √N 就回到人均，
+## 所以“一个大号比两个半大号更难打”这件事在人均口径下照样成立。
+static func per_challenger_power(others_power: int, challenger_count: int) -> float:
+	if challenger_count <= 0:
+		return 0.0
+	return float(others_power) / sqrt(float(challenger_count))
+
+
+## 光是人多就给擂主压下去的那部分目标胜率。一个人时是 0，往后按 log 人数长，封顶。
+static func crowd_pressure(challenger_count: int) -> float:
+	if challenger_count <= 1:
+		return 0.0
+	return CROWD_PRESSURE_CAP * tanh(log(float(challenger_count)) / crowd_pressure_log_width())
+
+
+## 压力曲线的宽度：正好让 ANCHOR 人落在 tanh 的 SATURATION 上。
+static func crowd_pressure_log_width() -> float:
+	return log(float(CROWD_PRESSURE_ANCHOR)) / atanh(CROWD_PRESSURE_SATURATION)
+
+
+## 擂主的目标胜率 = 人均战力比给的强弱 − 人数压力，再夹回 [30%, 70%]。
 ##
-## 曲线是一条以 log r 为自变量的 tanh：中段陡、两头自然饱和。
-## 用对数是因为战力比本来就是倍数关系——1 倍到 2 倍和 2 倍到 4 倍
-## 是同样大的一步，直接拿线性比值会让高战力段挤成一团。
+## 强弱那一项是以 log s 为自变量的 tanh（s = 擂主 / 挑战者人均战力）：
+## 中段陡、两头自然饱和。用对数是因为战力比本来就是倍数关系——1 倍到 2 倍和
+## 2 倍到 4 倍是同样大的一步，直接拿线性比值会让高战力段挤成一团。
+## 锚点在 s = FLOOR 和 s = CEIL 上，各自走完上下限之间的 SATURATION，
+## 锚点之外仍单调逼近上下限：再强也只是缓升、再弱也只是缓降，不会一跨线就锁死。
 ##
-## 锚点在 r = FLOOR 和 r = CEIL 上，各自走完上下限之间的 SATURATION；
-## 两个锚点的几何中点（r = 0.5）正好 50%。锚点之外 tanh 继续单调逼近上下限，
-## 于是“再强也只是缓升、再弱也只是缓降”，不会一跨线就锁死。
-static func champion_win_rate(champion_power: int, others_power: int) -> float:
+## 人数压力是**减项**，所以战力能把人数劣势补回来，但补不满：1v100 里
+## 就算人均战力比拉到顶，也只能摸到 MAX_WIN_RATE 减去那份封顶压力。
+static func champion_win_rate(champion_power: int, others_power: int, challenger_count: int = 1) -> float:
 	# 没有对手 / 擂主没战力这两种退化情形直接给端点，避免除零和 log(0)。
-	if others_power <= 0:
+	if others_power <= 0 or challenger_count <= 0:
 		return MAX_WIN_RATE
 	if champion_power <= 0:
 		return MIN_WIN_RATE
-	var ratio := float(champion_power) / float(others_power)
+	# 人均战力至少按 1 算：整场只有零头 token 的时候不至于除出个天文数字。
+	var per_head := maxf(per_challenger_power(others_power, challenger_count), 1.0)
+	var ratio := float(champion_power) / per_head
 	var mid := (MIN_WIN_RATE + MAX_WIN_RATE) * 0.5
 	var half := (MAX_WIN_RATE - MIN_WIN_RATE) * 0.5
-	return mid + half * tanh((log(ratio) - win_rate_log_center()) / win_rate_log_width())
+	var strength := half * tanh((log(ratio) - win_rate_log_center()) / win_rate_log_width())
+	return clampf(mid + strength - crowd_pressure(challenger_count), MIN_WIN_RATE, MAX_WIN_RATE)
 
 
 ## 曲线中心：两个锚点在对数轴上的中点，也就是胜率正好 50% 的战力比。
@@ -253,39 +310,63 @@ static func agent_buff_hit_value(buffs: Array[SkillDef]) -> float:
 	return total
 
 
-## 人数超过 BASE 之后，擂主每多一个对手要多让出的命中率，封顶以免大榜单把命中率打穿。
-static func champion_endurance_edge(challenger_count: int) -> float:
-	var raw := CHAMPION_ENDURANCE_EDGE_PER_CHALLENGER * float(maxi(0, challenger_count - CHAMPION_ENDURANCE_EDGE_BASE))
-	return minf(raw, CHAMPION_ENDURANCE_EDGE_CAP)
+## 人数超过 BASE 之后，人数每翻一番补给擂主的那点命中率，封顶以免极端榜单补穿。
+static func champion_crowd_relief(challenger_count: int) -> float:
+	if challenger_count <= CHAMPION_CROWD_RELIEF_BASE:
+		return 0.0
+	var doublings := log(float(challenger_count) / float(CHAMPION_CROWD_RELIEF_BASE)) / log(2.0)
+	return minf(CHAMPION_CROWD_RELIEF_PER_DOUBLING * doublings, CHAMPION_CROWD_RELIEF_CAP)
 
 
-## 把“这场仗擂主该赢多少次”的目标胜率，反解成他单次攻击的命中率。
+## 把“这场仗擂主该赢多少次”的目标胜率，反解成擂主命中率的偏移量。
 ##
-## 中心点是 0.5 减去擂主的三项固有优势（技能张数更多、buff 可能更多、人多时更耐打），
-## 扣掉之后双方才算真正五五开；再按目标胜率的正态分位左右挪 WIN_RATE_SPREAD。
+## 偏移是**第三步**（见 hit_chance 的三步口径）：0 表示双方按各自的命中/闪避算完
+## 就此打住，正数表示擂主每次出手更容易打中、挑战者相应更难，两边一加一减。
+##
+## 先扣掉擂主的两项固有优势（技能张数更多、buff 可能更多），再把“人多时更吃亏”
+## 那一点补回来，算完才是真正的五五开；然后按目标胜率的正态分位左右挪 WIN_RATE_SPREAD。
 ## buff_edge / skill_edge 都是“擂主减去挑战者的平均值”，可正可负，
 ## 由 WheelWar 按这一场真实发出来的牌现算，不用任何平均值假设。
 ## 一场仗要掷几十次骰子，命中率上几个百分点就已经是压倒性优势，
-## 所以算出来的命中率始终贴着 50% 附近——胜率是靠概率调出来的，不是锁出来的。
-static func calibrated_hit_chance(win_rate: float, buff_edge: float = 0.0, skill_edge: float = 0.0, challenger_count: int = 0) -> float:
-	var center := 0.5 - CHAMPION_SKILL_EDGE_PER_SKILL * skill_edge - AGENT_BUFF_HIT_EDGE * buff_edge - champion_endurance_edge(challenger_count)
-	return clampf(center + probit(win_rate) * WIN_RATE_SPREAD, MIN_HIT_CHANCE, MAX_HIT_CHANCE)
+## 所以偏移始终是个小数——胜率是靠概率调出来的，不是锁出来的。
+static func champion_steer(win_rate: float, buff_edge: float = 0.0, skill_edge: float = 0.0, challenger_count: int = 0) -> float:
+	var handicap := CHAMPION_SKILL_EDGE_PER_SKILL * skill_edge + AGENT_BUFF_HIT_EDGE * buff_edge - champion_crowd_relief(challenger_count)
+	return probit(win_rate) * WIN_RATE_SPREAD - handicap
 
 
-## 只算攻击方命中加成、还没被闪避扣减的命中率。
-## 没打中只可能是闪避或凌波微步，没有“自己失手”。
-## 擂主拿反解出来的命中率，挑战者拿它的补集——双方的命中率之和恒为 1。
-static func hit_chance_before_dodge(attacker: Fighter, champion_hit_chance: float) -> float:
-	var base := champion_hit_chance if attacker.is_champion else 1.0 - champion_hit_chance
-	var raw := base + attacker.stacked_accuracy()
-	return clampf(raw, MIN_HIT_CHANCE, MAX_HIT_CHANCE)
-
-
-## 最终命中率：基础命中 + 攻击方命中加成 - 防守方闪避，再夹回 [5%, 95%]。
+## 攻方命中加成减守方闪避的净差。正数表示攻方在这一击上占优。
 ## extra_accuracy 是这一次出手的额外命中（潜能激发），不写进常驻 stacked。
-static func hit_chance(attacker: Fighter, defender: Fighter, champion_hit_chance: float, extra_accuracy: float = 0.0) -> float:
-	var raw := hit_chance_before_dodge(attacker, champion_hit_chance) + extra_accuracy - defender.stacked_dodge()
-	return clampf(raw, MIN_HIT_CHANCE, MAX_HIT_CHANCE)
+static func net_hit_edge(attacker: Fighter, defender: Fighter, extra_accuracy: float = 0.0) -> float:
+	return attacker.stacked_accuracy() + extra_accuracy - defender.stacked_dodge()
+
+
+## 净差折算成命中率，还没算胜率偏移。
+##
+## 净差为负就从基础命中里一比一扣；为正则**往必中方向补**：把“还差多少到 100%”
+## 按 净差 / FULL_HIT_EDGE 的比例填掉，净差满 FULL_HIT_EDGE 就是必中。
+## 这条曲线是刻意不对称的——堆命中堆到压过对方闪避，就该看得见回报，
+## 而不是像以前那样先被夹在 95% 上、超出的加成全打水漂。
+static func hit_chance_before_steer(net_edge: float) -> float:
+	if net_edge <= 0.0:
+		return BASE_HIT_CHANCE + net_edge
+	return BASE_HIT_CHANCE + (1.0 - BASE_HIT_CHANCE) * minf(net_edge / FULL_HIT_EDGE, 1.0)
+
+
+## 单次攻击的命中率，三步走：
+##   1. 双方都从 BASE_HIT_CHANCE 起步；
+##   2. 加上自己的命中加成、减去对方的闪避，走 hit_chance_before_steer 的曲线；
+##   3. 再叠上这一场的胜率偏移（擂主加、挑战者减），夹回 [MIN_HIT_CHANCE, MAX_HIT_CHANCE]。
+##
+## 净差满 FULL_HIT_EDGE 的那一击直接必中，第三步不再干预：必中是自己堆出来的，
+## 不该被战力差冲掉；反过来，光靠战力差也顶多推到 MAX_HIT_CHANCE，推不出必中。
+##
+## 凌波微步不在这条算式里——它是挨打时另掷一次的被动，见 _one_strike。
+static func hit_chance(attacker: Fighter, defender: Fighter, champion_steer_amount: float, extra_accuracy: float = 0.0) -> float:
+	var net_edge := net_hit_edge(attacker, defender, extra_accuracy)
+	if net_edge >= FULL_HIT_EDGE:
+		return CERTAIN_HIT_CHANCE
+	var steer := champion_steer_amount if attacker.is_champion else -champion_steer_amount
+	return clampf(hit_chance_before_steer(net_edge) + steer, MIN_HIT_CHANCE, MAX_HIT_CHANCE)
 
 
 ## 掷一次概率骰。**全场所有概率判定都必须走这里**，因为它守着一条硬约束：
@@ -301,7 +382,7 @@ static func _rolls(rng: RollSource, chance: float) -> bool:
 
 ## 结算一名角色的一次行动：先跑中毒掉血，再判定麻痹 / 治疗 / 混乱，
 ## 最后才真正出手。返回这次行动产生的全部战报事件。
-static func resolve_action(actor: Fighter, defender: Fighter, champion_hit_chance: float, rng: RollSource) -> Array[StrikeResult]:
+static func resolve_action(actor: Fighter, defender: Fighter, champion_steer_amount: float, rng: RollSource) -> Array[StrikeResult]:
 	var events: Array[StrikeResult] = []
 	# 自己的新行动开始，上一手治疗留下的 100% 闪避到此结束。
 	actor.heal_guard = false
@@ -333,7 +414,7 @@ static func resolve_action(actor: Fighter, defender: Fighter, champion_hit_chanc
 			target = actor
 			self_hit = true
 	# 打自己时连击和反击都不该发生，这两条 resolve_strikes 自己按 defender != attacker 拦着。
-	var strikes := resolve_strikes(actor, target, champion_hit_chance, rng)
+	var strikes := resolve_strikes(actor, target, champion_steer_amount, rng)
 	for strike in strikes:
 		strike.self_hit = self_hit
 		# 自伤时挨打方就是自己，战报里要写对名字。
@@ -350,7 +431,7 @@ static func resolve_action(actor: Fighter, defender: Fighter, champion_hit_chanc
 static func resolve_strikes(
 	attacker: Fighter,
 	defender: Fighter,
-	champion_hit_chance: float,
+	champion_steer_amount: float,
 	rng: RollSource,
 	is_counter: bool = false,
 ) -> Array[StrikeResult]:
@@ -369,7 +450,7 @@ static func resolve_strikes(
 		extra_crit = AWAKEN_CRIT_BONUS
 		extra_damage = AWAKEN_DAMAGE_BONUS
 	# extra_index=0 标记这是首击。追击和反击都不许再掷连击类（含幻影刺杀 / 凌波微步）。
-	var first := _one_strike(attacker, defender, champion_hit_chance, rng, 0, not is_counter, extra_hit, extra_crit, extra_damage)
+	var first := _one_strike(attacker, defender, champion_steer_amount, rng, 0, not is_counter, extra_hit, extra_crit, extra_damage)
 	if awakened:
 		first.awakened = true
 		first.awaken_cost = paid
@@ -381,7 +462,7 @@ static func resolve_strikes(
 				break
 			# 追击同样要过命中判定，连击只是多给机会，不是保证打中。
 			# allow_techniques=false：追击不再掷任何连击类。
-			events.append(_one_strike(attacker, defender, champion_hit_chance, rng, i + 1, false, extra_hit, extra_crit, extra_damage))
+			events.append(_one_strike(attacker, defender, champion_steer_amount, rng, i + 1, false, extra_hit, extra_crit, extra_damage))
 	# 反击：凌波微步在未成击时也还一下；普通反击只看首击有没有打中。
 	# 挨打的人得还站着。打自己时没有“对方”，也就没有反击。
 	var should_counter := false
@@ -392,7 +473,7 @@ static func resolve_strikes(
 			should_counter = true
 	if should_counter:
 		# 反击既不能再反击，也不能掷连击：只还一下。
-		var counters := resolve_strikes(defender, attacker, champion_hit_chance, rng, true)
+		var counters := resolve_strikes(defender, attacker, champion_steer_amount, rng, true)
 		for counter in counters:
 			counter.countered = true
 		events.append_array(counters)
@@ -450,7 +531,7 @@ static func _skip_event(actor: Fighter, reason: String) -> StrikeResult:
 static func _one_strike(
 	attacker: Fighter,
 	defender: Fighter,
-	champion_hit_chance: float,
+	champion_steer_amount: float,
 	rng: RollSource,
 	extra_index: int,
 	allow_techniques: bool = true,
@@ -466,7 +547,7 @@ static func _one_strike(
 	result.combo = extra_index > 0
 	result.extra_index = extra_index
 
-	var chance := hit_chance(attacker, defender, champion_hit_chance, extra_accuracy)
+	var chance := hit_chance(attacker, defender, champion_steer_amount, extra_accuracy)
 	var roll := rng.randf()
 	# 幻影刺杀在命中骰之后掷，这样“本会闪掉的点数”仍然进队列，测试能证明它无视闪避。
 	var assassinated := false

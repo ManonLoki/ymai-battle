@@ -39,11 +39,13 @@ func _run() -> void:
 	_test_combat_log()
 	_test_wheel_war()
 	_test_win_rate_regression()
+	_test_roster_size_regression()
 	await _test_main_menu()
 	await _test_settings()
 	_test_server_settings()
 	await _test_tv_remote()
 	await _test_main_parallax_and_quit()
+	await _test_battle_and_ranking_backgrounds()
 	await _test_app_icon_and_cursors()
 	await _test_fighter_anims()
 	_test_appearances_and_crown()
@@ -299,7 +301,7 @@ func _test_compact_numbers() -> void:
 	_assert(FileAccess.get_file_as_string("res://ranking.gd").find("_format_millions") < 0, "the old M-only formatter is gone")
 
 
-## 胜率曲线：战力比 1:1 精确落在 50%，两端收敛到 20%/80% 而不是 0/100%。
+## 胜率曲线：人均战力比 1:1 精确落在 50%，人数另算，两端收敛到 30%/70% 而不是 0/100%。
 func _test_win_rate() -> void:
 	# 胜率永远被夹在 [30%, 70%]：战力再悬殊也不能把结果锁死。
 	var extremes: Array[int] = [0, 1, 25, 100, 400, 10000, 1000000]
@@ -308,23 +310,23 @@ func _test_win_rate() -> void:
 		_assert(rate >= CombatResolver.MIN_WIN_RATE, "win rate never drops below 30%% (at %d vs 100)" % power)
 		_assert(rate <= CombatResolver.MAX_WIN_RATE, "win rate never rises above 70%% (at %d vs 100)" % power)
 
-	# 两个锚点：擂主顶得上全场合计战力（r=1）时贴着上限，
-	# 只有四分之一（r=0.25）时贴着下限，各自走完区间的 SATURATION。
+	# 两个锚点：比人均强 4 倍（s=4）时贴着上限，只有人均的四分之一（s=0.25）时贴着
+	# 下限，各自走完区间的 SATURATION。这里全是单挑，人数压力为 0。
 	var span := CombatResolver.MAX_WIN_RATE - CombatResolver.MIN_WIN_RATE
-	var at_ceil := CombatResolver.champion_win_rate(100, 100)
+	var at_ceil := CombatResolver.champion_win_rate(400, 100)
 	var at_floor := CombatResolver.champion_win_rate(25, 100)
 	var sat := CombatResolver.WIN_RATE_ANCHOR_SATURATION
-	_assert(absf(at_ceil - (CombatResolver.MAX_WIN_RATE - span * 0.5 * (1.0 - sat))) < 0.001, "r=1 sits at the upper anchor (%.3f)" % at_ceil)
-	_assert(absf(at_floor - (CombatResolver.MIN_WIN_RATE + span * 0.5 * (1.0 - sat))) < 0.001, "r=0.25 sits at the lower anchor (%.3f)" % at_floor)
-	# 两个锚点的几何中点才是真正的五五开。
-	_assert(is_equal_approx(CombatResolver.champion_win_rate(50, 100), 0.5), "the geometric midpoint of the anchors is an even 50%")
-	_assert(is_equal_approx(CombatResolver.champion_win_rate(100, 200), 0.5), "another 1:2 case is 50%")
+	_assert(absf(at_ceil - (CombatResolver.MAX_WIN_RATE - span * 0.5 * (1.0 - sat))) < 0.001, "s=4 sits at the upper anchor (%.3f)" % at_ceil)
+	_assert(absf(at_floor - (CombatResolver.MIN_WIN_RATE + span * 0.5 * (1.0 - sat))) < 0.001, "s=0.25 sits at the lower anchor (%.3f)" % at_floor)
+	# 和人均一样强就是真正的五五开——1v1 里两个一模一样的人对打不再白送擂主。
+	_assert(is_equal_approx(CombatResolver.champion_win_rate(100, 100), 0.5), "matching your only opponent is an even 50%")
+	_assert(is_equal_approx(CombatResolver.champion_win_rate(70, 70), 0.5), "another identical 1v1 is 50%")
 	_assert(at_floor > CombatResolver.MIN_WIN_RATE, "a 1:4 underdog still has more than the floor")
-	_assert(at_ceil < CombatResolver.MAX_WIN_RATE, "matching the whole field still leaves room below the ceiling")
+	_assert(at_ceil < CombatResolver.MAX_WIN_RATE, "even 4x the per-head power leaves room below the ceiling")
 
 	# 锚点之外仍然单调，但收益和惩罚都极慢——不会一跨线就躺平。
-	var far_above := CombatResolver.champion_win_rate(400, 100)
-	var way_above := CombatResolver.champion_win_rate(10000, 100)
+	var far_above := CombatResolver.champion_win_rate(1600, 100)
+	var way_above := CombatResolver.champion_win_rate(1000000, 100)
 	_assert(far_above > at_ceil and way_above > far_above, "past the upper anchor the curve still creeps up")
 	_assert(way_above - at_ceil < span * 0.5 * (1.0 - sat) + 0.001, "but the whole climb past it is worth less than the leftover margin")
 	var far_below := CombatResolver.champion_win_rate(6, 100)
@@ -345,13 +347,46 @@ func _test_win_rate() -> void:
 	var spread_out := CombatResolver.aggregate_power([40, 40, 40])
 	_assert(one_big > spread_out, "a single heavy hitter aggregates to more threat than an even spread")
 	_assert(CombatResolver.aggregate_power([]) == 0, "an empty field has no power")
+	# 人均口径是合计除以 √N，所以“一个大号更难打”在人均上同样成立。
+	_assert(is_equal_approx(CombatResolver.per_challenger_power(100, 4), 50.0), "per-head power is the RMS average")
+	_assert(is_equal_approx(CombatResolver.per_challenger_power(100, 1), 100.0), "a lone challenger is his own average")
 
-	# 目标胜率反解出的命中率始终贴着 50% 附近，靠概率而不是靠锁定。
-	var low_hit := CombatResolver.calibrated_hit_chance(CombatResolver.MIN_WIN_RATE)
-	var high_hit := CombatResolver.calibrated_hit_chance(CombatResolver.MAX_WIN_RATE)
-	_assert(low_hit > CombatResolver.MIN_HIT_CHANCE and high_hit < CombatResolver.MAX_HIT_CHANCE, "calibrated hit chance never reaches the 5%/95% rails")
-	_assert(high_hit - low_hit < 0.25, "the whole 30%-70% target band maps into a narrow hit-chance window")
-	_assert(high_hit > low_hit, "a higher target means a higher hit chance")
+	# 人数压力：一个人时为 0，人越多压得越狠，但有封顶，而且始终单调。
+	_assert(is_equal_approx(CombatResolver.crowd_pressure(1), 0.0), "a duel carries no crowd pressure")
+	var prev_pressure := -1.0
+	for count in [1, 2, 5, 10, 30, 100, 1000]:
+		var pressure := CombatResolver.crowd_pressure(count)
+		_assert(pressure >= prev_pressure, "crowd pressure never drops as the field grows (at %d)" % count)
+		_assert(pressure <= CombatResolver.CROWD_PRESSURE_CAP + 0.0001, "crowd pressure stays under its cap (at %d)" % count)
+		prev_pressure = pressure
+	_assert(CombatResolver.crowd_pressure(10) > CombatResolver.crowd_pressure(2), "ten opponents press harder than two")
+
+	# 等战力时人数说了算：1v1 五五开，人越多越难，1v100 仍留得住参与感。
+	var even_rates := {}
+	for count in [1, 2, 5, 10, 30, 100]:
+		var powers: Array[int] = []
+		for i in count:
+			powers.append(50000000)
+		even_rates[count] = CombatResolver.champion_win_rate(50000000, CombatResolver.aggregate_power(powers), count)
+	_assert(is_equal_approx(even_rates[1], 0.5), "an even 1v1 is 50%")
+	_assert(even_rates[10] < even_rates[2] and even_rates[2] < even_rates[1], "the same per-head strength gets harder as the field grows")
+	_assert(even_rates[100] < even_rates[30], "and a hundred still presses harder than thirty")
+	_assert(even_rates[100] > CombatResolver.MIN_WIN_RATE + 0.04, "but a hundred-strong field never reads as hopeless (%.2f)" % even_rates[100])
+
+	# 战力能把人数劣势补回来，但补不满：1v100 里战力拉到离谱也够不到上限。
+	var crowded := CombatResolver.aggregate_power(_even_powers(100, 50000000))
+	var crushing_crowd := CombatResolver.champion_win_rate(50000000 * 1000, crowded, 100)
+	_assert(crushing_crowd > even_rates[100] + 0.1, "raw power does pull the target back up in a crowd")
+	_assert(crushing_crowd < CombatResolver.MAX_WIN_RATE - CombatResolver.crowd_pressure(100) + 0.001, "but the crowd keeps the ceiling out of reach")
+
+	# 目标胜率反解出来的是命中率的偏移量：0 是五五开，正数偏向擂主，
+	# 整个 30%~70% 的目标带只对应几个百分点——胜率靠概率调，不靠锁定。
+	var low_steer := CombatResolver.champion_steer(CombatResolver.MIN_WIN_RATE)
+	var high_steer := CombatResolver.champion_steer(CombatResolver.MAX_WIN_RATE)
+	_assert(low_steer < 0.0 and high_steer > 0.0, "the steer leans to whoever is favoured")
+	_assert(high_steer - low_steer < 0.25, "the whole 30%-70% target band maps into a narrow steer window")
+	_assert(high_steer > low_steer, "a higher target means a bigger steer for the champion")
+	_assert(is_equal_approx(low_steer, -high_steer), "the 30% and 70% ends are mirror images")
 
 	var src := FileAccess.get_file_as_string("res://scripts/combat_resolver.gd")
 	_assert(src.find("tanh(") >= 0 and src.find("WIN_RATE_RATIO_CEIL") >= 0, "win rate interpolation is an anchored tanh on log power ratio")
@@ -362,6 +397,14 @@ func _test_win_rate() -> void:
 ## 造一名测试用角色，省掉每次手写 RankedUser 的样板。
 func _make_fighter(name: String, tokens: int, channel: String, champion: bool) -> Fighter:
 	return Fighter.from_ranked(_ranked(name, tokens, channel), champion)
+
+
+## N 个等战力的挑战者，用来看“人数本身值多少胜率”。
+func _even_powers(count: int, each: int) -> Array[int]:
+	var powers: Array[int] = []
+	for i in count:
+		powers.append(each)
+	return powers
 
 
 ## 把角色身上所有技能和 buff 摘干净，只留先天属性。
@@ -559,14 +602,14 @@ func _test_skills() -> void:
 	_assert(awaken_tip.find(_pct_label(CombatResolver.AWAKEN_HIT_BONUS)) >= 0, "awaken tooltip names the live bonuses")
 	_assert(awaken_tip.find("不足") >= 0, "awaken tooltip says it needs enough HP")
 
-	var win := 0.5
+	var steer := 0.0
 	var attacker := _make_fighter("A", 100, "", true)
 	var defender := _make_fighter("B", 100, "", false)
 	_disarm(attacker)
 	_disarm(defender)
 	var rng_plain := RollSource.new(1)
 	rng_plain.push([0.0, 0.99])
-	var plain_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_plain)
+	var plain_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_plain)
 	var plain_damage := 0
 	for event in plain_events:
 		plain_damage += event.damage
@@ -576,7 +619,7 @@ func _test_skills() -> void:
 	attacker.skills = [SkillCatalog.by_id("skill_crit")]
 	var rng_crit := RollSource.new(1)
 	rng_crit.push([0.0, 0.0])
-	var crit_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_crit)
+	var crit_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_crit)
 	_assert(crit_events.size() == 1 and crit_events[0].crit, "crit skill can crit on the same hit roll")
 	_assert(crit_events[0].damage != plain_damage, "with-skill settlement differs from no-skill")
 
@@ -585,7 +628,7 @@ func _test_skills() -> void:
 	attacker.skills = [SkillCatalog.by_id("skill_double")]
 	var rng_double := RollSource.new(1)
 	rng_double.push([0.0, 0.99, 0.0, 0.0, 0.99])
-	var double_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_double)
+	var double_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_double)
 	_assert(double_events.size() == 2 and double_events[1].combo, "double strike adds one extra hit")
 
 	_disarm(attacker)
@@ -594,7 +637,7 @@ func _test_skills() -> void:
 	attacker.skills = [SkillCatalog.by_id("skill_triple")]
 	var rng_triple := RollSource.new(1)
 	rng_triple.push([0.0, 0.99, 0.0, 0.0, 0.99, 0.0, 0.99])
-	var triple_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_triple)
+	var triple_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_triple)
 	_assert(triple_events.size() == 3, "triple strike adds two extra hits")
 
 	_disarm(attacker)
@@ -602,42 +645,45 @@ func _test_skills() -> void:
 	var dodge_buff := SkillCatalog.agent_buff_template(AgentChannels.CHANNEL_GROK)
 	dodge_buff.dodge_bonus = 0.25
 	_give_buffs(defender, [dodge_buff])
+	# 闪避 25% + 基础 15% = 40%，命中线落到 50%，0.6 就被闪掉。
 	var rng_dodge := RollSource.new(1)
-	rng_dodge.push([0.4])
-	var dodge_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_dodge)
+	rng_dodge.push([0.6])
+	var dodge_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_dodge)
 	_assert(not dodge_events[0].hit and dodge_events[0].dodged, "dodge buff turns a mid roll into a dodge")
 	_disarm(defender)
+	# 只剩挑战者的基础闪避 15%，命中线 75%，0.8 仍被闪掉。
 	var rng_base_dodge := RollSource.new(1)
-	rng_base_dodge.push([0.4])
-	_assert(not CombatResolver.resolve_strikes(attacker, defender, win, rng_base_dodge)[0].hit, "0.4 still dodges on the 10% base dodge")
+	rng_base_dodge.push([0.8])
+	_assert(not CombatResolver.resolve_strikes(attacker, defender, steer, rng_base_dodge)[0].hit, "0.8 still dodges on the base dodge alone")
 	defender.hp = defender.max_hp
 	var rng_no_dodge := RollSource.new(1)
 	rng_no_dodge.push([0.20, 0.99])
-	_assert(CombatResolver.resolve_strikes(attacker, defender, win, rng_no_dodge)[0].hit, "a 0.20 roll hits without extra dodge")
+	_assert(CombatResolver.resolve_strikes(attacker, defender, steer, rng_no_dodge)[0].hit, "a 0.20 roll hits without extra dodge")
 
 	var acc_buff := SkillCatalog.agent_buff_template(AgentChannels.CHANNEL_CLAUDE)
 	acc_buff.accuracy_bonus = 0.20
 	_give_buffs(attacker, [acc_buff])
 	defender.hp = defender.max_hp
+	# 命中 20% 压过闪避 15%，净差 +5% 把命中线从 75% 抬到 92.5%。
 	var rng_acc := RollSource.new(1)
-	rng_acc.push([0.45, 0.99])
-	_assert(CombatResolver.resolve_strikes(attacker, defender, win, rng_acc)[0].hit, "accuracy buff turns a 0.45 roll into a hit")
+	rng_acc.push([0.8, 0.99])
+	_assert(CombatResolver.resolve_strikes(attacker, defender, steer, rng_acc)[0].hit, "accuracy buff turns a 0.8 roll into a hit")
 	_disarm(attacker)
 	defender.hp = defender.max_hp
 	var rng_miss := RollSource.new(1)
-	rng_miss.push([0.45])
-	_assert(not CombatResolver.resolve_strikes(attacker, defender, win, rng_miss)[0].hit, "same 0.45 roll dodges without accuracy")
+	rng_miss.push([0.8])
+	_assert(not CombatResolver.resolve_strikes(attacker, defender, steer, rng_miss)[0].hit, "same 0.8 roll dodges without accuracy")
 
 	_disarm(attacker)
 	_disarm(defender)
 	attacker.skills = [SkillCatalog.by_id("skill_poison")]
 	var rng_poison := RollSource.new(1)
 	rng_poison.push([0.0, 0.99, 0.0])
-	CombatResolver.resolve_strikes(attacker, defender, win, rng_poison)
+	CombatResolver.resolve_strikes(attacker, defender, steer, rng_poison)
 	_assert(defender.poison_turns == 3, "poison applies for 3 turns")
 	defender.paralyze_turns = 3
 	var before_hp := defender.hp
-	var poison_events: Array[StrikeResult] = CombatResolver.resolve_action(defender, attacker, win, RollSource.new(1))
+	var poison_events: Array[StrikeResult] = CombatResolver.resolve_action(defender, attacker, steer, RollSource.new(1))
 	_assert(poison_events[0].poison_tick, "poison ticks on the afflicted fighter's action")
 	var poison_tick := maxi(1, int(round(float(CombatResolver.strike_damage(defender)) * CombatResolver.POISON_TICK_SHARE)))
 	_assert(defender.hp == before_hp - poison_tick, "poison ticks for half a clean hit")
@@ -645,7 +691,7 @@ func _test_skills() -> void:
 	_disarm(attacker)
 	_disarm(defender)
 	defender.paralyze_turns = 3
-	var para_events: Array[StrikeResult] = CombatResolver.resolve_action(defender, attacker, win, RollSource.new(1))
+	var para_events: Array[StrikeResult] = CombatResolver.resolve_action(defender, attacker, steer, RollSource.new(1))
 	_assert(para_events[0].skip_reason == StrikeResult.SKIP_PARALYZE, "paralyze skips the action")
 	_assert(defender.paralyze_turns == 2, "paralyze lasts 3 turns")
 	_assert(attacker.hp == attacker.max_hp, "paralyzed fighter deals no damage")
@@ -655,7 +701,7 @@ func _test_skills() -> void:
 	attacker.confuse_turns = 3
 	var rng_conf := RollSource.new(1)
 	rng_conf.push([0.0, 0.0, 0.99])
-	var conf_events: Array[StrikeResult] = CombatResolver.resolve_action(attacker, defender, win, rng_conf)
+	var conf_events: Array[StrikeResult] = CombatResolver.resolve_action(attacker, defender, steer, rng_conf)
 	var saw_self := false
 	for ev in conf_events:
 		if ev.self_hit:
@@ -668,7 +714,7 @@ func _test_skills() -> void:
 	defender.skills = [SkillCatalog.by_id("skill_guard")]
 	var rng_guard := RollSource.new(1)
 	rng_guard.push([0.0, 0.0])
-	var guard_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_guard)
+	var guard_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_guard)
 	_assert(guard_events[0].guarded and guard_events[0].damage == 0, "absolute guard negates all damage")
 	_assert(defender.hp == defender.max_hp, "guarded fighter keeps full HP")
 	_disarm(attacker)
@@ -677,7 +723,7 @@ func _test_skills() -> void:
 	defender.skills = [SkillCatalog.by_id("skill_guard")]
 	var rng_guard_clean := RollSource.new(1)
 	rng_guard_clean.push([0.0, 0.0])
-	var guard_clean: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_guard_clean)
+	var guard_clean: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_guard_clean)
 	_assert(guard_clean[0].guarded, "guard still triggers when the attacker holds on-hit statuses")
 	_assert(not guard_clean[0].poisoned and not guard_clean[0].paralyzed and not guard_clean[0].confused, "guarded hits apply no extra effects")
 	_assert(defender.poison_turns == 0 and defender.paralyze_turns == 0 and defender.confuse_turns == 0, "guarded target is not statused")
@@ -690,14 +736,14 @@ func _test_skills() -> void:
 	defender.hp = 1
 	var rng_rebirth := RollSource.new(1)
 	rng_rebirth.push([0.0, 0.99])
-	var rebirth_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_rebirth)
+	var rebirth_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_rebirth)
 	_assert(rebirth_events[0].revived, "rebirth revives on lethal hit")
 	_assert(defender.hp == defender.max_hp, "rebirth restores full HP")
 	_assert(not defender.rebirth_available, "rebirth is consumed")
 	var rng_rebirth2 := RollSource.new(1)
 	rng_rebirth2.push([0.0, 0.99])
 	defender.hp = 1
-	var rebirth2: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_rebirth2)
+	var rebirth2: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_rebirth2)
 	_assert(rebirth2[0].defender_died and not rebirth2[0].revived, "consumed rebirth does not revive again")
 
 	_disarm(attacker)
@@ -705,7 +751,7 @@ func _test_skills() -> void:
 	defender.skills = [SkillCatalog.by_id("skill_counter")]
 	var rng_counter := RollSource.new(1)
 	rng_counter.push([0.0, 0.99, 0.0, 0.0, 0.99])
-	var counter_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_counter)
+	var counter_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_counter)
 	var saw_counter := false
 	for ev in counter_events:
 		if ev.countered:
@@ -719,7 +765,7 @@ func _test_skills() -> void:
 	attacker.hp = 40
 	var rng_ls := RollSource.new(1)
 	rng_ls.push([0.0, 0.99])
-	var ls_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_ls)
+	var ls_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_ls)
 	var ls_scale := float(CombatResolver.strike_damage(attacker)) / float(maxi(1, CombatResolver.strike_damage(defender)))
 	var stolen := maxi(1, int(round(float(ls_events[0].damage) * CombatResolver.lifesteal_ratio(attacker) * ls_scale)))
 	_assert(ls_events[0].lifesteal, "lifesteal flags when the skill is held")
@@ -730,7 +776,7 @@ func _test_skills() -> void:
 	attacker.hp = 40
 	var rng_nols := RollSource.new(1)
 	rng_nols.push([0.0, 0.99])
-	var nols: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_nols)
+	var nols: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_nols)
 	_assert(not nols[0].lifesteal and nols[0].heal_amount == 0, "no lifesteal skill means no heal from that hit")
 	_assert(attacker.hp == 40, "attacker HP unchanged without lifesteal")
 
@@ -753,7 +799,7 @@ func _test_skills() -> void:
 	var defender_hp_before := defender.hp
 	var rng_heal := RollSource.new(1)
 	rng_heal.push([0.0])
-	var heal_events: Array[StrikeResult] = CombatResolver.resolve_action(attacker, defender, win, rng_heal)
+	var heal_events: Array[StrikeResult] = CombatResolver.resolve_action(attacker, defender, steer, rng_heal)
 	_assert(heal_events.size() == 1, "heal replaces the whole action with one skip event")
 	var last_heal: StrikeResult = heal_events[0]
 	_assert(last_heal.skip_reason == StrikeResult.SKIP_HEAL and last_heal.treated, "heal skill procs instead of attacking")
@@ -765,7 +811,7 @@ func _test_skills() -> void:
 	_assert(attacker.heal_guard, "heal turn raises 100% dodge until the next action")
 	var rng_heal_dodge := RollSource.new(1)
 	rng_heal_dodge.push([0.0, 0.99])
-	var against_heal: Array[StrikeResult] = CombatResolver.resolve_strikes(defender, attacker, win, rng_heal_dodge)
+	var against_heal: Array[StrikeResult] = CombatResolver.resolve_strikes(defender, attacker, steer, rng_heal_dodge)
 	_assert(against_heal[0].dodged and not against_heal[0].hit, "heal-guard dodges a roll that would otherwise hit")
 	_assert(not against_heal[0].lingbo, "heal-guard is a plain dodge, not 凌波微步")
 	_assert(attacker.hp == 10 + expected_heal, "heal-guard prevents incoming damage")
@@ -773,14 +819,14 @@ func _test_skills() -> void:
 	defender.skills = [SkillCatalog.by_id("skill_assassinate")]
 	var rng_heal_ass := RollSource.new(1)
 	rng_heal_ass.push([0.99, 0.0])
-	var pierce_heal: Array[StrikeResult] = CombatResolver.resolve_strikes(defender, attacker, win, rng_heal_ass)
+	var pierce_heal: Array[StrikeResult] = CombatResolver.resolve_strikes(defender, attacker, steer, rng_heal_ass)
 	_assert(pierce_heal[0].hit and pierce_heal[0].assassinated, "幻影刺杀 still pierces heal-guard")
 	_disarm(attacker)
 	_disarm(defender)
 	attacker.hp = 10
 	var rng_noheal := RollSource.new(1)
 	rng_noheal.push([0.0, 0.99])
-	var noheal: Array[StrikeResult] = CombatResolver.resolve_action(attacker, defender, win, rng_noheal)
+	var noheal: Array[StrikeResult] = CombatResolver.resolve_action(attacker, defender, steer, rng_noheal)
 	_assert(not noheal[noheal.size() - 1].treated, "same rolls do not heal without the skill")
 	_assert(attacker.hp < 10 or noheal[0].hit or noheal[0].dodged, "without heal the action is a strike")
 	_assert(attacker.hp == 10, "HP unchanged without heal skill")
@@ -790,7 +836,7 @@ func _test_skills() -> void:
 	attacker.heal_guard = true
 	var rng_clear := RollSource.new(1)
 	rng_clear.push([0.99, 0.0, 0.99])
-	CombatResolver.resolve_action(attacker, defender, win, rng_clear)
+	CombatResolver.resolve_action(attacker, defender, steer, rng_clear)
 	_assert(not attacker.heal_guard, "the next action clears leftover heal-guard")
 
 	# 目录字段就算改成 100%，真正掷骰仍走结算器的身份治疗率。
@@ -801,7 +847,7 @@ func _test_skills() -> void:
 	attacker.skills = [stuffed_heal]
 	var rng_stuffed_heal := RollSource.new(1)
 	rng_stuffed_heal.push([0.99, 0.0, 0.99])
-	var stuffed_heal_events: Array[StrikeResult] = CombatResolver.resolve_action(attacker, defender, win, rng_stuffed_heal)
+	var stuffed_heal_events: Array[StrikeResult] = CombatResolver.resolve_action(attacker, defender, steer, rng_stuffed_heal)
 	_assert(not stuffed_heal_events[0].treated and stuffed_heal_events[0].skip_reason == "", "heal settlement rolls the resolver chance, not the stuffed catalog field")
 
 	# 潜能激发：扣费、本次攻击加成；生命不够不掷。结算率走 AWAKEN_CHANCE。
@@ -813,30 +859,32 @@ func _test_skills() -> void:
 	_assert(CombatResolver.can_awaken(attacker), "full HP can pay for awaken")
 	var rng_awaken := RollSource.new(1)
 	rng_awaken.push([0.0, 0.0, 0.99])
-	var awaken_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_awaken)
+	var awaken_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_awaken)
 	_assert(awaken_events[0].awakened, "awaken flags the opening strike")
 	_assert(awaken_events[0].awaken_cost == awaken_cost, "awaken cost is 10% max HP")
 	_assert(awaken_events[0].hit, "awaken strike still has to land")
 	var expected_awaken_dmg := maxi(1, int(round(float(CombatResolver.strike_damage(defender)) * (1.0 + CombatResolver.AWAKEN_DAMAGE_BONUS) * (1.0 - defender.stacked_damage_reduction()))))
 	_assert(awaken_events[0].damage == expected_awaken_dmg, "awaken adds 50% extra damage through the shipped formula")
 	_assert(attacker.hp == attacker.max_hp - awaken_cost, "awaken spends 10% max HP")
-	var awaken_hit := CombatResolver.hit_chance(attacker, defender, win, CombatResolver.AWAKEN_HIT_BONUS)
-	var plain_hit := CombatResolver.hit_chance(attacker, defender, win)
+	var awaken_hit := CombatResolver.hit_chance(attacker, defender, steer, CombatResolver.AWAKEN_HIT_BONUS)
+	var plain_hit := CombatResolver.hit_chance(attacker, defender, steer)
 	_assert(awaken_hit > plain_hit, "awaken raises this-attack hit chance")
+	_assert(is_equal_approx(awaken_hit, CombatResolver.CERTAIN_HIT_CHANCE), "+50% this-strike accuracy clears the certain-hit edge")
 	_disarm(attacker)
 	_disarm(defender)
 	attacker.skills = [SkillCatalog.by_id("skill_awaken")]
-	# 0.4 在挑战者 15% 闪避下通常打不中（擂主 50%-15%=35%），激发后 +50% 必中。
+	# 挑战者 15% 闪避、没有命中加成时命中线是 75%，0.9 会被闪掉；
+	# 激发 +50% 命中把净差顶过 FULL_HIT_EDGE，这一击必中，再高的点数也照样打中。
 	var rng_awaken_hit := RollSource.new(1)
-	rng_awaken_hit.push([0.0, 0.4, 0.99])
-	var awaken_mid: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_awaken_hit)
-	_assert(awaken_mid[0].awakened and awaken_mid[0].hit, "awaken +50% hit turns a 0.4 roll into a hit")
+	rng_awaken_hit.push([0.0, 0.9, 0.99])
+	var awaken_mid: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_awaken_hit)
+	_assert(awaken_mid[0].awakened and awaken_mid[0].hit, "awaken +50% hit turns a 0.9 roll into a hit")
 	_disarm(attacker)
 	_disarm(defender)
 	var rng_no_awaken_hit := RollSource.new(1)
-	rng_no_awaken_hit.push([0.4])
-	var no_awaken_mid: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_no_awaken_hit)
-	_assert(no_awaken_mid[0].dodged, "the same 0.4 roll dodges without awaken")
+	rng_no_awaken_hit.push([0.9])
+	var no_awaken_mid: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_no_awaken_hit)
+	_assert(no_awaken_mid[0].dodged, "the same 0.9 roll dodges without awaken")
 	_disarm(attacker)
 	_disarm(defender)
 	attacker.skills = [SkillCatalog.by_id("skill_awaken")]
@@ -845,7 +893,7 @@ func _test_skills() -> void:
 	var hp_before_poor := attacker.hp
 	var rng_poor := RollSource.new(1)
 	rng_poor.push([0.0, 0.99])
-	var poor_awaken: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_poor)
+	var poor_awaken: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_poor)
 	_assert(not poor_awaken[0].awakened, "awaken does not trigger when HP cannot pay")
 	_assert(attacker.hp == hp_before_poor or poor_awaken[0].hit, "insufficient HP skips the awaken roll")
 	_assert(attacker.hp == hp_before_poor, "awaken does not spend HP when it cannot trigger")
@@ -855,7 +903,7 @@ func _test_skills() -> void:
 	defender.skills = [SkillCatalog.by_id("skill_counter")]
 	var rng_awaken_counter := RollSource.new(1)
 	rng_awaken_counter.push([0.0, 0.0, 0.99, 0.0, 0.0, 0.99])
-	var awaken_counter_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_awaken_counter)
+	var awaken_counter_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_awaken_counter)
 	var counter_awoke := false
 	for ev in awaken_counter_events:
 		if ev.countered and ev.awakened:
@@ -868,15 +916,43 @@ func _test_skills() -> void:
 	attacker.skills = [stuffed_awaken]
 	var rng_stuffed_awaken := RollSource.new(1)
 	rng_stuffed_awaken.push([0.50, 0.0, 0.99])
-	var stuffed_awaken_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_stuffed_awaken)
+	var stuffed_awaken_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_stuffed_awaken)
 	_assert(not stuffed_awaken_events[0].awakened, "awaken settlement rolls AWAKEN_CHANCE, not the stuffed catalog field")
 
-	# 没有任何“必中”或“必闪”：最悬殊的战力差下，两边的命中率都还在 5%~95% 之间，
+	# 三步口径：谁出手都从 BASE_HIT_CHANCE 起步，再按净命中优势走曲线，最后叠胜率偏移。
+	var plain_champ := _make_fighter("plain_champ", 1000, "", true)
+	var plain_foe := _make_fighter("plain_foe", 1000, "", false)
+	_disarm(plain_champ)
+	_disarm(plain_foe)
+	_assert(is_equal_approx(CombatResolver.hit_chance(plain_champ, plain_foe, 0.0), CombatResolver.BASE_HIT_CHANCE - plain_foe.stacked_dodge()), "a negative net edge comes straight off the base hit chance")
+	_assert(is_equal_approx(CombatResolver.hit_chance_before_steer(0.0), CombatResolver.BASE_HIT_CHANCE), "no net edge means the plain base hit chance")
+	_assert(is_equal_approx(CombatResolver.hit_chance_before_steer(CombatResolver.FULL_HIT_EDGE * 0.5), (CombatResolver.BASE_HIT_CHANCE + 1.0) * 0.5), "half the certain-hit edge lands halfway to certainty")
+	_assert(is_equal_approx(CombatResolver.hit_chance_before_steer(CombatResolver.FULL_HIT_EDGE), CombatResolver.CERTAIN_HIT_CHANCE), "the full certain-hit edge is a certain hit")
+
+	# 必中只能自己堆出来：净命中优势满 FULL_HIT_EDGE 就是 100%，而且胜率偏移撼不动它。
+	var sharp := _make_fighter("sharp", 1000, "", true)
+	var soft := _make_fighter("soft", 1000, "", false)
+	_disarm(sharp)
+	_disarm(soft)
+	var sharp_eye := SkillDef.new()
+	sharp_eye.id = "probe_hit"
+	sharp_eye.accuracy_bonus = soft.stacked_dodge() + CombatResolver.FULL_HIT_EDGE
+	sharp.skills = [sharp_eye]
+	_assert(is_equal_approx(CombatResolver.net_hit_edge(sharp, soft), CombatResolver.FULL_HIT_EDGE), "the probe is exactly one certain-hit edge ahead")
+	_assert(is_equal_approx(CombatResolver.hit_chance(sharp, soft, 0.0), CombatResolver.CERTAIN_HIT_CHANCE), "clearing the certain-hit edge always lands")
+	_assert(is_equal_approx(CombatResolver.hit_chance(sharp, soft, -0.30), CombatResolver.CERTAIN_HIT_CHANCE), "a hopeless target win rate cannot take that certainty away")
+	sharp_eye.accuracy_bonus -= 0.01
+	_assert(CombatResolver.hit_chance(sharp, soft, 0.0) < CombatResolver.CERTAIN_HIT_CHANCE, "one point short of the edge is not a certain hit")
+	# 反过来，光靠战力差顶多推到 MAX_HIT_CHANCE，推不出必中，也压不到必闪之下。
+	_assert(is_equal_approx(CombatResolver.hit_chance(plain_champ, plain_foe, 10.0), CombatResolver.MAX_HIT_CHANCE), "a huge steer still stops at the 95% rail")
+	_assert(is_equal_approx(CombatResolver.hit_chance(plain_champ, plain_foe, -10.0), CombatResolver.MIN_HIT_CHANCE), "and a huge negative steer still leaves the 5% rail")
+
+	# 最悬殊的战力差下，双方净优势都不够必中，命中率就还夹在 5%~95% 之间，
 	# 掷到极端点数时结果照样翻转。
 	var hopeless := CombatResolver.champion_win_rate(1, 1000000)
 	var crushing := CombatResolver.champion_win_rate(1000000, 1)
 	for target in [hopeless, crushing]:
-		var hit := CombatResolver.calibrated_hit_chance(target)
+		var hit := CombatResolver.champion_steer(target)
 		var champ := _make_fighter("champ", 1000, AgentChannels.CHANNEL_CLAUDE, true)
 		var foe := _make_fighter("foe", 1000, AgentChannels.CHANNEL_GROK, false)
 		var champ_buff := SkillCatalog.agent_buff_template(AgentChannels.CHANNEL_CLAUDE)
@@ -885,10 +961,11 @@ func _test_skills() -> void:
 		var foe_buff := SkillCatalog.agent_buff_template(AgentChannels.CHANNEL_GROK)
 		foe_buff.dodge_bonus = 0.10
 		_give_buffs(foe, [foe_buff])
-		_assert(CombatResolver.hit_chance(champ, foe, hit) > CombatResolver.MIN_HIT_CHANCE, "champion can always land a hit (target %.2f)" % target)
-		_assert(CombatResolver.hit_chance(champ, foe, hit) < CombatResolver.MAX_HIT_CHANCE, "champion can always miss (target %.2f)" % target)
-		_assert(CombatResolver.hit_chance(foe, champ, hit) > CombatResolver.MIN_HIT_CHANCE, "opponent can always land a hit (target %.2f)" % target)
-		_assert(CombatResolver.hit_chance(foe, champ, hit) < CombatResolver.MAX_HIT_CHANCE, "opponent can always miss (target %.2f)" % target)
+		# 贴到 95% 的上轨也还有 5% 会被闪掉——底线是“不必中”，不是“不到轨”。
+		_assert(CombatResolver.hit_chance(champ, foe, hit) >= CombatResolver.MIN_HIT_CHANCE, "champion can always land a hit (target %.2f)" % target)
+		_assert(CombatResolver.hit_chance(champ, foe, hit) < CombatResolver.CERTAIN_HIT_CHANCE, "champion can always miss (target %.2f)" % target)
+		_assert(CombatResolver.hit_chance(foe, champ, hit) >= CombatResolver.MIN_HIT_CHANCE, "opponent can always land a hit (target %.2f)" % target)
+		_assert(CombatResolver.hit_chance(foe, champ, hit) < CombatResolver.CERTAIN_HIT_CHANCE, "opponent can always miss (target %.2f)" % target)
 		var rng_roll_zero := RollSource.new(1)
 		rng_roll_zero.push([0.0])
 		_assert(CombatResolver.resolve_strikes(champ, foe, hit, rng_roll_zero)[0].hit, "roll 0 always hits, whatever the target (%.2f)" % target)
@@ -922,7 +999,7 @@ func _test_skills() -> void:
 	_give_buffs(defender, [dodge_for_kill])
 	var rng_ass := RollSource.new(1)
 	rng_ass.push([0.4, 0.0])
-	var ass_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_ass)
+	var ass_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_ass)
 	_assert(ass_events.size() == 1 and ass_events[0].hit, "assassinate hits on a roll that would otherwise dodge")
 	_assert(ass_events[0].assassinated, "assassinate flags the strike")
 	_assert(not ass_events[0].dodged, "assassinate ignores dodge")
@@ -936,7 +1013,7 @@ func _test_skills() -> void:
 	_give_buffs(defender, [dodge_for_kill])
 	var rng_ass_rb := RollSource.new(1)
 	rng_ass_rb.push([0.4, 0.0])
-	var ass_rb: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_ass_rb)
+	var ass_rb: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_ass_rb)
 	_assert(ass_rb[0].assassinated and ass_rb[0].revived, "assassinate with rebirth revives instead of a kill")
 	_assert(defender.is_alive() and defender.hp == defender.max_hp, "rebirth restores full HP after assassinate")
 	_assert(not ass_rb[0].defender_died, "a revived target is not counted as downed")
@@ -950,7 +1027,7 @@ func _test_skills() -> void:
 	var rng_ass_guard := RollSource.new(1)
 	# 命中点 → 刺杀掷中 → 绝对防御掷中。
 	rng_ass_guard.push([0.4, 0.0, 0.0])
-	var ass_guard: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_ass_guard)
+	var ass_guard: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_ass_guard)
 	_assert(ass_guard.size() == 1 and ass_guard[0].guarded, "absolute guard rolls on an assassinate hit too")
 	_assert(ass_guard[0].damage == 0 and defender.hp == defender.max_hp, "a guarded assassinate deals nothing")
 	_assert(defender.is_alive() and not ass_guard[0].defender_died, "a guarded assassinate is not a kill")
@@ -962,7 +1039,7 @@ func _test_skills() -> void:
 	_give_buffs(defender, [dodge_for_kill])
 	var rng_ass_open := RollSource.new(1)
 	rng_ass_open.push([0.4, 0.0, 0.99])
-	var ass_open: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_ass_open)
+	var ass_open: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_ass_open)
 	_assert(ass_open[0].assassinated and not ass_open[0].guarded, "a failed guard roll lets the assassinate through")
 	_assert(defender.hp == 0, "the unguarded assassinate still knocks the target out")
 
@@ -973,9 +1050,10 @@ func _test_skills() -> void:
 	_give_buffs(defender, [dodge_for_kill])
 	defender.hits_to_down = 20
 	defender.hp = defender.max_hp
+	# 闪避 25% + 基础 15%，命中线 50%，所以追击那一下的 0.6 落在闪避段。
 	var rng_ass_follow := RollSource.new(1)
-	rng_ass_follow.push([0.0, 0.99, 0.99, 0.0, 0.4])
-	var ass_follow: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_ass_follow)
+	rng_ass_follow.push([0.0, 0.99, 0.99, 0.0, 0.6])
+	var ass_follow: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_ass_follow)
 	_assert(ass_follow.size() == 2 and ass_follow[1].combo, "double still adds a follow-up after a non-assassinate opener")
 	_assert(not ass_follow[1].assassinated, "follow-up swings do not roll assassinate")
 	_assert(ass_follow[1].dodged and not ass_follow[1].hit, "the follow-up still respects dodge")
@@ -994,7 +1072,7 @@ func _test_skills() -> void:
 	var expected_cut := CombatResolver.assassinate_damage(chal_killer, boss_target)
 	var rng_chal_ass := RollSource.new(1)
 	rng_chal_ass.push([0.4, 0.0])
-	var chal_ass: Array[StrikeResult] = CombatResolver.resolve_strikes(chal_killer, boss_target, win, rng_chal_ass)
+	var chal_ass: Array[StrikeResult] = CombatResolver.resolve_strikes(chal_killer, boss_target, steer, rng_chal_ass)
 	_assert(chal_ass[0].assassinated and chal_ass[0].hit and not chal_ass[0].dodged, "challenger assassinate still ignores dodge")
 	_assert(chal_ass[0].damage == expected_cut, "challenger assassinate deals the shipped 50% max HP cut")
 	_assert(expected_cut * 2 == boss_target.max_hp, "challenger assassinate cut is half the target max HP")
@@ -1007,7 +1085,7 @@ func _test_skills() -> void:
 	defender.skills = [SkillCatalog.by_id("skill_lingbo")]
 	var rng_lb := RollSource.new(1)
 	rng_lb.push([0.0, 0.0, 0.0])
-	var lb_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_lb)
+	var lb_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_lb)
 	_assert(lb_events[0].dodged and lb_events[0].lingbo and not lb_events[0].hit, "lingbo dodges a swing that would have hit")
 	_assert(lb_events.size() >= 2 and lb_events[1].countered, "lingbo is followed by a counter swing")
 	_assert(not lb_events[1].combo, "lingbo counter does not combo")
@@ -1022,7 +1100,7 @@ func _test_skills() -> void:
 	defender.hp = defender.max_hp
 	var rng_lb_follow := RollSource.new(1)
 	rng_lb_follow.push([0.0, 0.99, 0.99, 0.0, 0.0, 0.99])
-	var lb_follow: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_lb_follow)
+	var lb_follow: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_lb_follow)
 	_assert(lb_follow.size() == 2 and lb_follow[1].combo, "double follow-up still happens when lingbo misses the opener")
 	_assert(lb_follow[1].hit and not lb_follow[1].lingbo, "follow-up swings do not roll lingbo")
 
@@ -1035,7 +1113,7 @@ func _test_skills() -> void:
 	var rng_five := RollSource.new(1)
 	for i in 12:
 		rng_five.push([0.0])
-	var five_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_five)
+	var five_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_five)
 	_assert(five_events.size() == 5, "double+triple merge into five swings")
 	_assert(not five_events[0].combo and five_events[0].extra_index == 0, "five-hit opener is the shared first swing")
 	for i in range(1, 5):
@@ -1230,6 +1308,54 @@ func _test_win_rate_regression() -> void:
 		_assert(actual >= CombatResolver.MIN_WIN_RATE - noise, "%s: measured win rate %.2f is at or above the 30%% floor (target %.2f)" % [label, actual, target])
 		_assert(actual <= CombatResolver.MAX_WIN_RATE + noise, "%s: measured win rate %.2f is at or below the 70%% ceiling (target %.2f)" % [label, actual, target])
 		_assert(absf(actual - target) < 0.12, "%s: measured win rate %.2f tracks its %.2f target" % [label, actual, target])
+
+
+## 人数回归：1v1 / 1v10 / 1v50 都要打得出目标胜率。
+##
+## 目标本身分两截算（CombatResolver.champion_win_rate）：人均战力比决定强弱，
+## 人数压力单独往下压。这条用例盯的是**实测跟不跟得住目标**——人一多，
+## 一场仗要掷几百次骰，胜负越来越取决于开局发牌的手气而不是单次掷骰，
+## 偏移的边际效果会被压扁，所以容差比 6 阵容那条宽一点。
+##
+## 已知的一处偏离：1v100 且擂主人均战力还碾压（4 倍以上）时，实测比目标低约 0.09。
+## 那一档的目标已经顶在“人数压力扣完之后的天花板”附近，再往上没有空间，
+## 而擂主每回合只打得掉一个人。真遇到这种榜单再单独标定，别为它把常规场次调歪。
+func _test_roster_size_regression() -> void:
+	# [挑战者人数, 擂主的人均战力倍率, 抽样场次]
+	var cases := [[1, 1.0, 200], [1, 4.0, 200], [10, 1.0, 120], [10, 4.0, 120], [50, 1.0, 40]]
+	for case in cases:
+		var count := int(case[0])
+		var mult := float(case[1])
+		var trials := int(case[2])
+		var roster: Array[RankedUser] = []
+		for i in range(count + 1):
+			var user := RankedUser.new()
+			user.username = "p%d" % i
+			user.tokens = int(50000000.0 * (mult if i == 0 else 1.0))
+			user.channel = AgentChannels.CHANNEL_CODEX
+			user.channels.append(user.channel)
+			user.agents.append(AgentChannels.agent_display_name(user.channel))
+			user.agent_name = user.agents[0]
+			roster.append(user)
+		var wins := 0
+		var target := 0.0
+		for trial in range(trials):
+			var war := WheelWar.new()
+			var rng := RollSource.new(trial * 7919 + 13)
+			war.setup(roster, rng)
+			target = war.win_rate
+			var turns := 0
+			while war.outcome == WheelWar.Outcome.ONGOING and turns < 20000:
+				war.simulate_turn(rng)
+				turns += 1
+			if war.outcome == WheelWar.Outcome.ALL_OPPONENTS_DOWN:
+				wins += 1
+		var actual := float(wins) / float(trials)
+		var label := "1v%d x%.0f" % [count, mult]
+		_assert(target >= CombatResolver.MIN_WIN_RATE and target <= CombatResolver.MAX_WIN_RATE, "%s: target %.2f stays inside [30%%, 70%%]" % [label, target])
+		_assert(absf(actual - target) < 0.15, "%s: measured %.2f tracks its %.2f target" % [label, actual, target])
+	# 等战力的 1v1 必须是干干净净的五五开，这是这次改口径的起点。
+	_assert(is_equal_approx(CombatResolver.champion_win_rate(100, 100, 1), 0.5), "an even duel is an even 50%")
 
 
 ## 设置页：三种窗口模式都摆出来、存得下读得回，认不出的值回落到默认。
@@ -1444,6 +1570,146 @@ func _test_main_parallax_and_quit() -> void:
 	_assert(main_src.find("get_tree().quit()") >= 0, "quit handler uses SceneTree.quit")
 	main.queue_free()
 	await process_frame
+
+
+## 十六套战斗背景、独立随机、分带视差，以及排行榜的可读性承托。
+func _test_battle_and_ranking_backgrounds() -> void:
+	var expected_active_paths: Array[String] = [
+		"res://assets/battle_backgrounds/ember_forge.png",
+		"res://assets/battle_backgrounds/moonlit_bamboo.png",
+		"res://assets/battle_backgrounds/crystal_cavern.png",
+		"res://assets/battle_backgrounds/storm_skyship.png",
+		"res://assets/battle_backgrounds/spring_tournament_day.png",
+		"res://assets/battle_backgrounds/summer_wilderness_day.png",
+		"res://assets/battle_backgrounds/autumn_pixel_farm.png",
+		"res://assets/battle_backgrounds/winter_high_fantasy.png",
+		"res://assets/battle_backgrounds/spring_garden_day.png",
+		"res://assets/battle_backgrounds/summer_coast_day.png",
+		"res://assets/battle_backgrounds/autumn_valley_day.png",
+		"res://assets/battle_backgrounds/winter_village_day.png",
+		"res://assets/battle_backgrounds/coral_depths.png",
+		"res://assets/battle_backgrounds/cyber_rooftop.png",
+		"res://assets/battle_backgrounds/mystic_mushroom_marsh.png",
+		"res://assets/battle_backgrounds/desert_oasis_day.png",
+	]
+	var retired_paths: Array[String] = [
+		"res://assets/battle_backgrounds/celestial_citadel.png",
+		"res://assets/battle_backgrounds/sunken_ruins.png",
+		"res://assets/battle_backgrounds/frozen_observatory.png",
+		"res://assets/battle_backgrounds/neon_archive.png",
+	]
+	_assert(BattleParallax.BACKGROUND_PATHS.size() == 16, "battle ships exactly sixteen active backgrounds")
+	_assert(BattleParallax.BACKGROUND_TEXTURES.size() == BattleParallax.BACKGROUND_PATHS.size(), "every battle path is preloaded for export")
+	for expected_path in expected_active_paths:
+		_assert(BattleParallax.BACKGROUND_PATHS.has(expected_path), "active battle pool includes: %s" % expected_path.get_file())
+	for retired_path in retired_paths:
+		_assert(not BattleParallax.BACKGROUND_PATHS.has(retired_path), "retired battle background stays out of the active pool: %s" % retired_path.get_file())
+	var unique_paths := {}
+	var images: Array[Image] = []
+	for path in BattleParallax.BACKGROUND_PATHS:
+		unique_paths[path] = true
+		_assert(FileAccess.file_exists(path), "battle background exists: %s" % path.get_file())
+		var tex := load(path) as Texture2D
+		_assert(tex != null, "battle background loads: %s" % path.get_file())
+		if tex == null:
+			continue
+		var image := tex.get_image()
+		_assert(image != null and image.get_size() == Vector2i(640, 360), "battle background is 640x360: %s" % path.get_file())
+		_assert(image != null and _opaque_count(image) > 100000, "battle background contains visible art: %s" % path.get_file())
+		images.append(image)
+	_assert(unique_paths.size() == 16, "all sixteen battle background paths are unique")
+	var all_distinct := images.size() == 16
+	for i in images.size():
+		for j in range(i + 1, images.size()):
+			if not _images_differ(images[i], images[j]):
+				all_distinct = false
+	_assert(all_distinct, "all sixteen battle backgrounds are visually distinct files")
+
+	var battle := (load("res://battle.tscn") as PackedScene).instantiate()
+	battle.skip_autoload = true
+	root.add_child(battle)
+	await process_frame
+	var backdrop := battle.get_node_or_null("%BattleBackground") as BattleParallax
+	_assert(backdrop != null, "battle scene owns the parallax background")
+	_assert(backdrop != null and backdrop.get_parent().name == &"BackgroundLayer", "battle art stays below fighters and HUD")
+	if backdrop != null:
+		_assert(backdrop.texture_filter == CanvasItem.TEXTURE_FILTER_NEAREST, "battle art keeps crisp nearest-neighbour pixels")
+		var shader_material := backdrop.material as ShaderMaterial
+		_assert(shader_material != null and shader_material.shader != null, "battle background has its parallax shader")
+		var before_time := backdrop.elapsed_seconds
+		backdrop.advance_parallax(1.25)
+		_assert(backdrop.elapsed_seconds > before_time, "battle parallax advances over time")
+		_assert(shader_material != null and is_equal_approx(float(shader_material.get_shader_parameter(&"elapsed_seconds")), backdrop.elapsed_seconds), "parallax time reaches the shader")
+		var far_amplitude := float(shader_material.get_shader_parameter(&"far_amplitude_px")) if shader_material != null else 0.0
+		var mid_amplitude := float(shader_material.get_shader_parameter(&"mid_amplitude_px")) if shader_material != null else 0.0
+		var near_amplitude := float(shader_material.get_shader_parameter(&"near_amplitude_px")) if shader_material != null else 0.0
+		var scroll_cycle := float(shader_material.get_shader_parameter(&"scroll_cycle_seconds")) if shader_material != null else 0.0
+		var edge_guard := float(shader_material.get_shader_parameter(&"edge_guard_px")) if shader_material != null else 0.0
+		_assert(far_amplitude >= 8.0 and far_amplitude < mid_amplitude, "far and mid planes have visible, ordered scroll travel")
+		_assert(mid_amplitude < near_amplitude and near_amplitude >= 24.0, "near plane has clearly visible parallax travel")
+		_assert(is_equal_approx(scroll_cycle, BattleParallax.TIME_WRAP_SECONDS), "script and shader share one seamless scroll cycle")
+		_assert(edge_guard >= 1.0 and near_amplitude + edge_guard < 160.0, "scroll overscan has a safe edge guard without excessive crop")
+		backdrop.elapsed_seconds = BattleParallax.TIME_WRAP_SECONDS - 0.25
+		backdrop.advance_parallax(0.5)
+		_assert(is_equal_approx(backdrop.elapsed_seconds, 0.25), "parallax wraps at the same phase without a motion jump")
+		backdrop.background_rng.seed = 20260919
+		var first_path := backdrop.roll_background()
+		var first_index := backdrop.current_index
+		_assert(is_zero_approx(backdrop.elapsed_seconds), "a new arena begins its scroll from the centered frame")
+		var first_direction := float(shader_material.get_shader_parameter(&"scroll_direction")) if shader_material != null else 0.0
+		_assert(first_direction == (1.0 if first_index % 2 == 0 else -1.0), "arena index selects a deterministic scroll direction")
+		var combat_rng := RollSource.new(77)
+		battle._rng = combat_rng
+		var second_path := backdrop.roll_background()
+		_assert(not first_path.is_empty() and not second_path.is_empty(), "background rolls resolve to real textures")
+		_assert(backdrop.current_index != first_index, "consecutive rounds never repeat the same background")
+		_assert(battle._rng == combat_rng, "background rolling never replaces the combat RNG")
+		var seen := {}
+		seen[first_path] = true
+		seen[second_path] = true
+		for _roll in 128:
+			seen[backdrop.roll_background()] = true
+		_assert(seen.size() == 16, "the independent background roll can reach every active arena")
+	var floor_scrim := battle.get_node("BackgroundLayer/Floor") as ColorRect
+	var arena_scrim := battle.get_node("BackgroundLayer/ArenaTint") as ColorRect
+	_assert(floor_scrim.color.a >= 0.4 and floor_scrim.color.a < 0.8, "lower arena is dimmed without hiding the generated floor")
+	_assert(arena_scrim.color.a >= 0.2 and arena_scrim.color.a < 0.5, "fighter zone keeps a light readability tint")
+	var log := battle.get_node("%Log") as RichTextLabel
+	var record_panel := battle.get_node("%RecordPanel") as PanelContainer
+	var log_style := log.get_theme_stylebox("normal") as StyleBoxFlat
+	var record_style := record_panel.get_theme_stylebox("panel") as StyleBoxFlat
+	_assert(log_style != null and log_style.bg_color.a >= 0.5 and log_style.bg_color.a <= 0.62, "combat report uses a translucent backing")
+	_assert(record_style != null and record_style.bg_color.a >= 0.5 and record_style.bg_color.a <= 0.62, "round standings use a translucent backing")
+	_assert(log_style != null and log_style.get_border_width(SIDE_LEFT) >= 1, "combat report keeps a subtle border over bright art")
+	_assert(record_style != null and record_style.get_border_width(SIDE_LEFT) >= 1, "round standings keep a subtle border over bright art")
+	_assert(log.get_theme_constant("outline_size") >= 2, "combat report text stays legible over the translucent panel")
+	var record_title := battle.get_node("%RecordTitle") as Label
+	_assert(record_title.get_theme_constant("outline_size") >= 2, "round standings title stays legible over the translucent panel")
+	var has_readable_record_row := false
+	for child in battle.get_node("%RecordList").find_children("*", "Label", true, false):
+		var row_label := child as Label
+		if row_label != null and row_label.get_theme_constant("outline_size") >= 2:
+			has_readable_record_row = true
+			break
+	_assert(has_readable_record_row, "dynamic round standings text gets the same readability outline")
+	battle.queue_free()
+	await process_frame
+
+	var ranking := (load("res://ranking.tscn") as PackedScene).instantiate()
+	var ranking_backdrop := ranking.get_node_or_null("%RankingBackdrop") as TextureRect
+	var ranking_scrim := ranking.get_node_or_null("%RankingScrim") as ColorRect
+	var content_panel := ranking.get_node_or_null("%ContentPanel") as Panel
+	var margin := ranking.get_node("Margin") as MarginContainer
+	_assert(ranking_backdrop != null and ranking_backdrop.texture != null, "ranking scene loads its illustrated hall")
+	if ranking_backdrop != null and ranking_backdrop.texture != null:
+		var hall := ranking_backdrop.texture.get_image()
+		_assert(hall != null and hall.get_size() == Vector2i(640, 360) and _opaque_count(hall) > 100000, "ranking hall is a non-empty 640x360 image")
+	_assert(ranking_backdrop != null and ranking_backdrop.get_index() < margin.get_index(), "ranking art renders behind all table content")
+	_assert(ranking_scrim != null and ranking_scrim.color.a >= 0.45, "ranking hall has a full-screen readability scrim")
+	var panel_style := content_panel.get_theme_stylebox("panel") as StyleBoxFlat if content_panel != null else null
+	_assert(panel_style != null and panel_style.bg_color.a >= 0.7, "ranking rows sit on a high-contrast translucent panel")
+	_assert(content_panel != null and content_panel.get_index() < margin.get_index(), "ranking content panel stays behind the original layout")
+	ranking.free()
 
 
 ## 从 .godot / .cfg 文本里抠出某个键的引号值，不依赖 ProjectSettings。
@@ -1729,7 +1995,7 @@ func _joined_log(events: Array[StrikeResult]) -> String:
 
 ## 战报文案：暴击、闪避、连击、中毒、混乱自伤各自的固定说法。
 func _test_combat_log() -> void:
-	var win := 0.5
+	var steer := 0.0
 	var attacker := _make_fighter("甲", 100, "", true)
 	var defender := _make_fighter("乙", 100, "", false)
 	_disarm(attacker)
@@ -1737,7 +2003,7 @@ func _test_combat_log() -> void:
 	attacker.skills = [SkillCatalog.by_id("skill_crit")]
 	var rng_crit := RollSource.new(1)
 	rng_crit.push([0.0, 0.0])
-	var crit_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_crit)
+	var crit_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, steer, rng_crit)
 	var crit_log := _joined_log(crit_events)
 	_assert(crit_log.find("对乙造成【暴击】伤害") >= 0, "crit log uses 对XXX造成【暴击】伤害")
 
@@ -1747,8 +2013,8 @@ func _test_combat_log() -> void:
 	dodge_buff.dodge_bonus = 0.25
 	_give_buffs(defender, [dodge_buff])
 	var rng_dodge := RollSource.new(1)
-	rng_dodge.push([0.4])
-	var dodge_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, win, rng_dodge))
+	rng_dodge.push([0.6])
+	var dodge_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, steer, rng_dodge))
 	_assert(dodge_log.find("乙【闪避】了甲的伤害") >= 0, "dodge log uses XXX【闪避】了XXX的伤害")
 	_assert(FileAccess.get_file_as_string("res://scripts/combat_log.gd").find("没有打中") < 0, "combat log has no 失手/whiff wording")
 
@@ -1757,7 +2023,7 @@ func _test_combat_log() -> void:
 	attacker.skills = [SkillCatalog.by_id("skill_double")]
 	var rng_double := RollSource.new(1)
 	rng_double.push([0.0, 0.99, 0.0, 0.0, 0.99])
-	var double_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, win, rng_double))
+	var double_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, steer, rng_double))
 	_assert(double_log.find("甲对乙瞬间进攻了【两】次") >= 0, "double log uses 瞬间进攻了【两】次")
 
 	_disarm(attacker)
@@ -1765,7 +2031,7 @@ func _test_combat_log() -> void:
 	attacker.skills = [SkillCatalog.by_id("skill_triple")]
 	var rng_triple := RollSource.new(1)
 	rng_triple.push([0.0, 0.99, 0.0, 0.0, 0.99, 0.0, 0.99])
-	var triple_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, win, rng_triple))
+	var triple_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, steer, rng_triple))
 	_assert(triple_log.find("甲对乙瞬间进攻了【三】次") >= 0, "triple log uses 瞬间进攻了【三】次")
 
 	_disarm(attacker)
@@ -1776,7 +2042,7 @@ func _test_combat_log() -> void:
 	var rng_five_log := RollSource.new(1)
 	for i in 12:
 		rng_five_log.push([0.0])
-	var five_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, win, rng_five_log))
+	var five_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, steer, rng_five_log))
 	_assert(five_log.find("甲对乙瞬间进攻了【五】次") >= 0, "merged combo log uses 瞬间进攻了【五】次")
 	_assert(five_log.find("瞬间进攻了【两】次") < 0 or five_log.find("甲对乙瞬间进攻了【五】次") >= 0, "five-hit log keeps the 五 wording")
 
@@ -1785,7 +2051,7 @@ func _test_combat_log() -> void:
 	attacker.skills = [SkillCatalog.by_id("skill_assassinate")]
 	var rng_ass_log := RollSource.new(1)
 	rng_ass_log.push([0.0, 0.0])
-	var ass_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, win, rng_ass_log))
+	var ass_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, steer, rng_ass_log))
 	_assert(ass_log.find("甲对乙发动【幻影刺杀】") >= 0, "assassinate log names 幻影刺杀")
 
 	_disarm(attacker)
@@ -1793,7 +2059,7 @@ func _test_combat_log() -> void:
 	defender.skills = [SkillCatalog.by_id("skill_lingbo")]
 	var rng_lb_log := RollSource.new(1)
 	rng_lb_log.push([0.0, 0.0, 0.0])
-	var lb_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, win, rng_lb_log))
+	var lb_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, steer, rng_lb_log))
 	_assert(lb_log.find("乙以【凌波微步】闪避了甲的伤害") >= 0, "lingbo log names 凌波微步")
 
 	_disarm(attacker)
@@ -1802,7 +2068,7 @@ func _test_combat_log() -> void:
 	attacker.hp = 10
 	var rng_heal_log := RollSource.new(1)
 	rng_heal_log.push([0.0])
-	var heal_log := _joined_log(CombatResolver.resolve_action(attacker, defender, win, rng_heal_log))
+	var heal_log := _joined_log(CombatResolver.resolve_action(attacker, defender, steer, rng_heal_log))
 	_assert(heal_log.find("甲发动【治疗】") >= 0, "heal log names 治疗")
 	_assert(heal_log.find("本回合不进攻") >= 0, "heal log says the turn skips the attack")
 
@@ -1811,7 +2077,7 @@ func _test_combat_log() -> void:
 	attacker.skills = [SkillCatalog.by_id("skill_awaken")]
 	var rng_awaken_log := RollSource.new(1)
 	rng_awaken_log.push([0.0, 0.0, 0.99])
-	var awaken_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, win, rng_awaken_log))
+	var awaken_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, steer, rng_awaken_log))
 	_assert(awaken_log.find("甲发动【潜能激发】") >= 0, "awaken log names 潜能激发")
 	_assert(awaken_log.find("损失") >= 0, "awaken log mentions the HP cost")
 
@@ -1820,7 +2086,7 @@ func _test_combat_log() -> void:
 	attacker.skills = [SkillCatalog.by_id("skill_poison")]
 	var rng_poison := RollSource.new(1)
 	rng_poison.push([0.0, 0.99, 0.0])
-	var poison_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, win, rng_poison))
+	var poison_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, steer, rng_poison))
 	_assert(poison_log.find("甲对乙造成了伤害，乙【中毒】了") >= 0, "poison log uses 造成了伤害，XXX【中毒】了")
 
 	_disarm(attacker)
@@ -1832,7 +2098,7 @@ func _test_combat_log() -> void:
 	]
 	var rng_all := RollSource.new(1)
 	rng_all.push([0.0, 0.99, 0.0, 0.0, 0.0])
-	var all_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, win, rng_all))
+	var all_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, steer, rng_all))
 	_assert(all_log.find("乙【中毒，麻痹，混乱】了") >= 0, "multi-status log joins 中毒，麻痹，混乱")
 
 	_disarm(attacker)
@@ -1840,7 +2106,7 @@ func _test_combat_log() -> void:
 	attacker.confuse_turns = 3
 	var rng_self := RollSource.new(1)
 	rng_self.push([0.0, 0.0, 0.99])
-	var self_events: Array[StrikeResult] = CombatResolver.resolve_action(attacker, defender, win, rng_self)
+	var self_events: Array[StrikeResult] = CombatResolver.resolve_action(attacker, defender, steer, rng_self)
 	var self_log := _joined_log(self_events)
 	var self_damage := 0
 	for ev in self_events:
@@ -1856,7 +2122,7 @@ func _test_combat_log() -> void:
 	attacker.confuse_turns = 3
 	var rng_self_miss := RollSource.new(1)
 	rng_self_miss.push([0.0, 0.999])
-	var miss_log := _joined_log(CombatResolver.resolve_action(attacker, defender, win, rng_self_miss))
+	var miss_log := _joined_log(CombatResolver.resolve_action(attacker, defender, steer, rng_self_miss))
 	_assert(miss_log.find("甲因为【混乱】挥空了") >= 0, "a missed self-hit says so instead of claiming damage")
 
 
@@ -2362,7 +2628,10 @@ func _test_next_round_cycle() -> void:
 	_assert(battle_src.find("func _round_loop") >= 0, "有一层轮次循环在驱动下一轮")
 	_assert(battle_src.find("await _load_and_run()") >= 0, "下一轮重新拉一次今日名单")
 	var ranked: Array[RankedUser] = [_ranked("甲", 5000), _ranked("乙", 300), _ranked("丙", 300)]
+	var round_backdrop := battle.get_node("%BattleBackground") as BattleParallax
+	_assert(round_backdrop.current_index == -1, "尚未真正开战时背景还没有消耗一次 Round roll")
 	await battle._start_war(ranked)
+	_assert(round_backdrop.current_index >= 0, "每次真正进入 _start_war 都会 Roll 一张背景")
 	_assert(battle.get_node("%ResultPanel").visible, "一场打完先出结果面板")
 	_assert(not battle.get_node("%MvpLabel").text.is_empty(), "结果面板带 MVP 一行")
 	_assert(battle.get_node("%Log").get_parsed_text().find("MVP") >= 0, "MVP 也写进战报")
@@ -2478,10 +2747,10 @@ func _test_size_traits() -> void:
 	_assert(is_equal_approx(boss.stacked_damage_reduction(), Fighter.CHAMPION_INNATE_DAMAGE_REDUCTION), "擂主先天减伤，没有全员基础减伤")
 	_assert(is_equal_approx(challenger.stacked_damage_reduction(), 0.0), "挑战者没有先天减伤")
 
-	# 无闪避技能时，落在闪避段的点数仍记闪避（挑战者 15% → 命中线 0.35）。
+	# 无闪避技能时，落在闪避段的点数仍记闪避（挑战者 15% → 命中线 0.75）。
 	var rng_base_dodge := RollSource.new(1)
-	rng_base_dodge.push([0.40])
-	var base_dodge_ev: Array[StrikeResult] = CombatResolver.resolve_strikes(boss, challenger, 0.5, rng_base_dodge)
+	rng_base_dodge.push([0.80])
+	var base_dodge_ev: Array[StrikeResult] = CombatResolver.resolve_strikes(boss, challenger, 0.0, rng_base_dodge)
 	_assert(base_dodge_ev[0].dodged and not base_dodge_ev[0].hit, "base dodge procs without a dodge skill")
 	# 无暴击技能时也能暴击，伤害高于同一次非暴击。从完整 resolve_strikes 进。
 	challenger.hp = challenger.max_hp
@@ -2496,9 +2765,9 @@ func _test_size_traits() -> void:
 	_assert(base_nocrit_ev[0].hit and not base_nocrit_ev[0].crit, "the same opening hit roll is not a crit when the crit die misses")
 	_assert(base_crit_ev[0].damage > base_nocrit_ev[0].damage, "a base crit hits harder than the non-crit twin")
 
-	# 先天闪避直接反映在命中率上：同样 50% 底子，打擂主更容易命中。
-	var on_boss := CombatResolver.hit_chance(challenger, boss, 0.5)
-	var on_challenger := CombatResolver.hit_chance(boss, challenger, 0.5)
+	# 先天闪避直接反映在命中率上：同样的基础命中，打擂主更容易命中。
+	var on_boss := CombatResolver.hit_chance(challenger, boss, 0.0)
+	var on_challenger := CombatResolver.hit_chance(boss, challenger, 0.0)
 	_assert(is_equal_approx(on_boss - on_challenger, Fighter.CHALLENGER_INNATE_DODGE - Fighter.CHAMPION_INNATE_DODGE), "先天闪避差把双方命中率拉开")
 
 	# 技能叠在先天之上，不是二选一。
@@ -2535,11 +2804,11 @@ func _test_size_traits() -> void:
 		var chance := skill.poison_chance + skill.paralyze_chance + skill.confuse_chance + skill.root_chance
 		_assert(is_equal_approx(chance, SkillCatalog.STATUS_CHANCE), "%s 触发概率是活的状态技概率" % skill_id)
 
-	# 人越多，擂主那份按最大生命回血的续航越值钱，命中率上要按人头折价。
-	_assert(is_equal_approx(CombatResolver.champion_endurance_edge(CombatResolver.CHAMPION_ENDURANCE_EDGE_BASE), 0.0), "续航折价起点之内不额外扣命中")
-	_assert(CombatResolver.champion_endurance_edge(CombatResolver.CHAMPION_ENDURANCE_EDGE_BASE + 1) > 0.0, "超过折价起点才开始扣命中")
-	_assert(CombatResolver.champion_endurance_edge(14) <= CombatResolver.CHAMPION_ENDURANCE_EDGE_CAP + 0.0001, "大榜单的续航折价有封顶")
-	_assert(CombatResolver.calibrated_hit_chance(0.5, 0.0, 0.0, 14) < CombatResolver.calibrated_hit_chance(0.5, 0.0, 0.0, 2), "同样目标胜率，人越多擂主的命中率给得越少")
+	# 人越多，擂主越吃亏（个个都是满血新人，他的血条连着算），命中率上按人头补一点。
+	_assert(is_equal_approx(CombatResolver.champion_crowd_relief(CombatResolver.CHAMPION_CROWD_RELIEF_BASE), 0.0), "补偿起点之内不额外补命中")
+	_assert(CombatResolver.champion_crowd_relief(CombatResolver.CHAMPION_CROWD_RELIEF_BASE + 1) > 0.0, "超过补偿起点才开始补命中")
+	_assert(CombatResolver.champion_crowd_relief(14) <= CombatResolver.CHAMPION_CROWD_RELIEF_CAP + 0.0001, "大榜单的补偿有封顶")
+	_assert(CombatResolver.champion_steer(0.5, 0.0, 0.0, 14) > CombatResolver.champion_steer(0.5, 0.0, 0.0, 2), "同样目标胜率，人越多给擂主补得越多")
 	# 技能张数差改成按张计价：多摸一张就多让一点命中率，不再用平均张数硬编。
-	_assert(CombatResolver.calibrated_hit_chance(0.5, 0.0, 4.0) < CombatResolver.calibrated_hit_chance(0.5, 0.0, 2.0), "多摸一张技能就要多让出一点命中率")
-	_assert(is_equal_approx(CombatResolver.calibrated_hit_chance(0.5, 0.0, 0.0), 0.5), "张数持平时中心点就是五五开")
+	_assert(CombatResolver.champion_steer(0.5, 0.0, 4.0) < CombatResolver.champion_steer(0.5, 0.0, 2.0), "多摸一张技能就要多让出一点命中率")
+	_assert(is_equal_approx(CombatResolver.champion_steer(0.5, 0.0, 0.0), 0.0), "张数持平、目标五五开时不用偏移")

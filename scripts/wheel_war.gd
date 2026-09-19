@@ -18,8 +18,9 @@ var others_power: int = 0
 ## 擂主本场的目标胜率，始终落在 [MIN_WIN_RATE, MAX_WIN_RATE] 内。
 ## 它是“最终获胜的概率”，不是单次命中率。
 var win_rate: float = 0.5
-## 由 win_rate 反解出的擂主单次命中率，通常只在 50% 附近浮动几个点。
-var champion_hit_chance: float = 0.5
+## 由 win_rate 反解出的擂主命中率偏移：正数擂主更容易打中、挑战者更难，
+## 两边一加一减，通常只有几个百分点（见 CombatResolver.champion_steer）。
+var champion_steer: float = 0.0
 var outcome: Outcome = Outcome.ONGOING
 
 
@@ -43,17 +44,17 @@ func setup(ranked: Array[RankedUser], rng: RollSource) -> void:
 	rng.shuffle(challengers)
 	waiting = challengers
 	others_power = CombatResolver.aggregate_power(powers)
-	win_rate = CombatResolver.champion_win_rate(champion.tokens, others_power)
+	win_rate = CombatResolver.champion_win_rate(champion.tokens, others_power, waiting.size())
 	# 每位挑战者吃 HITS_PER_DUEL 次命中就倒下；擂主的血条要扛完所有人，
 	# 于是两边需要的有效命中总数相等，胜负回到命中率和技能上。
 	champion.hits_to_down = CombatResolver.HITS_PER_DUEL * waiting.size()
 	for fighter in waiting:
 		fighter.hits_to_down = CombatResolver.HITS_PER_DUEL
-	# 先发牌，再反解命中率——命中率要扣掉擂主多带的那几个 buff。
+	# 先发牌，再反解偏移——偏移要扣掉擂主多带的那几个 buff。
 	SkillGrant.apply(champion, rng)
 	for fighter in waiting:
 		SkillGrant.apply(fighter, rng)
-	champion_hit_chance = CombatResolver.calibrated_hit_chance(win_rate, _champion_buff_edge(), _champion_skill_edge(), waiting.size())
+	champion_steer = CombatResolver.champion_steer(win_rate, _champion_buff_edge(), _champion_skill_edge(), waiting.size())
 	# 让第一位挑战者上场。
 	_advance_opponent()
 
@@ -75,7 +76,7 @@ func simulate_turn(rng: RollSource) -> Array[StrikeResult]:
 	if outcome != Outcome.ONGOING or champion == null or current_opponent == null:
 		return events
 	# 挑战者永远先手。
-	events.append_array(CombatResolver.resolve_action(current_opponent, champion, champion_hit_chance, rng))
+	events.append_array(CombatResolver.resolve_action(current_opponent, champion, champion_steer, rng))
 	if not champion.is_alive():
 		outcome = Outcome.CHAMPION_DOWN
 		return events
@@ -84,7 +85,7 @@ func simulate_turn(rng: RollSource) -> Array[StrikeResult]:
 		_advance_opponent()
 		return events
 	# 擂主还手。
-	events.append_array(CombatResolver.resolve_action(champion, current_opponent, champion_hit_chance, rng))
+	events.append_array(CombatResolver.resolve_action(champion, current_opponent, champion_steer, rng))
 	if not champion.is_alive():
 		outcome = Outcome.CHAMPION_DOWN
 	# 挑战者可能死在擂主的出手或反击下，同样要换人。

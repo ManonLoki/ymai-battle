@@ -54,6 +54,11 @@ func _run() -> void:
 		printerr("RANKING_BACK_MISSING")
 		quit(1)
 		return
+	var ranking_backdrop := ranking.get_node_or_null("%RankingBackdrop") as TextureRect
+	if ranking_backdrop == null or ranking_backdrop.texture == null or ranking.get_node_or_null("%RankingScrim") == null or ranking.get_node_or_null("%ContentPanel") == null:
+		printerr("RANKING_BACKGROUND_MISSING")
+		quit(1)
+		return
 	print("RANKING_SCENE_OK")
 	ranking.queue_free()
 	await process_frame
@@ -65,6 +70,11 @@ func _run() -> void:
 	await process_frame
 	if battle.get_node_or_null("%BackButton") == null or battle.get_node_or_null("%ChampionSlot") == null:
 		printerr("BATTLE_CONTROLS_MISSING")
+		quit(1)
+		return
+	var battle_backdrop := battle.get_node_or_null("%BattleBackground") as BattleParallax
+	if battle_backdrop == null or battle_backdrop.texture == null or BattleParallax.BACKGROUND_PATHS.size() != 16:
+		printerr("BATTLE_BACKGROUNDS_MISSING")
 		quit(1)
 		return
 	print("BATTLE_SCENE_OK")

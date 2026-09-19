@@ -26,7 +26,13 @@ func _ready() -> void:
 	TvRemote.install()
 	ThemeHelper.apply(self, 18)
 	%Background.color = ThemeHelper.BG
+	# 背景本身保持像素画最近邻采样；深色遮罩和半透明内容板在 scene 中固定
+	# 位于它上面，动态表格仍沿用原来的 Margin/VBox，不改变遥控器交互路径。
+	%RankingBackdrop.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	%Title.add_theme_color_override("font_color", ThemeHelper.TEXT)
+	%Title.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+	%Title.add_theme_constant_override("shadow_offset_x", 2)
+	%Title.add_theme_constant_override("shadow_offset_y", 2)
 	%Status.add_theme_color_override("font_color", ThemeHelper.MUTED)
 	ThemeHelper.style_back_button(%BackButton)
 	%BackButton.pressed.connect(_on_back_pressed)

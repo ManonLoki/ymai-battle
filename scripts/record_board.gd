@@ -20,7 +20,7 @@ static func refresh(list: Node, record: RoundRecord) -> void:
 	var rows := record.standings()
 	# 当天第一场（或者刚跨天）时榜是空的，放一句占位。
 	if rows.is_empty():
-		list.add_child(ThemeHelper.make_label("还没有人打完一场", ThemeHelper.MUTED, 15))
+		list.add_child(_readable_label("还没有人打完一场", ThemeHelper.MUTED, 15))
 		return
 	for i in range(rows.size()):
 		list.add_child(_row(i + 1, rows[i]))
@@ -41,14 +41,23 @@ static func _row(rank: int, row: Dictionary) -> Control:
 	var line := HBoxContainer.new()
 	line.add_theme_constant_override("separation", 8)
 	line.add_child(_medal(rank))
-	var name_label := ThemeHelper.make_label("【%s】" % str(row.get("username", "")), _rank_color(rank), ROW_FONT_PX)
+	var name_label := _readable_label("【%s】" % str(row.get("username", "")), _rank_color(rank), ROW_FONT_PX)
 	# 名字占满中间，把胜场推到最右。
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	line.add_child(name_label)
-	var wins_label := ThemeHelper.make_label("%d 场" % int(row.get("wins", 0)), ThemeHelper.TEXT, ROW_FONT_PX)
+	var wins_label := _readable_label("%d 场" % int(row.get("wins", 0)), ThemeHelper.TEXT, ROW_FONT_PX)
 	wins_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	line.add_child(wins_label)
 	return line
+
+
+## 榜单行浮在透明底板上，玩家名、胜场和空榜提示都加深色描边，避免被明亮背景吞掉。
+## 徽章数字刻意不走这里：圆形实底已经提供了足够对比度。
+static func _readable_label(text: String, color: Color, font_size: int) -> Label:
+	var label := ThemeHelper.make_label(text, color, font_size)
+	label.add_theme_color_override("font_outline_color", Color(ThemeHelper.BG, 0.96))
+	label.add_theme_constant_override("outline_size", 2)
+	return label
 
 
 ## 前三名用奖牌色，之后的用普通文字色。
