@@ -12,10 +12,11 @@ const FIGHTER_VIEW := preload("res://scenes/fighter_view.tscn")
 const NEXT_ROUND_DELAY := 60.0
 ## 每条战报事件之间的停顿，太快看不清、太慢一场打不完。
 const EVENT_BEAT := 0.12
-## 返回按钮的尺寸，比主菜单的小一圈。
-const BACK_BUTTON_SIZE := Vector2(120, 40)
-## 战绩榜上挂奖牌的名次上限。
-const MEDAL_RANKS := 3
+## 挥击动画挥到一半的时刻，挨打方在这里结算才像被打中。
+## 跟着 FighterView 的出手动画长度走，和上面那条战报节奏是两回事，别合成一个。
+const HIT_IMPACT_DELAY := 0.12
+## 奖牌徽章的直径，圆角取一半就是正圆。
+const BADGE_PX := 22
 
 var _war: WheelWar
 var _rng: RollSource
@@ -41,7 +42,7 @@ func _ready() -> void:
 	ThemeHelper.apply(%ResultPanel, 18)
 	%Backdrop.color = ThemeHelper.BG
 	ThemeHelper.style_button(%BackButton, false)
-	%BackButton.custom_minimum_size = BACK_BUTTON_SIZE
+	%BackButton.custom_minimum_size = ThemeHelper.BACK_BUTTON_MIN_SIZE
 	%BackButton.pressed.connect(_on_back_pressed)
 	%ResultPanel.visible = false
 	# 结果面板压在立绘和战报上面，没有底色会糊成一片。
@@ -55,9 +56,9 @@ func _ready() -> void:
 	%ResultPanel.add_theme_stylebox_override("panel", result_box)
 	%RecordPanel.add_theme_stylebox_override("panel", ThemeHelper.make_flat(ThemeHelper.PANEL, 10))
 	%RecordTitle.add_theme_color_override("font_color", ThemeHelper.MUTED)
-	# 先读一次当天战绩；跨天之后由 _sync_record_to_today 换成新一天的。
-	_record = RoundRecord.load_for(Time.get_date_string_from_system())
-	_refresh_record_board()
+	# 先读一次当天战绩。_record 还是 null，所以这一句就是首次加载；
+	# 之后跨天再调它，换成新一天的。
+	_sync_record_to_today()
 	# 电视上没有鼠标，“返回”必须始终可聚焦，否则演出过程中遥控器按什么都没用。
 	%BackButton.focus_mode = Control.FOCUS_ALL
 	%BackButton.grab_focus()
@@ -126,11 +127,10 @@ func _round_loop() -> void:
 ## 名单本身不用在这里处理：_load_and_run 每轮都会重新取一次系统日期去拉接口，
 ## 所以榜单天然就是当天的；会“卡在昨天”的只有 _record，因为它只在 _ready 里读过一次。
 func _sync_record_to_today() -> void:
-	var today := Time.get_date_string_from_system()
-	if _record != null and not _record.is_stale(today):
+	if _record != null and not DayClock.rolled_over(_record.date):
 		return
 	# load_for 读到的存档日期对不上就会返回一份空记录，正好是我们要的。
-	_record = RoundRecord.load_for(today)
+	_record = RoundRecord.load_for(DayClock.today())
 	_refresh_record_board()
 
 
@@ -166,9 +166,8 @@ func _reset_for_next_round() -> void:
 	%Status.remove_theme_color_override("font_color")
 	# 两位角色的视图整个丢掉重建，省得逐项复位。
 	for slot in [%ChampionSlot, %OpponentSlot]:
-		for child in slot.get_children():
-			slot.remove_child(child)
-			child.queue_free()
+		# 立绘上可能还挂着没跑完的演出协程，延后释放才不会让它碰到空节点。
+		NodeUtil.clear_children(slot, true)
 	_champion_view = null
 	_opponent_view = null
 	_war = null
@@ -196,7 +195,7 @@ func _load_and_run() -> bool:
 	var data: Dictionary = result.get("data", {})
 	var usage: Array = data.get("channelUsage", [])
 	# 日期每轮现取，跨天之后自动换成新一天的榜单。
-	var today := Time.get_date_string_from_system()
+	var today := DayClock.today()
 	var ranked: Array[RankedUser] = RankingAggregator.rank_users(usage, today)
 	# 一个人没法打车轮战。
 	if ranked.size() < 2:
@@ -241,9 +240,7 @@ func _refresh_record_board() -> void:
 	# 正在打的这一场还没记进去，所以显示 rounds + 1。
 	%RoundLabel.text = "今日第 %d 场" % maxi(1, _record.rounds + 1)
 	%RecordTitle.text = "今日榜一战绩 · 共 %d 场" % _record.rounds
-	for child in %RecordList.get_children():
-		%RecordList.remove_child(child)
-		child.free()
+	NodeUtil.clear_children(%RecordList)
 	var rows := _record.standings()
 	# 当天第一场（或者刚跨天）时榜是空的，放一句占位。
 	if rows.is_empty():
@@ -280,17 +277,17 @@ func _record_row(rank: int, row: Dictionary) -> Control:
 
 ## 前三名用奖牌色，之后的用普通文字色。
 func _rank_color(rank: int) -> Color:
-	return ThemeHelper.medal_color(rank) if rank <= MEDAL_RANKS else ThemeHelper.TEXT
+	return ThemeHelper.medal_color(rank) if ThemeHelper.has_medal(rank) else ThemeHelper.TEXT
 
 
 ## 前三名的金银铜牌。用一个圆底 + 名次数字，不依赖字体里有没有奖牌字符。
 func _medal(rank: int) -> Control:
 	var badge := Panel.new()
-	badge.custom_minimum_size = Vector2(22, 22)
+	badge.custom_minimum_size = Vector2(BADGE_PX, BADGE_PX)
 	var box := StyleBoxFlat.new()
 	# 圆角开到边长的一半就是正圆。
-	box.set_corner_radius_all(11)
-	box.bg_color = ThemeHelper.medal_color(rank) if rank <= MEDAL_RANKS else ThemeHelper.CARD
+	box.set_corner_radius_all(BADGE_PX / 2)
+	box.bg_color = ThemeHelper.medal_color(rank) if ThemeHelper.has_medal(rank) else ThemeHelper.CARD
 	badge.add_theme_stylebox_override("panel", box)
 	# 名次数字铺满整个圆，居中显示。
 	var number := Label.new()
@@ -300,7 +297,7 @@ func _medal(rank: int) -> Control:
 	number.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	number.add_theme_font_size_override("font_size", 13)
 	# 亮底上用深色字，暗底上用浅灰字。
-	number.add_theme_color_override("font_color", ThemeHelper.BG if rank <= MEDAL_RANKS else ThemeHelper.MUTED)
+	number.add_theme_color_override("font_color", ThemeHelper.BG if ThemeHelper.has_medal(rank) else ThemeHelper.MUTED)
 	badge.add_child(number)
 	return badge
 
@@ -391,7 +388,7 @@ func _play_event(event: StrikeResult, champion: Fighter, opponent: Fighter) -> v
 		return
 	attacker_view.play_attack()
 	# 等挥击动画挥到一半再结算挨打方，看起来才像打中了。
-	if not await _wait(EVENT_BEAT):
+	if not await _wait(HIT_IMPACT_DELAY):
 		return
 	if event.hit:
 		defender_view.set_hp(event.defender_hp_after, defender.max_hp)

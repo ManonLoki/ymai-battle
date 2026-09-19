@@ -59,30 +59,26 @@ static func none_buff() -> SkillDef:
 	return skill
 
 
-## 某个渠道对应的 buff 模板，数值先填区间下限，由 SkillGrant 重掷。
+## 某个渠道对应的 buff 模板。不给 amount 就按区间下限填数值、说明里写出整个区间；
+## SkillGrant 掷出这一场的具体数值后带着 amount 再要一次，说明就跟着变成真实加成。
+## 生效字段和说明文案都只在这里拼一次，改文案不用两头找。
 ## 认不出的渠道返回空技能。
-static func agent_buff_template(channel: String) -> SkillDef:
+static func agent_buff_template(channel: String, amount: float = -1.0) -> SkillDef:
 	if not AGENT_BUFF_SPECS.has(channel):
 		return none_buff()
 	var spec: Array = AGENT_BUFF_SPECS[channel]
 	var skill := SkillDef.new()
 	skill.id = spec[0]
 	skill.display_name = spec[1]
-	skill.description = "%s +5%%~10%%" % spec[3]
 	# 图标文件名和 id 同名。
 	skill.icon_id = spec[0]
-	skill.set(spec[2], AGENT_BUFF_MIN)
+	if amount < 0.0:
+		skill.description = "%s +%.0f%%~%.0f%%" % [spec[3], AGENT_BUFF_MIN * 100.0, AGENT_BUFF_MAX * 100.0]
+		skill.set(spec[2], AGENT_BUFF_MIN)
+	else:
+		skill.description = "%s +%.0f%%" % [spec[3], amount * 100.0]
+		skill.set(spec[2], amount)
 	return skill
-
-
-## buff 的生效字段名，SkillGrant 重掷数值时要往这个字段里写。
-static func agent_buff_property(channel: String) -> String:
-	return str(AGENT_BUFF_SPECS[channel][2]) if AGENT_BUFF_SPECS.has(channel) else ""
-
-
-## buff 说明里那个中文效果名（“暴击概率”“减伤”……）。
-static func agent_buff_effect_name(channel: String) -> String:
-	return str(AGENT_BUFF_SPECS[channel][3]) if AGENT_BUFF_SPECS.has(channel) else ""
 
 
 ## 可抽技能池。每次返回全新的对象，调用方可以随便洗牌、改数值。

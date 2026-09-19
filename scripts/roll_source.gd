@@ -38,3 +38,17 @@ func randi_range(from: int, to: int) -> int:
 	if not _queue.is_empty():
 		return clampi(int(_queue.pop_front()), from, to)
 	return _rng.randi_range(from, to)
+
+
+## Fisher-Yates 原地洗牌。掷点走自己，所以同种子必然复现同样的顺序，
+## 出场顺序和发牌才能在测试里精确重放。
+##
+## self. 不能省：@GlobalScope 里也有一个同名的 randi_range，不写 self
+## 会调到那个全局真随机上去，队列里的预设点数一个都不消耗，
+## 于是整场战斗表面上还能跑，实际已经不可复现了。
+func shuffle(items: Array) -> void:
+	for i in range(items.size() - 1, 0, -1):
+		var j := self.randi_range(0, i)
+		var tmp: Variant = items[i]
+		items[i] = items[j]
+		items[j] = tmp

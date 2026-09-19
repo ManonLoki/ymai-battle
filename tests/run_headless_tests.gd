@@ -40,6 +40,7 @@ func _run() -> void:
 	_test_wheel_war()
 	_test_win_rate_regression()
 	await _test_main_menu()
+	await _test_settings()
 	await _test_tv_remote()
 	await _test_main_parallax_and_quit()
 	await _test_app_icon_and_cursors()
@@ -227,16 +228,35 @@ func _test_compact_numbers() -> void:
 
 ## 胜率曲线：战力比 1:1 精确落在 50%，两端收敛到 20%/80% 而不是 0/100%。
 func _test_win_rate() -> void:
-	# 胜率永远被夹在 [20%, 80%]：战力再悬殊也不能把结果锁死。
+	# 胜率永远被夹在 [30%, 70%]：战力再悬殊也不能把结果锁死。
 	var extremes: Array[int] = [0, 1, 25, 100, 400, 10000, 1000000]
 	for power in extremes:
 		var rate := CombatResolver.champion_win_rate(power, 100)
-		_assert(rate >= CombatResolver.MIN_WIN_RATE, "win rate never drops below 20%% (at %d vs 100)" % power)
-		_assert(rate <= CombatResolver.MAX_WIN_RATE, "win rate never rises above 80%% (at %d vs 100)" % power)
-	_assert(is_equal_approx(CombatResolver.champion_win_rate(100, 100), 0.5), "equal power is an even 50%")
-	_assert(is_equal_approx(CombatResolver.champion_win_rate(50, 50), 0.5), "another equal case is 50%")
-	_assert(CombatResolver.champion_win_rate(25, 100) > CombatResolver.MIN_WIN_RATE, "a 1:4 underdog still has more than the floor")
-	_assert(CombatResolver.champion_win_rate(200, 0) <= CombatResolver.MAX_WIN_RATE, "no others still caps at 80%")
+		_assert(rate >= CombatResolver.MIN_WIN_RATE, "win rate never drops below 30%% (at %d vs 100)" % power)
+		_assert(rate <= CombatResolver.MAX_WIN_RATE, "win rate never rises above 70%% (at %d vs 100)" % power)
+
+	# 两个锚点：擂主顶得上全场合计战力（r=1）时贴着上限，
+	# 只有四分之一（r=0.25）时贴着下限，各自走完区间的 SATURATION。
+	var span := CombatResolver.MAX_WIN_RATE - CombatResolver.MIN_WIN_RATE
+	var at_ceil := CombatResolver.champion_win_rate(100, 100)
+	var at_floor := CombatResolver.champion_win_rate(25, 100)
+	var sat := CombatResolver.WIN_RATE_ANCHOR_SATURATION
+	_assert(absf(at_ceil - (CombatResolver.MAX_WIN_RATE - span * 0.5 * (1.0 - sat))) < 0.001, "r=1 sits at the upper anchor (%.3f)" % at_ceil)
+	_assert(absf(at_floor - (CombatResolver.MIN_WIN_RATE + span * 0.5 * (1.0 - sat))) < 0.001, "r=0.25 sits at the lower anchor (%.3f)" % at_floor)
+	# 两个锚点的几何中点才是真正的五五开。
+	_assert(is_equal_approx(CombatResolver.champion_win_rate(50, 100), 0.5), "the geometric midpoint of the anchors is an even 50%")
+	_assert(is_equal_approx(CombatResolver.champion_win_rate(100, 200), 0.5), "another 1:2 case is 50%")
+	_assert(at_floor > CombatResolver.MIN_WIN_RATE, "a 1:4 underdog still has more than the floor")
+	_assert(at_ceil < CombatResolver.MAX_WIN_RATE, "matching the whole field still leaves room below the ceiling")
+
+	# 锚点之外仍然单调，但收益和惩罚都极慢——不会一跨线就躺平。
+	var far_above := CombatResolver.champion_win_rate(400, 100)
+	var way_above := CombatResolver.champion_win_rate(10000, 100)
+	_assert(far_above > at_ceil and way_above > far_above, "past the upper anchor the curve still creeps up")
+	_assert(way_above - at_ceil < span * 0.5 * (1.0 - sat) + 0.001, "but the whole climb past it is worth less than the leftover margin")
+	var far_below := CombatResolver.champion_win_rate(6, 100)
+	_assert(far_below < at_floor and far_below > CombatResolver.MIN_WIN_RATE, "past the lower anchor it still creeps down without hitting the floor")
+	_assert(CombatResolver.champion_win_rate(200, 0) <= CombatResolver.MAX_WIN_RATE, "no others still caps at 70%")
 
 	var samples: Array[int] = [1, 25, 35, 50, 75, 100, 150, 200, 400, 4000]
 	var prev := -1.0
@@ -257,11 +277,11 @@ func _test_win_rate() -> void:
 	var low_hit := CombatResolver.calibrated_hit_chance(CombatResolver.MIN_WIN_RATE)
 	var high_hit := CombatResolver.calibrated_hit_chance(CombatResolver.MAX_WIN_RATE)
 	_assert(low_hit > CombatResolver.MIN_HIT_CHANCE and high_hit < CombatResolver.MAX_HIT_CHANCE, "calibrated hit chance never reaches the 5%/95% rails")
-	_assert(high_hit - low_hit < 0.25, "the whole 20%-80% target band maps into a narrow hit-chance window")
+	_assert(high_hit - low_hit < 0.25, "the whole 30%-70% target band maps into a narrow hit-chance window")
 	_assert(high_hit > low_hit, "a higher target means a higher hit chance")
 
 	var src := FileAccess.get_file_as_string("res://scripts/combat_resolver.gd")
-	_assert(src.find("cubic_bezier") >= 0 and src.find("WIN_RATE_EASE") >= 0, "win rate interpolation is a Bezier ease")
+	_assert(src.find("tanh(") >= 0 and src.find("WIN_RATE_RATIO_CEIL") >= 0, "win rate interpolation is an anchored tanh on log power ratio")
 	var war_src := FileAccess.get_file_as_string("res://scripts/wheel_war.gd")
 	_assert(war_src.find("CombatResolver.champion_win_rate") >= 0, "wheel war uses the shipped win-rate function")
 
@@ -616,7 +636,7 @@ func _test_wheel_war() -> void:
 	_assert(war.waiting.size() == 2, "the rest wait off-stage")
 	_assert(war.current_opponent.username != "champ", "champion is not on the right")
 	_assert(war.win_rate > 0.5, "a champion this far ahead is favoured")
-	_assert(war.win_rate <= CombatResolver.MAX_WIN_RATE, "even a runaway champion stops at 80%")
+	_assert(war.win_rate <= CombatResolver.MAX_WIN_RATE, "even a runaway champion stops at 70%")
 
 	# 双方需要的有效命中总数是对等的：擂主的血条按“要扛几场”摊开。
 	_assert(war.champion.hits_to_down == CombatResolver.HITS_PER_DUEL * 3, "champion endurance covers every challenger")
@@ -658,7 +678,7 @@ func _test_wheel_war() -> void:
 	for waiting in death_war.waiting:
 		_disarm(waiting)
 	_assert(death_war.current_opponent.username == "heavy", "identity shuffle keeps the heavy hitter first")
-	_assert(death_war.win_rate >= CombatResolver.MIN_WIN_RATE, "a hopeless champion still keeps the 20% floor")
+	_assert(death_war.win_rate >= CombatResolver.MIN_WIN_RATE, "a hopeless champion still keeps the 30% floor")
 	_assert(death_war.win_rate < 0.5, "but he is clearly the underdog")
 	# 把擂主压到一击必死，用来确认擂主倒下会立刻结束这场车轮战。
 	# 血量也一起压到 1：擂主有 5% 先天减伤，光靠 hits_to_down=1 会剩一丝血。
@@ -673,9 +693,12 @@ func _test_wheel_war() -> void:
 	_assert(others_left >= 2, "remaining opponents are not all dead when champion falls")
 
 
-## 蒙特卡洛回归：实测胜率必须落在 [20%, 80%]，并且跟着目标胜率走。
-## 改动技能池、技能位数量或伤害口径之后，这里会第一个报警，
-## 对应的标定常数是 CombatResolver.CHAMPION_SKILL_EDGE 和 WIN_RATE_SPREAD。
+## 蒙特卡洛回归：实测胜率必须落在 [30%, 70%]，并且跟着目标胜率走。
+## 改动技能池、技能位数量或伤害口径之后，这里会第一个报警，对应的标定常数是
+## CombatResolver.CHAMPION_SKILL_EDGE_PER_SKILL / AGENT_BUFF_HIT_EDGE / WIN_RATE_SPREAD。
+##
+## "head to head" 只有一个挑战者，整场只掷十几次骰子，随机性本身会把实测往 50% 拉，
+## 所以它会稳定地比目标低几个点——容差留到 0.12 就是为了容下这种短局。
 func _test_win_rate_regression() -> void:
 	var codex := AgentSkills.CHANNEL_CODEX
 	var claude := AgentSkills.CHANNEL_CLAUDE
@@ -740,10 +763,55 @@ func _test_win_rate_regression() -> void:
 				wins += 1
 		var actual := float(wins) / float(trials)
 		var noise := 2.5 * sqrt(0.25 / float(trials))
-		_assert(target >= CombatResolver.MIN_WIN_RATE and target <= CombatResolver.MAX_WIN_RATE, "%s: target win rate %.2f stays inside [20%%, 80%%]" % [label, target])
-		_assert(actual >= CombatResolver.MIN_WIN_RATE - noise, "%s: measured win rate %.2f is at or above the 20%% floor (target %.2f)" % [label, actual, target])
-		_assert(actual <= CombatResolver.MAX_WIN_RATE + noise, "%s: measured win rate %.2f is at or below the 80%% ceiling (target %.2f)" % [label, actual, target])
+		_assert(target >= CombatResolver.MIN_WIN_RATE and target <= CombatResolver.MAX_WIN_RATE, "%s: target win rate %.2f stays inside [30%%, 70%%]" % [label, target])
+		_assert(actual >= CombatResolver.MIN_WIN_RATE - noise, "%s: measured win rate %.2f is at or above the 30%% floor (target %.2f)" % [label, actual, target])
+		_assert(actual <= CombatResolver.MAX_WIN_RATE + noise, "%s: measured win rate %.2f is at or below the 70%% ceiling (target %.2f)" % [label, actual, target])
 		_assert(absf(actual - target) < 0.12, "%s: measured win rate %.2f tracks its %.2f target" % [label, actual, target])
+
+
+## 设置页：三种窗口模式都摆出来、存得下读得回，认不出的值回落到默认。
+func _test_settings() -> void:
+	# 存取：写进临时文件再读回来，三种模式都要能原样往返。
+	var path := "user://test_settings.json"
+	for mode in WindowSettings.MODES:
+		WindowSettings.save_mode(mode, path)
+		_assert(WindowSettings.load_mode(path) == mode, "window mode %s survives a save/load round trip" % WindowSettings.display_name(mode))
+	# 存档没有 / 坏了 / 是个没见过的值，都回落到默认，绝不让游戏开不起来。
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	_assert(WindowSettings.load_mode(path) == WindowSettings.DEFAULT_MODE, "a missing settings file falls back to the default mode")
+	var junk := FileAccess.open(path, FileAccess.WRITE)
+	junk.store_string("not json at all")
+	junk.close()
+	_assert(WindowSettings.load_mode(path) == WindowSettings.DEFAULT_MODE, "a corrupt settings file falls back to the default mode")
+	WindowSettings.save_mode(999, path)
+	_assert(WindowSettings.load_mode(path) == WindowSettings.DEFAULT_MODE, "an unknown mode value falls back to the default mode")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+	# 只有窗口模式带边框，另外两种都是无边框的沉浸式。
+	_assert(WindowSettings.has_border(WindowSettings.Mode.WINDOWED), "windowed keeps the system border")
+	_assert(not WindowSettings.has_border(WindowSettings.Mode.MAXIMIZED), "maximized is borderless")
+	_assert(not WindowSettings.has_border(WindowSettings.Mode.FULLSCREEN), "fullscreen is borderless")
+	# 三种模式各自映射到不同的 DisplayServer 窗口模式。
+	_assert(WindowSettings.window_mode_for(WindowSettings.Mode.WINDOWED) == DisplayServer.WINDOW_MODE_WINDOWED, "windowed maps to WINDOW_MODE_WINDOWED")
+	_assert(WindowSettings.window_mode_for(WindowSettings.Mode.MAXIMIZED) == DisplayServer.WINDOW_MODE_MAXIMIZED, "maximized maps to WINDOW_MODE_MAXIMIZED")
+	_assert(WindowSettings.window_mode_for(WindowSettings.Mode.FULLSCREEN) == DisplayServer.WINDOW_MODE_FULLSCREEN, "fullscreen maps to WINDOW_MODE_FULLSCREEN")
+
+	# 场景本身：三个模式按钮是按 MODES 现生成的，加一种模式不用改界面。
+	var packed := load("res://settings.tscn") as PackedScene
+	_assert(packed != null, "settings.tscn loads")
+	var scene: Node = packed.instantiate()
+	root.add_child(scene)
+	await process_frame
+	_assert(scene.get_node_or_null("%BackButton") != null, "Settings has a Back button")
+	var list := scene.get_node_or_null("%ModeList") as VBoxContainer
+	_assert(list != null, "Settings has a mode list")
+	var buttons := 0
+	for child in list.get_children():
+		if child is Button:
+			buttons += 1
+	_assert(buttons == WindowSettings.MODES.size(), "every window mode gets a button (%d)" % buttons)
+	scene.queue_free()
+	await process_frame
 
 
 ## 主菜单：三个按钮都在，且能切到对应场景。
@@ -759,9 +827,19 @@ func _test_main_menu() -> void:
 	_assert(battle_btn != null, "Main has Battle button")
 	_assert(ranking_btn != null and ranking_btn.text.find("排行") >= 0, "Ranking button is labeled for ranking")
 	_assert(battle_btn != null and battle_btn.text.find("对战") >= 0, "Battle button is labeled for battle")
+	# 设置按钮必须排在退出上面：电视上全靠方向键顺着走，顺序就是可达性。
+	var menu := main.get_node_or_null("Center/Menu") as VBoxContainer
+	_assert(menu != null, "Main menu is a VBox")
+	var settings_btn := main.get_node_or_null("%SettingsButton") as Button
+	var quit_btn := main.get_node_or_null("%QuitButton") as Button
+	_assert(settings_btn != null, "Main has Settings button")
+	_assert(settings_btn != null and settings_btn.text.find("设置") >= 0, "Settings button is labeled for settings")
+	_assert(settings_btn != null and quit_btn != null and settings_btn.get_index() < quit_btn.get_index(), "Settings sits above Quit")
 	var ranking_script := FileAccess.get_file_as_string("res://main.gd")
 	_assert(ranking_script.find("ranking.tscn") >= 0, "Main can switch to Ranking")
 	_assert(ranking_script.find("battle.tscn") >= 0, "Main can switch to Battle")
+	_assert(ranking_script.find("settings.tscn") >= 0, "Main can switch to Settings")
+	_assert(ranking_script.find("WindowSettings.apply") >= 0, "Main applies the saved window mode on launch")
 
 	# 主场景角落显示版本号，取自 project.godot，不写死在界面里。
 	var configured := str(ProjectSettings.get_setting("application/config/version", ""))
@@ -1426,19 +1504,24 @@ func _test_tv_remote() -> void:
 	await process_frame
 	var ranking_btn: Button = main.get_node("%RankingButton")
 	var battle_btn: Button = main.get_node("%BattleButton")
+	var settings_btn: Button = main.get_node("%SettingsButton")
 	var quit_btn: Button = main.get_node("%QuitButton")
 	_assert(ranking_btn.has_focus(), "the menu starts with a focused button, so the remote has something to move")
-	_assert(battle_btn.focus_mode == Control.FOCUS_ALL and quit_btn.focus_mode == Control.FOCUS_ALL, "every menu entry can take focus")
+	_assert(battle_btn.focus_mode == Control.FOCUS_ALL and settings_btn.focus_mode == Control.FOCUS_ALL and quit_btn.focus_mode == Control.FOCUS_ALL, "every menu entry can take focus")
 	_assert(ranking_btn.has_theme_stylebox_override("focus"), "focused buttons draw a TV-visible outline")
 	await _press_key(KEY_DOWN)
 	_assert(battle_btn.has_focus(), "D-pad down moves to 进入对战")
 	await _press_key(KEY_DOWN)
+	_assert(settings_btn.has_focus(), "D-pad down moves to 设置")
+	await _press_key(KEY_DOWN)
 	_assert(quit_btn.has_focus(), "D-pad down moves to 退出游戏")
 	await _press_key(KEY_UP)
-	_assert(battle_btn.has_focus(), "D-pad up walks back up the menu")
+	_assert(settings_btn.has_focus(), "D-pad up walks back up the menu")
 
 	# 焦点丢了（比如鼠标点到空白处）之后，方向键要能把它捡回来。
-	battle_btn.release_focus()
+	# 松的是上面那几下走下来后真正拿着焦点的那个，别写死成某个按钮——
+	# 菜单一加项就会错位，而错位之后这条断言是“假通过”。
+	settings_btn.release_focus()
 	await process_frame
 	_assert(TvRemote.ensure_focus(ranking_btn), "a lost focus is restored before navigating")
 	_assert(ranking_btn.has_focus(), "focus lands back on the first entry")
@@ -1694,4 +1777,7 @@ func _test_size_traits() -> void:
 	# 人越多，擂主那份按最大生命回血的续航越值钱，命中率上要按人头折价。
 	_assert(is_equal_approx(CombatResolver.champion_endurance_edge(5), 0.0), "5 人以内不额外折价")
 	_assert(CombatResolver.champion_endurance_edge(14) > 0.0, "人多了才开始折价")
-	_assert(CombatResolver.calibrated_hit_chance(0.5, 0.0, 14) < CombatResolver.calibrated_hit_chance(0.5, 0.0, 5), "同样目标胜率，人越多擂主的命中率给得越少")
+	_assert(CombatResolver.calibrated_hit_chance(0.5, 0.0, 0.0, 14) < CombatResolver.calibrated_hit_chance(0.5, 0.0, 0.0, 5), "同样目标胜率，人越多擂主的命中率给得越少")
+	# 技能张数差改成按张计价：多摸一张就多让一点命中率，不再用平均张数硬编。
+	_assert(CombatResolver.calibrated_hit_chance(0.5, 0.0, 4.0) < CombatResolver.calibrated_hit_chance(0.5, 0.0, 2.0), "多摸一张技能就要多让出一点命中率")
+	_assert(is_equal_approx(CombatResolver.calibrated_hit_chance(0.5, 0.0, 0.0), 0.5), "张数持平时中心点就是五五开")

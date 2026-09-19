@@ -3,7 +3,7 @@ extends SceneTree
 ## 启动冒烟测试。跑法：
 ##   Godot --headless --path . --script tests/run_launch_smoke.gd
 ##
-## 只回答一个问题：三个场景能不能加载出来、关键控件在不在。
+## 只回答一个问题：四个场景能不能加载出来、关键控件在不在。
 ## 不碰网络、不打一场仗，所以几秒就跑完，适合做导出前的最后一道关。
 ## 任何一步不对就 printerr 一个大写标记并 quit(1)，CI 靠这个标记定位。
 
@@ -18,7 +18,8 @@ func _run() -> void:
 	var packed_main := load("res://main.tscn") as PackedScene
 	var packed_ranking := load("res://ranking.tscn") as PackedScene
 	var packed_battle := load("res://battle.tscn") as PackedScene
-	if packed_main == null or packed_ranking == null or packed_battle == null:
+	var packed_settings := load("res://settings.tscn") as PackedScene
+	if packed_main == null or packed_ranking == null or packed_battle == null or packed_settings == null:
 		printerr("SCENE_LOAD_FAILED")
 		quit(1)
 		return
@@ -34,6 +35,10 @@ func _run() -> void:
 		return
 	if main.get_node_or_null("%QuitButton") == null:
 		printerr("QUIT_BUTTON_MISSING")
+		quit(1)
+		return
+	if main.get_node_or_null("%SettingsButton") == null:
+		printerr("SETTINGS_BUTTON_MISSING")
 		quit(1)
 		return
 	print("MAIN_MENU_OK")
@@ -63,5 +68,17 @@ func _run() -> void:
 		quit(1)
 		return
 	print("BATTLE_SCENE_OK")
+	battle.queue_free()
+	await process_frame
+
+	# 设置页：返回按钮 + 模式列表，少一个就没法切窗口模式了。
+	var settings: Node = packed_settings.instantiate()
+	root.add_child(settings)
+	await process_frame
+	if settings.get_node_or_null("%BackButton") == null or settings.get_node_or_null("%ModeList") == null:
+		printerr("SETTINGS_CONTROLS_MISSING")
+		quit(1)
+		return
+	print("SETTINGS_SCENE_OK")
 	print("LAUNCH_SMOKE_PASSED")
 	quit(0)

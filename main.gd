@@ -5,6 +5,7 @@ extends Control
 
 const RANKING_SCENE := "res://ranking.tscn"
 const BATTLE_SCENE := "res://battle.tscn"
+const SETTINGS_SCENE := "res://settings.tscn"
 
 
 func _ready() -> void:
@@ -12,9 +13,13 @@ func _ready() -> void:
 	GameCursor.boot()
 	TvRemote.install()
 	ThemeHelper.apply(self, 22)
+	# 主菜单是唯一的启动入口，所以上次选的窗口模式在这里应用一次就够了，
+	# 从设置页返回时顺带再确认一遍，代价只是一次幂等的 DisplayServer 调用。
+	WindowSettings.apply(WindowSettings.load_mode())
 	_style()
 	%RankingButton.pressed.connect(_on_ranking_pressed)
 	%BattleButton.pressed.connect(_on_battle_pressed)
+	%SettingsButton.pressed.connect(_on_settings_pressed)
 	%QuitButton.pressed.connect(_on_quit_pressed)
 	# 电视上没有鼠标，一进来就得有个控件拿着焦点。
 	%RankingButton.grab_focus()
@@ -47,9 +52,10 @@ func _style() -> void:
 	%Title.add_theme_color_override("font_color", ThemeHelper.TEXT)
 	%VersionLabel.text = "v%s" % project_version()
 	%VersionLabel.add_theme_color_override("font_color", ThemeHelper.MUTED)
-	# 只有“排行榜”是实心主按钮，另外两个走描边样式。
+	# 只有“排行榜”是实心主按钮，其余都走描边样式。
 	ThemeHelper.style_button(%RankingButton, true)
 	ThemeHelper.style_button(%BattleButton, false)
+	ThemeHelper.style_button(%SettingsButton, false)
 	ThemeHelper.style_button(%QuitButton, false)
 
 
@@ -65,6 +71,10 @@ func _on_ranking_pressed() -> void:
 
 func _on_battle_pressed() -> void:
 	get_tree().change_scene_to_file(BATTLE_SCENE)
+
+
+func _on_settings_pressed() -> void:
+	get_tree().change_scene_to_file(SETTINGS_SCENE)
 
 
 func _on_quit_pressed() -> void:

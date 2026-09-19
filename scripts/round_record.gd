@@ -55,12 +55,6 @@ static func load_for(today: String, path: String = SAVE_PATH) -> RoundRecord:
 	return record
 
 
-## 这份记录是不是已经不属于 today 了（跨天了）。
-## 对战场景会一直开着不关，所以每轮开打前都要问一次。
-func is_stale(today: String) -> bool:
-	return date != today
-
-
 ## 记一场：这场的擂主是谁、他赢没赢。
 func record_round(champion_name: String, won: bool) -> void:
 	# 没擂主名字的场次不记，否则榜上会多出一个空条目。

@@ -31,6 +31,10 @@ const BRONZE := Color("b87333")
 const FOCUS_BORDER := 3
 ## 主按钮的最小尺寸。
 const BUTTON_MIN_SIZE := Vector2(220, 48)
+## 次级“返回”按钮的最小尺寸，比主按钮小一圈。各场景套完 style_button 再盖这个。
+const BACK_BUTTON_MIN_SIZE := Vector2(120, 40)
+## 战绩榜上挂奖牌的名次上限，medal_color 的分档也按它来。
+const MEDAL_RANKS := 3
 
 ## 紧凑写法的进位表，从大到小匹配。
 const COMPACT_UNITS := [
@@ -38,6 +42,12 @@ const COMPACT_UNITS := [
 	[1000000, "M"],
 	[1000, "K"],
 ]
+
+
+## 这个名次有没有奖牌。挑底色、字色的地方都问它，
+## 免得每个调用方各自记一遍“前三名”这个边界。
+static func has_medal(rank: int) -> bool:
+	return rank <= MEDAL_RANKS
 
 
 ## 战绩榜前三的奖牌色，第 1/2/3 名分别是金银铜；之后的没有牌。

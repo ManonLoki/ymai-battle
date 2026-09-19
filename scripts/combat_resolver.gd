@@ -3,26 +3,31 @@ extends RefCounted
 
 ## 战斗结算。这里的设计底线：任何一次判定都是掷骰子，
 ## 没有“必中”“必闪”“锁血”之类把结果写死的效果。
-## 战力差、技能数值和概率共同决定胜负，胜率永远留在 [20%, 80%] 之间。
+## 战力差、技能数值和概率共同决定胜负，胜率永远留在 [30%, 70%] 之间。
 
 ## 单次攻击命中率的上下限，保证再劣势也有 5% 的翻盘空间。
 const MIN_HIT_CHANCE := 0.05
 const MAX_HIT_CHANCE := 0.95
 
 ## 擂主胜率的上下限。战力再悬殊也不锁死结果，否则这场仗没有可玩性。
-const MIN_WIN_RATE := 0.20
-const MAX_WIN_RATE := 0.80
+## 区间比早期窄（原来是 20%~80%）：榜一被全场围攻本来就常年贴着下限，
+## 太低就完全没有参与感；上限压到 70% 则是不让断层第一白拿胜利。
+const MIN_WIN_RATE := 0.30
+const MAX_WIN_RATE := 0.70
 
 ## 一场单挑的标准长度：挑战者被打掉这么多次干净命中就倒下。
 ## 车轮战里擂主的血条要撑完全部挑战者，所以他的耐打度是 HITS_PER_DUEL × 人数，
 ## 双方需要的有效命中数因此相等，胜负就只由命中率和技能决定。
 const HITS_PER_DUEL := 4
 
-## 擂主每场抽 5~8 张技能，挑战者只有 2~4 张（平均 6.5 vs 3）。
-## 这份优势换算成命中率约等于这么多，反解命中率时先扣掉它，
-## 实测胜率才不会整体偏向擂主。
-## 数值由 tests 里的蒙特卡洛回归标定，改技能池或技能张数区间时要重新跑。
-const CHAMPION_SKILL_EDGE := 0.0355
+## 擂主每**多拿一张**技能，换算成命中率大约值这么多，反解命中率时按张扣掉。
+##
+## 以前这里存的是“按平均张数（6.5 对 3）算出来的一个总量”，于是每次调整
+## 发牌区间都得重新跑一遍蒙特卡洛，而且擂主刚好只摸到 5 张、挑战者摸满 4 张的
+## 那些场次仍按“多 3.5 张”计价，凭空多吃一口。改成按张计价之后，
+## WheelWar 把这一场真实的张数差喂进来，发牌区间就成了自由参数。
+## 数值仍由 tests 里的蒙特卡洛回归标定，改技能池本身时要重新跑。
+const CHAMPION_SKILL_EDGE_PER_SKILL := 0.0085
 
 ## 擂主的治疗回的是 5% 最大生命，而他的血条要扛 4×人数 次命中：
 ## 人越多，同样一次治疗折算成“普通命中”就越值钱（15 人榜单里一次≈2.8 次命中）。
@@ -34,12 +39,16 @@ const CHAMPION_ENDURANCE_EDGE_PER_OPPONENT := 0.004
 ## 每个 agent 换一个 buff，所以 agent 数量本身就是战力的一部分。
 ## 擂主每比挑战者平均多带一个 buff，命中率就再让出这么多，
 ## 多开几个 agent 才不会变成白嫖胜率。同样由蒙特卡洛回归标定。
-const AGENT_BUFF_HIT_EDGE := 0.033
+const AGENT_BUFF_HIT_EDGE := 0.034
 
 ## 目标胜率每偏离 50% 一个标准正态分位，命中率就偏离中心这么多。
 ## 一场仗要掷几十次骰子，命中率上几个百分点就足以决定胜负，
 ## 所以这个系数很小；同样由蒙特卡洛标定。
-const WIN_RATE_SPREAD := 0.070
+##
+## 注意它是按十几人的真实榜单标的。人数很少时（比如只有一个挑战者）
+## 整场只掷十几次骰子，随机性本身就把结果往 50% 拉，
+## 实测胜率会比目标低几个点——这是短局固有的，不是标定没标准。
+const WIN_RATE_SPREAD := 0.080
 
 ## 中毒每回合按“半次普通命中”掉血。
 const POISON_TICK_SHARE := 0.5
@@ -69,10 +78,16 @@ const HEAL_CHANCE_CHALLENGER := 0.15
 const HEAL_SHARE_CHAMPION := 0.05
 const HEAL_SHARE_CHALLENGER := 0.10
 
-## 胜率曲线的三次贝塞尔控制点。两端的 handle 收在 0.12 / 0.88，
-## 于是曲线中段陡、两头缓：战力接近时一点差距就改变胜率，
-## 战力悬殊时再拉开也只是缓慢逼近上下限。
-const WIN_RATE_EASE := Vector4(0.0, 0.12, 0.88, 1.0)
+## 胜率曲线的两个锚点，按战力比 r = 擂主 / 其余人合计战力（RMS 口径）定：
+## r = CEIL（擂主一个人顶得上整场的合计战力）时贴着 MAX_WIN_RATE，
+## r = FLOOR（只有合计战力的四分之一）时贴着 MIN_WIN_RATE。
+## 两个锚点的几何中点 r = 0.5 就是胜率正好 50% 的地方。
+const WIN_RATE_RATIO_FLOOR := 0.25
+const WIN_RATE_RATIO_CEIL := 1.0
+## 锚点处走完了上下限之间的百分之多少。留 5% 不走完，是为了让锚点之外
+## 还能继续缓升 / 缓降——战力再往上堆或者再往下掉都仍有反馈，
+## 只是收益和惩罚都变得极慢，不会一跨过锚点就彻底躺平。
+const WIN_RATE_ANCHOR_SATURATION := 0.95
 
 
 ## 车轮战里“其余人”的合计战力。
@@ -89,27 +104,35 @@ static func aggregate_power(powers: Array[int]) -> int:
 	return int(round(sqrt(sum_of_squares)))
 
 
-## 擂主的目标胜率，由战力比 r = 擂主 / 其余人合计 推出。
+## 擂主的目标胜率，由战力比 r = 擂主 / 其余人合计战力 推出。
 ##
-## 先把 r ∈ [0, ∞) 压成进度 s = r / (r + 1)（势均力敌时 s = 0.5），
-## 再过一遍对称的贝塞尔缓动，最后映射到 [MIN_WIN_RATE, MAX_WIN_RATE]。
-## 因为缓动对称，r = 1 精确落在 50%，两端则收敛到 20% / 80% 而不是 0 / 100%。
+## 曲线是一条以 log r 为自变量的 tanh：中段陡、两头自然饱和。
+## 用对数是因为战力比本来就是倍数关系——1 倍到 2 倍和 2 倍到 4 倍
+## 是同样大的一步，直接拿线性比值会让高战力段挤成一团。
+##
+## 锚点在 r = FLOOR 和 r = CEIL 上，各自走完上下限之间的 SATURATION；
+## 两个锚点的几何中点（r = 0.5）正好 50%。锚点之外 tanh 继续单调逼近上下限，
+## 于是“再强也只是缓升、再弱也只是缓降”，不会一跨线就锁死。
 static func champion_win_rate(champion_power: int, others_power: int) -> float:
-	# 没有对手 / 擂主没战力这两种退化情形直接给端点，避免除零。
+	# 没有对手 / 擂主没战力这两种退化情形直接给端点，避免除零和 log(0)。
 	if others_power <= 0:
 		return MAX_WIN_RATE
 	if champion_power <= 0:
 		return MIN_WIN_RATE
 	var ratio := float(champion_power) / float(others_power)
-	var progress := ratio / (ratio + 1.0)
-	var eased := cubic_bezier(progress, WIN_RATE_EASE.x, WIN_RATE_EASE.y, WIN_RATE_EASE.z, WIN_RATE_EASE.w)
-	return lerpf(MIN_WIN_RATE, MAX_WIN_RATE, clampf(eased, 0.0, 1.0))
+	var mid := (MIN_WIN_RATE + MAX_WIN_RATE) * 0.5
+	var half := (MAX_WIN_RATE - MIN_WIN_RATE) * 0.5
+	return mid + half * tanh((log(ratio) - win_rate_log_center()) / win_rate_log_width())
 
 
-## 标准三次贝塞尔求值，t ∈ [0, 1]。
-static func cubic_bezier(t: float, p0: float, p1: float, p2: float, p3: float) -> float:
-	var u := 1.0 - t
-	return u * u * u * p0 + 3.0 * u * u * t * p1 + 3.0 * u * t * t * p2 + t * t * t * p3
+## 曲线中心：两个锚点在对数轴上的中点，也就是胜率正好 50% 的战力比。
+static func win_rate_log_center() -> float:
+	return 0.5 * (log(WIN_RATE_RATIO_FLOOR) + log(WIN_RATE_RATIO_CEIL))
+
+
+## 曲线宽度：正好让两个锚点落在 tanh 的 ±SATURATION 上。
+static func win_rate_log_width() -> float:
+	return (log(WIN_RATE_RATIO_CEIL) - win_rate_log_center()) / atanh(WIN_RATE_ANCHOR_SATURATION)
 
 
 ## 一名角色被打掉多少次干净命中才倒下 → 每次命中打掉多少血。
@@ -134,8 +157,9 @@ static func lifesteal_ratio(fighter: Fighter) -> float:
 	return LIFESTEAL_RATIO_CHAMPION if fighter.is_champion else LIFESTEAL_RATIO_CHALLENGER
 
 
-## 标准正态分位数（probit）在 [0.2, 0.8] 上的三次近似：z ≈ 1.2517x + 0.371x³，x = 2p - 1。
-## 胜率本来就被夹在这个区间里，不必引入完整的反误差函数。
+## 标准正态分位数（probit）的三次近似：z ≈ 1.2517x + 0.371x³，x = 2p - 1。
+## 拟合区间是 [0.2, 0.8]，而胜率被夹在更窄的 [MIN_WIN_RATE, MAX_WIN_RATE] 里，
+## 所以落在拟合区间内侧，不必引入完整的反误差函数。
 static func probit(p: float) -> float:
 	var x := 2.0 * clampf(p, MIN_WIN_RATE, MAX_WIN_RATE) - 1.0
 	return 1.2517 * x + 0.371 * x * x * x
@@ -148,13 +172,14 @@ static func champion_endurance_edge(opponent_count: int) -> float:
 
 ## 把“这场仗擂主该赢多少次”的目标胜率，反解成他单次攻击的命中率。
 ##
-## 中心点是 0.5 减去擂主的三项固有优势（技能位更多、buff 可能更多、人多时更耐打），
+## 中心点是 0.5 减去擂主的三项固有优势（技能张数更多、buff 可能更多、人多时更耐打），
 ## 扣掉之后双方才算真正五五开；再按目标胜率的正态分位左右挪 WIN_RATE_SPREAD。
-## buff_edge 是擂主的 buff 数减去挑战者的平均 buff 数，可正可负。
+## buff_edge / skill_edge 都是“擂主减去挑战者的平均值”，可正可负，
+## 由 WheelWar 按这一场真实发出来的牌现算，不用任何平均值假设。
 ## 一场仗要掷几十次骰子，命中率上几个百分点就已经是压倒性优势，
 ## 所以算出来的命中率始终贴着 50% 附近——胜率是靠概率调出来的，不是锁出来的。
-static func calibrated_hit_chance(win_rate: float, buff_edge: float = 0.0, opponent_count: int = 0) -> float:
-	var center := 0.5 - CHAMPION_SKILL_EDGE - AGENT_BUFF_HIT_EDGE * buff_edge - champion_endurance_edge(opponent_count)
+static func calibrated_hit_chance(win_rate: float, buff_edge: float = 0.0, skill_edge: float = 0.0, opponent_count: int = 0) -> float:
+	var center := 0.5 - CHAMPION_SKILL_EDGE_PER_SKILL * skill_edge - AGENT_BUFF_HIT_EDGE * buff_edge - champion_endurance_edge(opponent_count)
 	return clampf(center + probit(win_rate) * WIN_RATE_SPREAD, MIN_HIT_CHANCE, MAX_HIT_CHANCE)
 
 
@@ -178,7 +203,7 @@ static func hit_chance(attacker: Fighter, defender: Fighter, champion_hit: float
 
 ## 结算一名角色的一次行动：先跑中毒掉血，再判定麻痹 / 定身 / 混乱，
 ## 最后才真正出手。返回这次行动产生的全部战报事件。
-static func resolve_action(actor: Fighter, foe: Fighter, champion_hit: float, rng: RollSource, allow_counter: bool = true) -> Array[StrikeResult]:
+static func resolve_action(actor: Fighter, foe: Fighter, champion_hit: float, rng: RollSource) -> Array[StrikeResult]:
 	var events: Array[StrikeResult] = []
 	# 中毒先掉血，毒死了这一步就结束，连手都出不了。
 	if actor.poison_turns > 0:
@@ -203,8 +228,8 @@ static func resolve_action(actor: Fighter, foe: Fighter, champion_hit: float, rn
 		if rng.randf() < CONFUSE_SELF_HIT_CHANCE:
 			target = actor
 			self_hit = true
-	# 打自己的时候不该触发“对方反击”，所以把反击一并关掉。
-	var strikes := resolve_strikes(actor, target, champion_hit, rng, allow_counter and not self_hit)
+	# 打自己时连击和反击都不该发生，这两条 resolve_strikes 自己按 defender != attacker 拦着。
+	var strikes := resolve_strikes(actor, target, champion_hit, rng)
 	for strike in strikes:
 		strike.self_hit = self_hit
 		# 自伤时挨打方就是自己，战报里要写对名字。
@@ -216,23 +241,21 @@ static func resolve_action(actor: Fighter, foe: Fighter, champion_hit: float, rn
 
 ## 一次出手的完整结算：首击 →（二连 / 三连追击）→ 治疗 → 对方反击。
 ##
-## allow_counter=false 表示这一手本身就是反击，不再引发反击的反击；
-## allow_combo=false 表示这一手不许掷连击——反击就是这么调的，
+## is_counter=true 表示这一手本身就是反击：既不再引发反击的反击，也不许掷连击，
 ## 于是连击只会从主动出手里长出来，不会在反击链上继续滚雪球。
 static func resolve_strikes(
 	attacker: Fighter,
 	defender: Fighter,
 	champion_hit: float,
 	rng: RollSource,
-	allow_counter: bool = true,
-	allow_combo: bool = true,
+	is_counter: bool = false,
 ) -> Array[StrikeResult]:
 	var events: Array[StrikeResult] = []
 	# extra_index=0 标记这是首击，连击只看首击打没打中。
 	var first := _one_strike(attacker, defender, champion_hit, rng, 0)
 	events.append(first)
 	# 打空、把人打死了、或者这一手是打自己，都不进连击。
-	if allow_combo and first.hit and (not first.defender_died) and defender != attacker:
+	if not is_counter and first.hit and (not first.defender_died) and defender != attacker:
 		for i in range(_roll_extra_strikes(attacker, rng)):
 			if not defender.is_alive():
 				break
@@ -241,10 +264,10 @@ static func resolve_strikes(
 			events.append(_one_strike(attacker, defender, champion_hit, rng, i + 1))
 	# 治疗在整轮出手结束后统一结算一次。
 	_apply_heal_skill(attacker, events, rng)
-	# 反击：只看首击有没有打中，而且挨打的人得还站着。
-	if allow_counter and first.hit and defender.is_alive() and defender.stacked_counter() > 0.0 and rng.randf() < defender.stacked_counter():
+	# 反击：只看首击有没有打中，而且挨打的人得还站着。打自己时没有“对方”，也就没有反击。
+	if not is_counter and first.hit and defender != attacker and defender.is_alive() and defender.stacked_counter() > 0.0 and rng.randf() < defender.stacked_counter():
 		# 反击既不能再反击，也不能掷连击：只还一下。
-		var counters := resolve_strikes(defender, attacker, champion_hit, rng, false, false)
+		var counters := resolve_strikes(defender, attacker, champion_hit, rng, true)
 		for counter in counters:
 			counter.countered = true
 		events.append_array(counters)

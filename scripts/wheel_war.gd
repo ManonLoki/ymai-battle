@@ -40,7 +40,7 @@ func setup(ranked: Array[RankedUser], rng: RollSource) -> void:
 		challengers.append(challenger)
 		powers.append(challenger.tokens)
 	# 出场顺序随机，同一份榜单每场打起来都不一样。
-	_shuffle(challengers, rng)
+	rng.shuffle(challengers)
 	waiting = challengers
 	others_total_power = CombatResolver.aggregate_power(powers)
 	win_rate = CombatResolver.champion_win_rate(champion.tokens, others_total_power)
@@ -53,7 +53,7 @@ func setup(ranked: Array[RankedUser], rng: RollSource) -> void:
 	SkillGrant.apply(champion, rng)
 	for fighter in waiting:
 		SkillGrant.apply(fighter, rng)
-	champion_hit = CombatResolver.calibrated_hit_chance(win_rate, _champion_buff_edge(), waiting.size())
+	champion_hit = CombatResolver.calibrated_hit_chance(win_rate, _champion_buff_edge(), _champion_skill_edge(), waiting.size())
 	# 让第一位挑战者上场。
 	_advance_opponent()
 
@@ -105,6 +105,18 @@ func _champion_buff_edge() -> float:
 	return float(champion.agent_buffs.size()) - float(total) / float(waiting.size())
 
 
+## 擂主这一场的技能张数比挑战者平均多几张。发牌张数每场重掷（擂主 5~8、挑战者 2~4），
+## 所以这个差值每场都不一样，必须现算——按平均值硬编的话，
+## 擂主手气差只摸到 5 张的那些场次会按“多 3.5 张”被扣命中率，白亏。
+func _champion_skill_edge() -> float:
+	if waiting.is_empty():
+		return 0.0
+	var total := 0
+	for fighter in waiting:
+		total += fighter.skills.size()
+	return float(champion.skills.size()) - float(total) / float(waiting.size())
+
+
 ## 换下一位挑战者上场；队列空了就是挑战者全灭，擂主赢下整场。
 func _advance_opponent() -> void:
 	if waiting.is_empty():
@@ -113,11 +125,3 @@ func _advance_opponent() -> void:
 		return
 	current_opponent = waiting.pop_front()
 
-
-## Fisher-Yates 洗牌。掷点走 RollSource，同种子必然复现同样的出场顺序。
-static func _shuffle(fighters: Array[Fighter], rng: RollSource) -> void:
-	for i in range(fighters.size() - 1, 0, -1):
-		var j := rng.randi_range(0, i)
-		var tmp: Fighter = fighters[i]
-		fighters[i] = fighters[j]
-		fighters[j] = tmp

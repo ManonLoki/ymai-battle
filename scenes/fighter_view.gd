@@ -121,9 +121,7 @@ func _fill_icons(fighter: Fighter) -> void:
 
 ## 清空一行图标。用 free 而不是 queue_free：下一句就要重新排版，不能等到帧末。
 func _clear_row(row: HBoxContainer) -> void:
-	for child in row.get_children():
-		row.remove_child(child)
-		child.free()
+	NodeUtil.clear_children(row)
 
 
 ## 把一行的尺寸收紧到刚好装下现有图标，免得空 HBox 撑开布局。

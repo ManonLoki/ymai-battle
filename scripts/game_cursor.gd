@@ -11,6 +11,11 @@ const ARROW_PATH := "res://assets/cursors/arrow.png"
 const PRESSED_PATH := "res://assets/cursors/pressed.png"
 ## 光标热点：箭头尖在贴图的 (1, 1) 像素处。
 const HOTSPOT := Vector2(1, 1)
+## 滚轮的四个“按键”。滚一下不算按下，要在 handle_event 里直接放过。
+const WHEEL_BUTTONS := [
+	MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN,
+	MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT,
+]
 # preload 保证贴图跟着脚本一起进包，不依赖运行时文件系统。
 const _ARROW := preload("res://assets/cursors/arrow.png")
 const _PRESSED := preload("res://assets/cursors/pressed.png")
@@ -39,10 +44,7 @@ static func handle_event(event: InputEvent) -> void:
 	var mouse := event as InputEventMouseButton
 	if mouse == null:
 		return
-	if mouse.button_index in [
-		MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN,
-		MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT,
-	]:
+	if mouse.button_index in WHEEL_BUTTONS:
 		return
 	apply_for_pressed(mouse.is_pressed())
 

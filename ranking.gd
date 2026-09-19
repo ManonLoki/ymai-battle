@@ -5,12 +5,14 @@ extends Control
 const MAIN_SCENE := "res://main.tscn"
 ## 遥控器上下键一次滚多少像素：榜单本身不吃焦点，只能手动推 ScrollContainer。
 const SCROLL_STEP := 64
-## 表格的四列，同时也是表头文字。
-const COLUMNS := ["#", "用户", "Agent", "Token / 战力"]
-## 会被拉伸撑开的两列：用户名列和战力列。
-const EXPAND_COLUMNS := [1, 3]
-## 右对齐的那一列（战力），数字右对齐才好比较。
-const RIGHT_ALIGNED_COLUMN := 3
+## 表格的四列：标题就是表头文字，expand 的列会被拉伸撑开，
+## right 的列（战力）数字右对齐才好比较。加减列只要动这一张表。
+const COLUMNS := [
+	{"title": "#"},
+	{"title": "用户", "expand": true},
+	{"title": "Agent"},
+	{"title": "Token / 战力", "expand": true, "right": true},
+]
 
 ## 已经在切回主菜单的路上，避免连按两次返回触发两次切场景。
 var _leaving := false
@@ -26,7 +28,7 @@ func _ready() -> void:
 	%Status.add_theme_color_override("font_color", ThemeHelper.MUTED)
 	ThemeHelper.style_button(%BackButton, false)
 	# 返回按钮比主菜单的按钮小一圈。
-	%BackButton.custom_minimum_size = Vector2(120, 40)
+	%BackButton.custom_minimum_size = ThemeHelper.BACK_BUTTON_MIN_SIZE
 	%BackButton.pressed.connect(_on_back_pressed)
 	# 场上唯一可聚焦的控件，一进来就给它焦点。
 	%BackButton.grab_focus()
@@ -38,9 +40,9 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
 		_on_back_pressed()
 	# 从后台切回来：榜单只在进场景时拉过一次，挂了一整夜再回来就是昨天的。
-	# 日期变了就重新拉一次，不用玩家退出去再进来。
+	# 跨天了就重新拉一次，不用玩家退出去再进来。判断和对战场景走的是同一条 DayClock。
 	elif what == NOTIFICATION_APPLICATION_RESUMED and not _leaving and is_inside_tree():
-		if _shown_date != Time.get_date_string_from_system():
+		if DayClock.rolled_over(_shown_date):
 			_load_ranking()
 
 
@@ -88,7 +90,7 @@ func _load_ranking() -> void:
 		return
 	var data: Dictionary = result.get("data", {})
 	var usage: Array = data.get("channelUsage", [])
-	var today := Time.get_date_string_from_system()
+	var today := DayClock.today()
 	var ranked: Array[RankedUser] = RankingAggregator.rank_users(usage, today)
 	_render(today, ranked)
 
@@ -106,15 +108,16 @@ func _render(date: String, ranked: Array[RankedUser]) -> void:
 		_add_row(user)
 
 
-## 清空表格。用 free 而不是 queue_free：下一句就要往里填新行。
+## 清空表格。立刻释放而不是 queue_free：下一句就要往里填新行。
 func _clear_grid() -> void:
-	for child in %Grid.get_children():
-		%Grid.remove_child(child)
-		child.free()
+	NodeUtil.clear_children(%Grid)
 
 
 func _add_header() -> void:
-	_add_cells(PackedStringArray(COLUMNS), ThemeHelper.MUTED, true)
+	var titles := PackedStringArray()
+	for column in COLUMNS:
+		titles.append(str(column["title"]))
+	_add_cells(titles, ThemeHelper.MUTED, true)
 
 
 ## 一名玩家一行。
@@ -138,8 +141,9 @@ func _add_cells(texts: PackedStringArray, color: Color, header: bool) -> void:
 		label.focus_mode = Control.FOCUS_NONE
 		if header:
 			label.add_theme_font_size_override("font_size", 14)
-		if i == RIGHT_ALIGNED_COLUMN:
+		var column: Dictionary = COLUMNS[i]
+		if bool(column.get("right", false)):
 			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		if i in EXPAND_COLUMNS:
+		if bool(column.get("expand", false)):
 			label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		%Grid.add_child(label)

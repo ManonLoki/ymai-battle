@@ -18,16 +18,14 @@ static func roll_agent_buffs(channels: PackedStringArray, rng: RollSource) -> Ar
 
 ## 单个渠道 buff 的数值每场重掷，落在 [AGENT_BUFF_MIN, AGENT_BUFF_MAX]。
 static func roll_agent_buff(channel: String, rng: RollSource) -> SkillDef:
-	var buff := SkillCatalog.agent_buff_template(channel)
-	if buff.id == "none":
-		return buff
+	# 认不出的渠道不产出 buff，而且必须在掷点之前就返回——
+	# 白掷一次会让后面每个人的点数都往后错一位，测试里的定种子结果就对不上了。
+	if not SkillCatalog.AGENT_BUFF_SPECS.has(channel):
+		return SkillCatalog.none_buff()
 	# 掷一个 [0, 1] 的点数，线性映射到数值区间。
 	var amount := lerpf(SkillCatalog.AGENT_BUFF_MIN, SkillCatalog.AGENT_BUFF_MAX, clampf(rng.randf(), 0.0, 1.0))
-	# 写进这个 channel 对应的那个字段（crit_chance / accuracy_bonus / …）。
-	buff.set(SkillCatalog.agent_buff_property(channel), amount)
-	# 说明文案跟着实际掷出来的数值走，图标悬停时显示的就是这一场的真实加成。
-	buff.description = "%s +%.0f%%" % [SkillCatalog.agent_buff_effect_name(channel), amount * 100.0]
-	return buff
+	# 带着掷出来的数值建模板：生效字段和说明文案都按这一场的真实加成来。
+	return SkillCatalog.agent_buff_template(channel, amount)
 
 
 ## 洗牌后取前 count 张，保证同一个人不会拿到重复技能。
@@ -35,12 +33,7 @@ static func pick_skills(count: int, rng: RollSource) -> Array[SkillDef]:
 	var pool: Array[SkillDef] = SkillCatalog.pool()
 	# 池子可能比要抽的张数还少，取小的那个。
 	var cap := mini(count, pool.size())
-	# Fisher-Yates 洗牌，用 RollSource 掷点，测试才能复现同一手牌。
-	for i in range(pool.size() - 1, 0, -1):
-		var j := rng.randi_range(0, i)
-		var tmp: SkillDef = pool[i]
-		pool[i] = pool[j]
-		pool[j] = tmp
+	rng.shuffle(pool)
 	var picked: Array[SkillDef] = []
 	for i in range(cap):
 		picked.append(pool[i])

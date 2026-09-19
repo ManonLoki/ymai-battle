@@ -5,8 +5,6 @@ extends RefCounted
 
 ## burst_count 达到这个数才值得单独写一句“瞬间进攻了 N 次”。
 const BURST_MIN := 2
-## burst_count 到数字的中文写法。一次出手最多三下，所以只需要这两个。
-const BURST_WORDS := {2: "两", 3: "三"}
 
 
 ## 给连击的首击标上 burst_count，好让文案写成“瞬间进攻了两次”。
@@ -35,7 +33,8 @@ static func line_for(event: StrikeResult) -> String:
 	var body := _body(event)
 	if event.burst_count < BURST_MIN:
 		return body
-	var times := str(BURST_WORDS.get(event.burst_count, event.burst_count))
+	# 一次出手最多三下（_roll_extra_strikes 最多追加 2），所以只有这两种写法。
+	var times := "两" if event.burst_count == 2 else "三"
 	var burst := "%s对%s瞬间进攻了【%s】次" % [event.attacker_name, event.defender_name, times]
 	# 首击本身也有话要说（暴击、上状态之类），接在后面。
 	return burst if body.is_empty() else burst + "\n" + body
