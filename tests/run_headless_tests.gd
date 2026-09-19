@@ -943,6 +943,14 @@ func _test_skills() -> void:
 	_assert(is_equal_approx(CombatResolver.hit_chance(sharp, soft, -0.30), CombatResolver.CERTAIN_HIT_CHANCE), "a hopeless target win rate cannot take that certainty away")
 	sharp_eye.accuracy_bonus -= 0.01
 	_assert(CombatResolver.hit_chance(sharp, soft, 0.0) < CombatResolver.CERTAIN_HIT_CHANCE, "one point short of the edge is not a certain hit")
+	# 偏移的话语权随净优势递减，所以必中阈值两侧是连着的，不是一道断崖：
+	# 差 0.5 个百分点、再配上一个极端不利的偏移，也还在 100% 附近。
+	_assert(is_equal_approx(CombatResolver.steer_weight(0.0), 1.0), "with no net edge the steer has the whole say")
+	_assert(is_equal_approx(CombatResolver.steer_weight(CombatResolver.FULL_HIT_EDGE * 0.5), 0.5), "halfway to certainty the steer only half counts")
+	_assert(is_equal_approx(CombatResolver.steer_weight(CombatResolver.FULL_HIT_EDGE), 0.0), "at the certain-hit edge the steer has no say left")
+	sharp_eye.accuracy_bonus += 0.005
+	var brink := CombatResolver.hit_chance(sharp, soft, -0.30)
+	_assert(CombatResolver.CERTAIN_HIT_CHANCE - brink < 0.02, "just short of certainty is still just short, not a cliff (%.3f)" % brink)
 	# 反过来，光靠战力差顶多推到 MAX_HIT_CHANCE，推不出必中，也压不到必闪之下。
 	_assert(is_equal_approx(CombatResolver.hit_chance(plain_champ, plain_foe, 10.0), CombatResolver.MAX_HIT_CHANCE), "a huge steer still stops at the 95% rail")
 	_assert(is_equal_approx(CombatResolver.hit_chance(plain_champ, plain_foe, -10.0), CombatResolver.MIN_HIT_CHANCE), "and a huge negative steer still leaves the 5% rail")
@@ -1650,7 +1658,7 @@ func _test_battle_and_ranking_backgrounds() -> void:
 		backdrop.elapsed_seconds = BattleParallax.TIME_WRAP_SECONDS - 0.25
 		backdrop.advance_parallax(0.5)
 		_assert(is_equal_approx(backdrop.elapsed_seconds, 0.25), "parallax wraps at the same phase without a motion jump")
-		backdrop.background_rng.seed = 20260919
+		backdrop.seed_backgrounds(20260919)
 		var first_path := backdrop.roll_background()
 		var first_index := backdrop.current_index
 		_assert(is_zero_approx(backdrop.elapsed_seconds), "a new arena begins its scroll from the centered frame")

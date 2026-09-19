@@ -35,8 +35,9 @@ const SHADER_TIME_PARAMETER := &"elapsed_seconds"
 const SCROLL_DIRECTION_PARAMETER := &"scroll_direction"
 const TIME_WRAP_SECONDS := 32.0
 
-## 只供背景挑图的随机源。公开为成员是为了测试能固定 seed；生产环境在 _ready 随机化。
-var background_rng := RandomNumberGenerator.new()
+## 只供背景挑图的随机源，_ready 里随机化；要复现某一次选图走 seed_backgrounds()。
+## 刻意不用战斗那套 RollSource：换一张背景不该动到命中、暴击、技能的随机序列。
+var _background_rng := RandomNumberGenerator.new()
 ## -1 表示只是展示了场景里的预览图、还没有为一场真实战斗掷过背景。
 var current_index := -1
 ## 视差时间。**只从这里写**（赋值就会推给 shader），别再另设一条同步路径。
@@ -60,7 +61,7 @@ static func _static_init() -> void:
 
 
 func _ready() -> void:
-	background_rng.randomize()
+	_background_rng.randomize()
 	_shader_material = material as ShaderMaterial
 	# 像素画不能走线性采样；节点属性也显式设一次，避免场景被复用时继承父节点设置。
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -72,6 +73,12 @@ func _process(delta: float) -> void:
 	advance_parallax(delta)
 
 
+## 固定选图的随机种子。只有测试和调试用得上——生产环境在 _ready 里随机化。
+## 有这个入口，随机源本身就不用公开成可以被随便换掉的成员。
+func seed_backgrounds(value: int) -> void:
+	_background_rng.seed = value
+
+
 ## 为一场真实开战随机选图。首次在全部十六张里选；之后保证不连续重复。
 ## 返回资源路径，方便调试和无渲染测试确认选择结果。
 func roll_background() -> String:
@@ -79,10 +86,10 @@ func roll_background() -> String:
 		return ""
 	var next_index := 0
 	if current_index < 0:
-		next_index = background_rng.randi_range(0, BACKGROUND_PATHS.size() - 1)
+		next_index = _background_rng.randi_range(0, BACKGROUND_PATHS.size() - 1)
 	elif BACKGROUND_PATHS.size() > 1:
 		# 在 1..N-1 里掷偏移，分布仍均匀，同时从数学上排除和上一张相同。
-		next_index = (current_index + background_rng.randi_range(1, BACKGROUND_PATHS.size() - 1)) % BACKGROUND_PATHS.size()
+		next_index = (current_index + _background_rng.randi_range(1, BACKGROUND_PATHS.size() - 1)) % BACKGROUND_PATHS.size()
 	if not _apply_background(next_index):
 		return ""
 	return BACKGROUND_PATHS[current_index]

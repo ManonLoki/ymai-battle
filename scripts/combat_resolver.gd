@@ -176,6 +176,10 @@ const WIN_RATE_ANCHOR_SATURATION := 0.95
 ## 注意人数一共影响两处，改之前两处一起看：这里按人数**压低目标胜率**（意图），
 ## 而 CHAMPION_CROWD_RELIEF_* 按人数**补命中率**（让实测追得上这个意图）。
 ## 两条曲线的单位和形状都不一样，只调一边一定要重跑蒙特卡洛。
+##
+## 它们看着重复，但**合不成一条**：目标一旦压低，反解出来的偏移就跟着变负，
+## 也就是人越多越扣擂主的命中率；而实测说人越多擂主越吃亏、需要往回补。
+## 一条只活在胜率域的曲线没法同时表达这两件相反的事。
 const CROWD_PRESSURE_CAP := 0.175
 ## 压力曲线的锚点：到 ANCHOR 人时，压力走完 CAP 的 SATURATION。
 const CROWD_PRESSURE_ANCHOR := 100
@@ -366,21 +370,33 @@ static func hit_chance_before_steer(net_edge: float) -> float:
 	return BASE_HIT_CHANCE + (1.0 - BASE_HIT_CHANCE) * minf(net_edge / FULL_HIT_EDGE, 1.0)
 
 
+## 胜率偏移在这一击上还剩多少话语权。净差为负或为零时说了全算；净差越往上走
+## 越轮不到它说话，满 FULL_HIT_EDGE 时归零。
+##
+## 有这条权重，「必中是自己堆出来的、战力差撼不动」才是**连着成立**的：
+## 早先的写法是净差跨过 FULL_HIT_EDGE 就整段跳过偏移，于是净差 19.9% 配一个
+## −0.30 的偏移只有 70%，再往上挪 0.1 个百分点就直接 100%，中间是一道断崖。
+static func steer_weight(net_edge: float) -> float:
+	if net_edge <= 0.0:
+		return 1.0
+	return maxf(0.0, 1.0 - net_edge / FULL_HIT_EDGE)
+
+
 ## 单次攻击的命中率，三步走：
 ##   1. 双方都从 BASE_HIT_CHANCE 起步；
 ##   2. 加上自己的命中加成、减去对方的闪避，走 hit_chance_before_steer 的曲线；
-##   3. 再叠上这一场的胜率偏移（擂主加、挑战者减），夹回 [MIN_HIT_CHANCE, MAX_HIT_CHANCE]。
+##   3. 再叠上这一场的胜率偏移（擂主加、挑战者减），按 steer_weight 打折后生效。
 ##
-## 净差满 FULL_HIT_EDGE 的那一击直接必中，第三步不再干预：必中是自己堆出来的，
-## 不该被战力差冲掉；反过来，光靠战力差也顶多推到 MAX_HIT_CHANCE，推不出必中。
+## 上轨取「95% 和自己这条曲线算出来的值之中更高的那个」：光靠战力差顶多推到
+## MAX_HIT_CHANCE，推不出必中；而净差满 FULL_HIT_EDGE 挣来的那个 100%，
+## 偏移的权重此时已经是 0，谁也拿不走。
 ##
 ## 凌波微步不在这条算式里——它是挨打时另掷一次的被动，见 _one_strike。
 static func hit_chance(attacker: Fighter, defender: Fighter, champion_steer_amount: float, extra_accuracy: float = 0.0) -> float:
 	var net_edge := net_hit_edge(attacker, defender, extra_accuracy)
-	if net_edge >= FULL_HIT_EDGE:
-		return CERTAIN_HIT_CHANCE
+	var earned := hit_chance_before_steer(net_edge)
 	var steer := champion_steer_amount if attacker.is_champion else -champion_steer_amount
-	return clampf(hit_chance_before_steer(net_edge) + steer, MIN_HIT_CHANCE, MAX_HIT_CHANCE)
+	return clampf(earned + steer * steer_weight(net_edge), MIN_HIT_CHANCE, maxf(MAX_HIT_CHANCE, earned))
 
 
 ## 掷一次概率骰。**全场所有概率判定都必须走这里**，因为它守着一条硬约束：
