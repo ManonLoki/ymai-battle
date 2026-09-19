@@ -1,0 +1,490 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "YMAI Battle 架构总览",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/ManonLoki/ymai-battle",
+      "provider": "github",
+      "revision": "8f21019540b7b148d24e8fb4e241ddc781983b73"
+    },
+    "viewBox": [
+      1360,
+      540
+    ],
+    "views": [
+      {
+        "id": "ranking-path",
+        "label": "榜单数据链路",
+        "focus": [
+          "server",
+          "api",
+          "aggregator",
+          "ranking"
+        ],
+        "note": "服务端流水如何变成当日排行榜，以及战斗的出场名单。"
+      },
+      {
+        "id": "combat-core",
+        "label": "战斗解算核心",
+        "focus": [
+          "battle",
+          "war",
+          "resolver",
+          "grant",
+          "rng"
+        ],
+        "note": "车轮战的回合推进、逐击掷骰，以及开场发牌的随机源。"
+      },
+      {
+        "id": "presentation",
+        "label": "演出与存档",
+        "focus": [
+          "battle",
+          "view",
+          "store",
+          "settings"
+        ],
+        "note": "战斗事件如何驱动立绘动画，以及本地存档的落点。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "main_menu",
+      "type": "frontend",
+      "label": "主菜单",
+      "sublabel": "scenes/main.tscn",
+      "tag": "三层视差背景",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        195,
+        70
+      ],
+      "sources": [
+        {
+          "path": "scenes/main.gd",
+          "label": "main.gd"
+        }
+      ]
+    },
+    {
+      "id": "settings",
+      "type": "frontend",
+      "label": "设置页",
+      "sublabel": "scenes/settings.tscn",
+      "pos": [
+        40,
+        170
+      ],
+      "size": [
+        195,
+        70
+      ],
+      "sources": [
+        {
+          "path": "scenes/settings.gd",
+          "label": "settings.gd"
+        }
+      ]
+    },
+    {
+      "id": "ranking",
+      "type": "frontend",
+      "label": "排行榜",
+      "sublabel": "scenes/ranking.tscn",
+      "pos": [
+        285,
+        40
+      ],
+      "size": [
+        195,
+        70
+      ],
+      "sources": [
+        {
+          "path": "scenes/ranking.gd",
+          "label": "ranking.gd"
+        }
+      ]
+    },
+    {
+      "id": "battle",
+      "type": "frontend",
+      "label": "战斗场景",
+      "sublabel": "scenes/battle.tscn",
+      "tag": "只做演出编排",
+      "pos": [
+        285,
+        170
+      ],
+      "size": [
+        195,
+        70
+      ],
+      "sources": [
+        {
+          "path": "scenes/battle.gd",
+          "label": "battle.gd"
+        }
+      ]
+    },
+    {
+      "id": "view",
+      "type": "frontend",
+      "label": "FighterView",
+      "sublabel": "立绘 · 动画 · 特效",
+      "pos": [
+        285,
+        300
+      ],
+      "size": [
+        195,
+        70
+      ],
+      "sources": [
+        {
+          "path": "scenes/fighter_view.gd",
+          "label": "fighter_view.gd"
+        }
+      ]
+    },
+    {
+      "id": "store",
+      "type": "database",
+      "label": "JsonStore",
+      "sublabel": "user:// 本地存档",
+      "tag": "读坏当没存档",
+      "pos": [
+        40,
+        430
+      ],
+      "size": [
+        195,
+        70
+      ],
+      "sources": [
+        {
+          "path": "scripts/json_store.gd",
+          "label": "json_store.gd"
+        }
+      ]
+    },
+    {
+      "id": "aggregator",
+      "type": "backend",
+      "label": "RankingAggregator",
+      "sublabel": "设备 × 渠道 → 逻辑玩家",
+      "pos": [
+        550,
+        40
+      ],
+      "size": [
+        215,
+        70
+      ],
+      "sources": [
+        {
+          "path": "scripts/ranking_aggregator.gd",
+          "label": "ranking_aggregator.gd"
+        }
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "TokenUsageApi",
+      "sublabel": "HTTP 取当日用量",
+      "pos": [
+        825,
+        40
+      ],
+      "size": [
+        215,
+        70
+      ],
+      "sources": [
+        {
+          "path": "scripts/token_usage_api.gd",
+          "label": "token_usage_api.gd"
+        }
+      ]
+    },
+    {
+      "id": "war",
+      "type": "backend",
+      "label": "WheelWar",
+      "sublabel": "车轮战 · 擂主不回血",
+      "pos": [
+        550,
+        170
+      ],
+      "size": [
+        215,
+        70
+      ],
+      "sources": [
+        {
+          "path": "scripts/wheel_war.gd",
+          "label": "wheel_war.gd"
+        }
+      ]
+    },
+    {
+      "id": "resolver",
+      "type": "backend",
+      "label": "CombatResolver",
+      "sublabel": "逐击结算 · 无必中",
+      "pos": [
+        825,
+        170
+      ],
+      "size": [
+        215,
+        70
+      ],
+      "sources": [
+        {
+          "path": "scripts/combat_resolver.gd",
+          "label": "combat_resolver.gd"
+        }
+      ]
+    },
+    {
+      "id": "grant",
+      "type": "backend",
+      "label": "SkillGrant · SkillCatalog",
+      "sublabel": "开场发 buff 与技能",
+      "pos": [
+        550,
+        300
+      ],
+      "size": [
+        215,
+        70
+      ],
+      "sources": [
+        {
+          "path": "scripts/skill_grant.gd",
+          "label": "skill_grant.gd"
+        },
+        {
+          "path": "scripts/skill_catalog.gd",
+          "label": "skill_catalog.gd"
+        }
+      ]
+    },
+    {
+      "id": "rng",
+      "type": "backend",
+      "label": "RollSource",
+      "sublabel": "可预置点数的随机源",
+      "tag": "测试可控",
+      "pos": [
+        825,
+        300
+      ],
+      "size": [
+        215,
+        70
+      ],
+      "sources": [
+        {
+          "path": "scripts/roll_source.gd",
+          "label": "roll_source.gd"
+        }
+      ]
+    },
+    {
+      "id": "server",
+      "type": "external",
+      "label": "榜单服务器",
+      "sublabel": "/api/v1/token-usage",
+      "pos": [
+        1100,
+        40
+      ],
+      "size": [
+        200,
+        70
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "场景层 scenes/",
+      "wraps": [
+        "main_menu",
+        "settings",
+        "ranking",
+        "battle",
+        "view"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "脚本层 scripts/",
+      "wraps": [
+        "aggregator",
+        "api",
+        "war",
+        "resolver",
+        "grant",
+        "rng"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "menu-ranking",
+      "from": "main_menu",
+      "to": "ranking",
+      "label": "查看今日榜单",
+      "labelDy": -32
+    },
+    {
+      "id": "menu-battle",
+      "from": "main_menu",
+      "to": "battle",
+      "label": "开始乱斗",
+      "variant": "emphasis"
+    },
+    {
+      "id": "menu-settings",
+      "from": "main_menu",
+      "to": "settings",
+      "label": "打开设置",
+      "labelDy": 24
+    },
+    {
+      "id": "settings-store",
+      "from": "settings",
+      "to": "store",
+      "label": "窗口模式 · 服务器地址",
+      "labelDy": 24
+    },
+    {
+      "id": "battle-store",
+      "from": "battle",
+      "to": "store",
+      "label": "RoundRecord 当日战绩",
+      "labelDy": -40
+    },
+    {
+      "id": "fetch",
+      "from": "server",
+      "to": "api",
+      "label": "HTTP GET 当日流水",
+      "variant": "emphasis",
+      "labelDy": -32
+    },
+    {
+      "id": "to-aggregator",
+      "from": "api",
+      "to": "aggregator",
+      "label": "channelUsage 明细",
+      "variant": "emphasis",
+      "labelDy": -32
+    },
+    {
+      "id": "to-ranking",
+      "from": "aggregator",
+      "to": "ranking",
+      "label": "RankedUser[] 名次",
+      "labelDy": 62
+    },
+    {
+      "id": "to-war",
+      "from": "aggregator",
+      "to": "war",
+      "label": "榜首当擂主，其余排队",
+      "variant": "emphasis",
+      "labelDy": 24
+    },
+    {
+      "id": "battle-war",
+      "from": "battle",
+      "to": "war",
+      "label": "逐回合推进",
+      "variant": "emphasis",
+      "labelDy": -32
+    },
+    {
+      "id": "war-resolver",
+      "from": "war",
+      "to": "resolver",
+      "label": "每一击掷骰判定",
+      "labelDy": -32
+    },
+    {
+      "id": "battle-view",
+      "from": "battle",
+      "to": "view",
+      "label": "StrikeResult 驱动动画",
+      "labelDy": 24
+    },
+    {
+      "id": "grant-war",
+      "from": "grant",
+      "to": "war",
+      "label": "开场发牌"
+    },
+    {
+      "id": "rng-resolver",
+      "from": "rng",
+      "to": "resolver",
+      "label": "判定随机源"
+    },
+    {
+      "id": "rng-grant",
+      "from": "rng",
+      "to": "grant",
+      "label": "发牌共用同一源",
+      "labelDy": -32
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "场景层",
+      "items": [
+        "四个主场景加 FighterView 全部收在 scenes/",
+        "静态节点写在 .tscn，脚本只做绑定和编排",
+        "battle.gd 不做胜负判定，只负责演出"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "数据链路",
+      "items": [
+        "服务端返回设备 × 渠道 × 日期的流水",
+        "按 username 压成逻辑玩家再排名",
+        "tokens 既是排名依据，也是最大生命值"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "战斗解算",
+      "items": [
+        "任何判定都是掷骰，没有写死结果的效果",
+        "技能按同名字段相加，加一条只需补一行表",
+        "RollSource 可预置点数，测试能指定每一击"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "平台适配与共用件",
+      "items": [
+        "TvRemote 四个场景各自 install()，统一遥控器返回与焦点",
+        "CursorController 是 autoload，换场景不重载光标贴图",
+        "DayClock 每次现取日期，跨天自动重拉榜单"
+      ]
+    }
+  ]
+}

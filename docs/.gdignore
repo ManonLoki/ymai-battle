@@ -1,0 +1,3 @@
+架构图是给人看的文档，不是游戏资源。
+放个 .gdignore 让 Godot 整个跳过这个目录：
+否则 export_filter="all_resources" 会把 html 和截图一起打进 APK。
