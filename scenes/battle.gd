@@ -3,12 +3,10 @@ extends Node
 ## 对战场景：拉取当日用量 → 组一场车轮战 → 逐条事件播动画和战报。
 ## 所有胜负判定都在 WheelWar / CombatResolver 里，这里只负责演出。
 ##
-## 这个场景会一直开着自动打下去，所以任何“当天”的东西都不能只在 _ready 里算一次，
-## 每轮开打前都要重新取一次系统日期（见 _sync_record_to_today）。
+## 进场只拉一次名单；打完或加载失败后停在结果面板，只有玩家明确按“再战”才
+## 重新请求。这样嵌入页面留在后台时不会每 60 秒轮询或在失败后循环重试。
 
 const MAIN_SCENE := "res://scenes/main.tscn"
-## 一场打完之后隔多久自动开下一轮。拉名单失败时也按这个间隔重试。
-const NEXT_ROUND_DELAY := 60.0
 ## 人数不够时的说明，状态栏和结果面板用的是同一句。
 const SHORT_ROSTER_MSG := "上榜人数不足，无法开战（需要至少 2 人）"
 ## 每条战报事件之间的停顿，太快看不清、太慢一场打不完。
@@ -27,6 +25,8 @@ var _record: RoundRecord
 @onready var _opponent_view: FighterView = %OpponentView
 ## 演出协程正在跑。测试靠它确认循环能自己收手。
 var _busy := false
+## 网络加载正在进行。与 _busy 分开，避免连按“再战”并发发出多条请求。
+var _loading := false
 ## 玩家中途点“返回”时场景会立刻被释放，但 _run_loop / _play_event 还挂在 await 上。
 ## 这个标记让所有等待点都能及时收手，不再去碰已经离开场景树的节点。
 var _leaving := false
@@ -44,6 +44,8 @@ func _ready() -> void:
 	%Backdrop.color = ThemeHelper.BG
 	ThemeHelper.style_back_button(%BackButton)
 	%BackButton.pressed.connect(_on_back_pressed)
+	ThemeHelper.style_button(%ReplayButton, true)
+	%ReplayButton.pressed.connect(_on_replay_pressed)
 	%ResultPanel.visible = false
 	# 结果面板压在立绘和战报上面，没有底色会糊成一片。
 	var result_box := ThemeHelper.make_flat(ThemeHelper.PANEL, 14)
@@ -77,7 +79,7 @@ func _ready() -> void:
 	%BackButton.grab_focus()
 	if skip_autoload:
 		return
-	await _round_loop()
+	await _load_once()
 
 
 ## 战报和战绩榜的统一玻璃底板。独立造两份 StyleBox，避免之后调整战报内边距时
@@ -104,7 +106,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if TvRemote.consume_back(event, self):
 		_on_back_pressed()
 	elif TvRemote.is_navigation(event):
-		TvRemote.ensure_focus(%BackButton)
+		TvRemote.ensure_focus(%ReplayButton if %ResultPanel.visible else %BackButton)
 
 
 func _on_back_pressed() -> void:
@@ -128,19 +130,28 @@ func _wait(seconds: float) -> bool:
 	return _is_live()
 
 
-## 一轮接一轮地打下去，直到玩家点“返回”把场景换走。
-## 写成循环而不是在结尾递归调用自己，是为了不让协程一层层套下去。
-func _round_loop() -> void:
-	while _is_live():
-		# 这个场景会通宵开着，所以每轮开打前都要确认还是不是同一天。
-		_sync_record_to_today()
-		var fought := await _load_and_run()
-		if not _is_live():
-			return
-		await _countdown(NEXT_ROUND_DELAY, "下一轮" if fought else "重试")
-		if not _is_live():
-			return
-		_reset_for_next_round()
+## 一次明确的名单加载与对战。自动进场会调用一次，之后只有“再战”按钮会调用；
+## _loading 同时保护慢网下的连续点击，确保每个用户动作最多对应一条请求。
+func _load_once() -> void:
+	if _loading or _busy or not _is_live():
+		return
+	_loading = true
+	%ReplayButton.disabled = true
+	_sync_record_to_today()
+	await _load_and_run()
+	_loading = false
+	if not _is_live():
+		return
+	%ReplayButton.disabled = false
+	%ReplayButton.grab_focus()
+
+
+## 再战是唯一的后续网络触发点。先清掉上一场的动态状态，再现读当天日期和名单。
+func _on_replay_pressed() -> void:
+	if _loading or _busy or not _is_live():
+		return
+	_reset_for_replay()
+	await _load_once()
 
 
 ## 跨天之后把当天战绩换成新一天的（场次归零、榜一战绩清空），并刷新右侧榜。
@@ -155,32 +166,12 @@ func _sync_record_to_today() -> void:
 	_refresh_record_board()
 
 
-## 倒计时。期间玩家随时可以按返回走人，_wait 会替我们收手。
-##
-## 剩余秒数按真实时钟算，而不是每跳一次减 1：应用切到后台时整个进程会被
-## 系统挂起，帧不再推进，计时器跟着停摆。减法式倒计时在那种情况下会从
-## 中断的地方接着走，玩家切回来还得把剩下的秒数重新等一遍。
-## 盯着一个真实时间的截止点就没这问题——后台期间时间照走，切回来立刻开下一场。
-func _countdown(seconds: float, what: String) -> void:
-	%ResultPanel.visible = true
-	var deadline := Time.get_unix_time_from_system() + seconds
-	while true:
-		var remaining := deadline - Time.get_unix_time_from_system()
-		if remaining <= 0.0:
-			break
-		%NextRoundLabel.text = "%s %d 秒后开始" % [what, int(ceil(remaining))]
-		# 最多睡一秒；睡过头也没关系，上面会重新按真实时间算剩余。
-		if not await _wait(minf(1.0, remaining)):
-			return
-	%NextRoundLabel.text = ""
-
-
-## 把上一场的残留清干净，准备重新拉名单。
-func _reset_for_next_round() -> void:
+## 把上一场的残留清干净，准备响应用户的“再战”操作。
+func _reset_for_replay() -> void:
 	%ResultPanel.visible = false
 	%ResultLabel.text = ""
 	%MvpLabel.text = ""
-	%NextRoundLabel.text = ""
+	%ReplayHintLabel.text = ""
 	%BattleLog.clear()
 	%RemainingLabel.text = "右侧剩余 —"
 	# 上一轮可能因为报错把状态栏染红了，去掉覆盖回到默认色。
@@ -193,8 +184,8 @@ func _reset_for_next_round() -> void:
 	_tally = null
 
 
-## 返回值表示这一轮有没有真的打起来：拉取失败或人数不够时是 false，
-## 此时结果面板只放一句错误说明，外层照样等一分钟再试。
+## 返回值表示这次有没有真的打起来：拉取失败或人数不够时是 false，
+## 此时结果面板说明原因并停住，绝不自动重试。
 func _load_and_run() -> bool:
 	%MatchupLabel.text = "正在拉取今日对战名单…"
 	var result: Dictionary = await TokenUsageApi.fetch_ranking(self)
@@ -459,13 +450,14 @@ func _show_notice(text: String) -> void:
 	%ResultLabel.text = text
 	%ResultLabel.add_theme_color_override("font_color", ThemeHelper.DANGER)
 	%MvpLabel.text = ""
-	%BackButton.grab_focus()
+	%ReplayHintLabel.text = "不会自动重试；点击“再战”重新获取今日名单"
+	if not %ReplayButton.disabled:
+		%ReplayButton.grab_focus()
 
 
 ## 一场打完：亮结果、记战绩、评 MVP。
 func _show_result() -> void:
 	%ResultPanel.visible = true
-	%BackButton.grab_focus()
 	var won := _war.champion_won()
 	# 擂主倒下时场上那位就是终结者；万一是空的（不该发生）就写个通称。
 	var killer := "挑战者"
@@ -478,5 +470,8 @@ func _show_result() -> void:
 	var mvp_line := CombatLog.mvp_line(_tally.best())
 	%MvpLabel.text = mvp_line
 	%MvpLabel.add_theme_color_override("font_color", ThemeHelper.GOLD)
+	%ReplayHintLabel.text = "点击“再战”时才会重新获取今日名单"
+	if not %ReplayButton.disabled:
+		%ReplayButton.grab_focus()
 	_append_log(mvp_line)
 	_update_hud()

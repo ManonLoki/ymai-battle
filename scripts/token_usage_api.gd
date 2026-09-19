@@ -11,6 +11,12 @@ extends Node
 const USAGE_PATH := "/api/v1/token-usage"
 ## 没在设置里填服务器地址时用的线上地址。
 const DEFAULT_USAGE_URL := "https://codex-tracker.yunmai365.com/api/v1/token-usage"
+## 当日聚合只需要结构化 JSON；8 MiB 足够容纳大量设备与渠道明细，同时避免
+## 错误服务或恶意服务把整个 Web/桌面进程的内存拖垮。
+const MAX_RESPONSE_BYTES := 8 * 1024 * 1024
+## 慢速电视网络仍保留原有等待窗口，但请求边界统一在构造函数里设置，测试可以
+## 直接验证真实 HTTPRequest 实例，不靠源码字符串猜测。
+const REQUEST_TIMEOUT_SECONDS := 45.0
 
 
 ## 这一次该请求哪个地址。候选服务器可能来自 Web 参数，也可能来自本地存档；
@@ -21,13 +27,32 @@ static func usage_url(base: String = WebLaunchConfig.effective_base_url()) -> St
 	return DEFAULT_USAGE_URL if base.is_empty() else base + USAGE_PATH
 
 
+## 每次请求都新建一个实例，并在发出前锁住所有网络边界。
+## max_redirects=0 很重要：宿主只批准了精确 BaseURL 对应的固定路径，不能让
+## 对方通过 30x 把请求带到任意新地址。
+static func new_http_request() -> HTTPRequest:
+	var http := HTTPRequest.new()
+	http.timeout = REQUEST_TIMEOUT_SECONDS
+	http.max_redirects = 0
+	http.body_size_limit = MAX_RESPONSE_BYTES
+	return http
+
+
+## 把需要对用户明确说明的传输失败单独翻译。响应过大和重定向都属于主动拒绝，
+## 不能混成普通“网络失败”，否则界面上看不出安全边界真的生效了。
+static func transport_error_message(result: int) -> String:
+	if result == HTTPRequest.RESULT_BODY_SIZE_LIMIT_EXCEEDED:
+		return "响应体超过 8 MiB 限制"
+	if result == HTTPRequest.RESULT_REDIRECT_LIMIT_REACHED:
+		return "服务器返回了重定向，已拒绝"
+	return "网络失败（result=%d）" % result
+
+
 ## 拉一次接口。失败时不抛异常，统一用 ok=false + error 文案回报。
 func fetch_usage() -> Dictionary:
 	# HTTPRequest 用完即弃，避免复用时残留上一次的回调。
-	var http := HTTPRequest.new()
+	var http := new_http_request()
 	add_child(http)
-	# 电视上网络可能很慢，给足 45 秒。
-	http.timeout = 45.0
 	var err := http.request(usage_url(), PackedStringArray(["Accept: application/json"]), HTTPClient.METHOD_GET)
 	if err != OK:
 		http.queue_free()
@@ -42,7 +67,7 @@ func fetch_usage() -> Dictionary:
 	var body: PackedByteArray = completed[3]
 	# 先看传输层有没有成功（DNS、超时、TLS 都在这一层）。
 	if result != HTTPRequest.RESULT_SUCCESS:
-		return _fail("网络失败（result=%d）" % result)
+		return _fail(transport_error_message(result))
 	# 再看 HTTP 状态码。
 	if code != 200:
 		return _fail("HTTP %d" % code)

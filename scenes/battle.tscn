@@ -260,10 +260,18 @@ horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 3
 
-[node name="NextRoundLabel" type="Label" parent="HUD/ResultPanel/ResultBox"]
+[node name="ReplayHintLabel" type="Label" parent="HUD/ResultPanel/ResultBox"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
 text = ""
 horizontal_alignment = 1
 vertical_alignment = 1
+
+[node name="ReplayButton" type="Button" parent="HUD/ResultPanel/ResultBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(180, 44)
+layout_mode = 2
+size_flags_horizontal = 4
+focus_mode = 2
+text = "再战"

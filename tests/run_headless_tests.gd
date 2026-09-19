@@ -57,7 +57,7 @@ func _run() -> void:
 	await _test_battle_playback()
 	await _test_result_copy()
 	_test_damage_tally()
-	await _test_next_round_cycle()
+	await _test_manual_replay_cycle()
 	_test_round_record()
 	await _test_record_board()
 	await _test_body_scale()
@@ -2201,6 +2201,16 @@ func _test_api_contract() -> void:
 	var api_src := FileAccess.get_file_as_string("res://scripts/token_usage_api.gd")
 	_assert(api_src.find("https://codex-tracker.yunmai365.com/api/v1/token-usage") >= 0, "API URL is the exact token-usage endpoint")
 	_assert(api_src.find("HTTPClient.METHOD_GET") >= 0, "token-usage is fetched with GET")
+	var request := TokenUsageApi.new_http_request()
+	_assert(request.max_redirects == 0, "token-usage HTTPRequest refuses every redirect")
+	_assert(request.body_size_limit == TokenUsageApi.MAX_RESPONSE_BYTES, "token-usage HTTPRequest enforces the declared response cap")
+	_assert(request.body_size_limit == 8 * 1024 * 1024, "the response cap is the product-sized 8 MiB limit")
+	_assert(is_equal_approx(request.timeout, TokenUsageApi.REQUEST_TIMEOUT_SECONDS), "the real HTTPRequest receives the declared timeout")
+	request.free()
+	var too_large := TokenUsageApi.transport_error_message(HTTPRequest.RESULT_BODY_SIZE_LIMIT_EXCEEDED)
+	_assert(too_large.find("8 MiB") >= 0, "an oversized response produces a visible size-limit error")
+	var redirected := TokenUsageApi.transport_error_message(HTTPRequest.RESULT_REDIRECT_LIMIT_REACHED)
+	_assert(redirected.find("重定向") >= 0 and redirected.find("拒绝") >= 0, "a redirect produces a visible refusal error")
 	var ranking_src := FileAccess.get_file_as_string("res://scenes/ranking.gd")
 	var battle_src := FileAccess.get_file_as_string("res://scenes/battle.gd")
 	# 两个场景都只认 TokenUsageApi.fetch_ranking 这一个入口；
@@ -2901,8 +2911,8 @@ func _test_damage_tally() -> void:
 	_assert(CombatLog.mvp_line(empty.best()).find("空缺") >= 0, "空缺时也给一句说明")
 
 
-## 一场打完 → 倒计时 → 清场，准备重新拉名单开下一轮。
-func _test_next_round_cycle() -> void:
+## 进场只取一次名单；一场打完或失败后停住，玩家按“再战”才允许重新取。
+func _test_manual_replay_cycle() -> void:
 	_remove_test_battle_record()
 	var packed := load("res://scenes/battle.tscn") as PackedScene
 	var battle: Node = packed.instantiate()
@@ -2910,10 +2920,14 @@ func _test_next_round_cycle() -> void:
 	battle.record_path = TEST_BATTLE_RECORD_PATH
 	root.add_child(battle)
 	await process_frame
-	_assert(battle.NEXT_ROUND_DELAY == 60.0, "打完一分钟后自动开下一轮")
 	var battle_src := FileAccess.get_file_as_string("res://scenes/battle.gd")
-	_assert(battle_src.find("func _round_loop") >= 0, "有一层轮次循环在驱动下一轮")
-	_assert(battle_src.find("await _load_and_run()") >= 0, "下一轮重新拉一次今日名单")
+	_assert(battle_src.find("NEXT_ROUND_DELAY") < 0, "对战场景没有 60 秒后台轮询间隔")
+	_assert(battle_src.find("func _round_loop") < 0, "对战场景没有自动轮次网络循环")
+	_assert(battle_src.find("func _on_replay_pressed") >= 0, "后续名单刷新只暴露在再战按钮处理器")
+	_assert(battle_src.count("await _load_once()") == 2, "只有首次进场和用户再战会触发一次加载")
+	var replay_button := battle.get_node("%ReplayButton") as Button
+	_assert(replay_button != null and replay_button.text == "再战", "结果面板提供明确的用户再战操作")
+	_assert(replay_button.pressed.get_connections().size() == 1, "再战按钮只绑定一个加载处理器")
 	var ranked: Array[RankedUser] = [_ranked("甲", 5000), _ranked("乙", 300), _ranked("丙", 300)]
 	var round_backdrop := battle.get_node("%BattleBackground") as BattleParallax
 	var champion_view := battle.get_node("%ChampionView") as FighterView
@@ -2926,17 +2940,14 @@ func _test_next_round_cycle() -> void:
 	_assert(battle.get_node("%ResultPanel").visible, "一场打完先出结果面板")
 	_assert(not battle.get_node("%MvpLabel").text.is_empty(), "结果面板带 MVP 一行")
 	_assert(battle.get_node("%BattleLog").get_parsed_text().find("MVP") >= 0, "MVP 也写进战报")
-	battle._countdown(2.0, "下一轮")
+	_assert(battle.get_node("%ReplayHintLabel").text.find("再战") >= 0, "结果明确说明再次读取需要用户操作")
 	await process_frame
-	_assert(battle.get_node("%NextRoundLabel").text.find("下一轮") >= 0, "倒计时告诉玩家下一轮什么时候开始")
-	battle._leaving = true
-	await create_timer(1.2).timeout
-	battle._leaving = false
-	battle._reset_for_next_round()
-	_assert(battle.get_node("%BattleLog").get_parsed_text().is_empty(), "新一轮开始前战报清空")
-	_assert(not battle.get_node("%ResultPanel").visible, "新一轮开始前结果面板收起")
+	_assert(battle.get_node("%ResultPanel").visible, "等待一帧不会自动收起结果或开始新请求")
+	battle._reset_for_replay()
+	_assert(battle.get_node("%BattleLog").get_parsed_text().is_empty(), "用户再战前会清空上一场战报")
+	_assert(not battle.get_node("%ResultPanel").visible, "用户再战前结果面板收起")
 	_assert(battle.get_node("%ChampionSlot").get_child_count() == 1, "固定擂主视图留在场景树里")
-	_assert(not battle.get_node("%ChampionView").visible and not battle.get_node("%OpponentView").visible, "下一轮前两个固定角色视图已复位并隐藏")
+	_assert(not battle.get_node("%ChampionView").visible and not battle.get_node("%OpponentView").visible, "再战前两个固定角色视图已复位并隐藏")
 	_assert(battle._war == null and battle._tally == null, "上一场的状态被丢弃")
 	await battle._start_war(ranked)
 	_assert(champion_view.get_instance_id() == champion_view_id, "第二轮复用同一个擂主 FighterView")
