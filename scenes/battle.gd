@@ -6,7 +6,7 @@ extends Node2D
 ## 这个场景会一直开着自动打下去，所以任何“当天”的东西都不能只在 _ready 里算一次，
 ## 每轮开打前都要重新取一次系统日期（见 _sync_record_to_today）。
 
-const MAIN_SCENE := "res://main.tscn"
+const MAIN_SCENE := "res://scenes/main.tscn"
 ## 一场打完之后隔多久自动开下一轮。拉名单失败时也按这个间隔重试。
 const NEXT_ROUND_DELAY := 60.0
 ## 人数不够时的说明，状态栏和结果面板用的是同一句。
@@ -62,11 +62,11 @@ func _ready() -> void:
 	log_box.content_margin_right = 14
 	log_box.content_margin_top = 10
 	log_box.content_margin_bottom = 10
-	%Log.add_theme_stylebox_override("normal", log_box)
+	%BattleLog.add_theme_stylebox_override("normal", log_box)
 	%RecordTitle.add_theme_color_override("font_color", ThemeHelper.MUTED)
 	%RecordEmptyLabel.add_theme_color_override("font_color", ThemeHelper.MUTED)
 	# 透明底板会随背景明暗变化，2px 深色字边保证战报和榜单标题始终清楚。
-	ThemeHelper.style_readable_text(%Log)
+	ThemeHelper.style_readable_text(%BattleLog)
 	ThemeHelper.style_readable_text(%RecordTitle)
 	ThemeHelper.style_readable_text(%RecordEmptyLabel)
 	# 先读一次当天战绩。_record 还是 null，所以这一句就是首次加载；
@@ -181,10 +181,10 @@ func _reset_for_next_round() -> void:
 	%ResultLabel.text = ""
 	%MvpLabel.text = ""
 	%NextRoundLabel.text = ""
-	%Log.clear()
+	%BattleLog.clear()
 	%RemainingLabel.text = "右侧剩余 —"
 	# 上一轮可能因为报错把状态栏染红了，去掉覆盖回到默认色。
-	%Status.remove_theme_color_override("font_color")
+	%MatchupLabel.remove_theme_color_override("font_color")
 	# 两个固定视图留在场景树里；各自收掉动画、Tween 和本轮动态内容后隐藏。
 	_champion_view.reset_view()
 	_opponent_view.reset_view()
@@ -196,7 +196,7 @@ func _reset_for_next_round() -> void:
 ## 返回值表示这一轮有没有真的打起来：拉取失败或人数不够时是 false，
 ## 此时结果面板只放一句错误说明，外层照样等一分钟再试。
 func _load_and_run() -> bool:
-	%Status.text = "正在拉取今日对战名单…"
+	%MatchupLabel.text = "正在拉取今日对战名单…"
 	var result: Dictionary = await TokenUsageApi.fetch_ranking(self)
 	if not _is_live():
 		return false
@@ -215,8 +215,8 @@ func _load_and_run() -> bool:
 ## 两个失败出口的文案不同但动作完全一样，所以只留这一份。
 ## 固定返回 false，调用方可以直接 `return _fail_round(...)`。
 func _fail_round(status_text: String, notice_text: String) -> bool:
-	%Status.text = status_text
-	%Status.add_theme_color_override("font_color", ThemeHelper.DANGER)
+	%MatchupLabel.text = status_text
+	%MatchupLabel.add_theme_color_override("font_color", ThemeHelper.DANGER)
 	_show_notice(notice_text)
 	return false
 
@@ -266,9 +266,9 @@ func _update_hud() -> void:
 		return
 	%RemainingLabel.text = "右侧剩余 %d 人" % _war.remaining_including_current()
 	if _war.current_opponent:
-		%Status.text = "%s  VS  %s" % [_war.champion.username, _war.current_opponent.username]
+		%MatchupLabel.text = "%s  VS  %s" % [_war.champion.username, _war.current_opponent.username]
 	else:
-		%Status.text = "战斗结束"
+		%MatchupLabel.text = "战斗结束"
 	_champion_view.set_hp(_war.champion.hp, _war.champion.max_hp)
 	if _war.current_opponent:
 		_opponent_view.set_hp(_war.current_opponent.hp, _war.current_opponent.max_hp)
@@ -435,21 +435,21 @@ func _event_text(event: StrikeResult) -> String:
 
 
 ## 战报按时间正序往下排：新的一条追加到末尾。
-## %Log 开了 scroll_following，追加后会自动滚到最下方，始终停在最新一条上。
+## %BattleLog 开了 scroll_following，追加后会自动滚到最下方，始终停在最新一条上。
 ##
-## 用 add_text 而不是 `%Log.text += ...`：赋值 text 会把整条战报推倒重排，
+## 用 add_text 而不是 `%BattleLog.text += ...`：赋值 text 会把整条战报推倒重排，
 ## 一场十几个挑战者能攒上千行，越打到后面越卡（每行都要重新排版全部中文字形）。
 ## add_text 只追加这一段。代价是 text 属性不再跟着变，要读内容得用 get_parsed_text()。
 func _append_log(text: String) -> void:
 	if _log_text().is_empty():
-		%Log.add_text(text)
+		%BattleLog.add_text(text)
 	else:
-		%Log.add_text("\n" + text)
+		%BattleLog.add_text("\n" + text)
 
 
 ## 当前战报全文。add_text 追加的内容不进 text 属性，统一从这里读。
 func _log_text() -> String:
-	return %Log.get_parsed_text()
+	return %BattleLog.get_parsed_text()
 
 
 ## 拉取失败之类没打起来的情况，也用结果面板说明一下，

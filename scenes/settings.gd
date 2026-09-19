@@ -9,7 +9,7 @@ extends Control
 ## 服务器地址那一栏只管收和存，格式怎么算合法、存到哪儿全在 AppSettings；
 ## 填错了只在状态行报一句，绝不落盘——存进去的地址一定是能用的。
 
-const MAIN_SCENE := "res://main.tscn"
+const MAIN_SCENE := "res://scenes/main.tscn"
 ## “保存 / 还原默认”这两个按钮的尺寸，比主按钮窄，腾地方给输入框。
 const SERVER_BUTTON_MIN_SIZE := Vector2(140, 48)
 

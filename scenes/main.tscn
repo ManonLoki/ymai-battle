@@ -1,6 +1,6 @@
-[gd_scene load_steps=6 format=3 uid="uid://c0f7qcyp3vfky"]
+[gd_scene format=3 uid="uid://c0f7qcyp3vfky"]
 
-[ext_resource type="Script" uid="uid://lxwfe8fb6jj2" path="res://main.gd" id="1_main"]
+[ext_resource type="Script" uid="uid://lxwfe8fb6jj2" path="res://scenes/main.gd" id="1_main"]
 [ext_resource type="Script" uid="uid://ea2moir38p3" path="res://scripts/menu_parallax.gd" id="2_parallax"]
 [ext_resource type="Texture2D" uid="uid://c8unl3txf8jkw" path="res://assets/backgrounds/far.png" id="3_far"]
 [ext_resource type="Texture2D" uid="uid://cwmdjvcnlhrub" path="res://assets/backgrounds/mid.png" id="4_mid"]

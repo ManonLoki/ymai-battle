@@ -3,9 +3,9 @@ extends Control
 ## 主菜单。版本号直接读 project.godot 里的 application/config/version，
 ## 改版本只要动那一处，界面自动跟上。
 
-const RANKING_SCENE := "res://ranking.tscn"
-const BATTLE_SCENE := "res://battle.tscn"
-const SETTINGS_SCENE := "res://settings.tscn"
+const RANKING_SCENE := "res://scenes/ranking.tscn"
+const BATTLE_SCENE := "res://scenes/battle.tscn"
+const SETTINGS_SCENE := "res://scenes/settings.tscn"
 
 
 func _ready() -> void:

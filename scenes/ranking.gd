@@ -2,7 +2,7 @@ extends Control
 
 ## 排行榜场景：按逻辑玩家展示当日聚合后的 token 战力和用过的 agent。
 
-const MAIN_SCENE := "res://main.tscn"
+const MAIN_SCENE := "res://scenes/main.tscn"
 ## 遥控器上下键一次滚多少像素：榜单本身不吃焦点，只能手动推 ScrollContainer。
 const SCROLL_STEP := 64
 ## 表格的四列：表头文字和字号都摆在 ranking.tscn 的四个 Header* 节点里；
@@ -31,7 +31,7 @@ func _ready() -> void:
 	%Title.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
 	%Title.add_theme_constant_override("shadow_offset_x", 2)
 	%Title.add_theme_constant_override("shadow_offset_y", 2)
-	%Status.add_theme_color_override("font_color", ThemeHelper.MUTED)
+	%SummaryLabel.add_theme_color_override("font_color", ThemeHelper.MUTED)
 	_style_static_header()
 	ThemeHelper.style_back_button(%BackButton)
 	%BackButton.pressed.connect(_on_back_pressed)
@@ -76,15 +76,15 @@ func _on_back_pressed() -> void:
 
 ## 拉一次接口并渲染榜单。日期每次进场景时现取，所以跨天重进就是新一天的榜。
 func _load_ranking() -> void:
-	%Status.text = "正在拉取今日排行…"
+	%SummaryLabel.text = "正在拉取今日排行…"
 	_clear_rows()
 	var result: Dictionary = await TokenUsageApi.fetch_ranking(self)
 	# await 期间玩家可能已经按返回走了，节点没了就别再碰界面。
 	if not is_instance_valid(self):
 		return
 	if not bool(result.get("ok", false)):
-		%Status.text = "加载失败：%s" % str(result.get("error", "未知错误"))
-		%Status.add_theme_color_override("font_color", ThemeHelper.DANGER)
+		%SummaryLabel.text = "加载失败：%s" % str(result.get("error", "未知错误"))
+		%SummaryLabel.add_theme_color_override("font_color", ThemeHelper.DANGER)
 		return
 	_render(str(result.get("date", "")), result.get("users", [] as Array[RankedUser]))
 
@@ -93,9 +93,9 @@ func _load_ranking() -> void:
 func _render(date: String, ranked: Array[RankedUser]) -> void:
 	_shown_date = date
 	%Title.text = "今日排行 · %s" % date
-	%Status.text = "%d 人上榜 · Token 即基础战力" % ranked.size()
+	%SummaryLabel.text = "%d 人上榜 · Token 即基础战力" % ranked.size()
 	# 上一次可能因为报错被染成红色，这里改回普通说明色。
-	%Status.add_theme_color_override("font_color", ThemeHelper.MUTED)
+	%SummaryLabel.add_theme_color_override("font_color", ThemeHelper.MUTED)
 	_clear_rows()
 	for user in ranked:
 		_add_row(user)

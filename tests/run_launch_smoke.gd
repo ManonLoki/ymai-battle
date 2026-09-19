@@ -18,10 +18,10 @@ func _initialize() -> void:
 
 func _run() -> void:
 	# 先把三个场景都加载一遍，任何一个资源坏了在这里就会暴露。
-	var packed_main := load("res://main.tscn") as PackedScene
-	var packed_ranking := load("res://ranking.tscn") as PackedScene
-	var packed_battle := load("res://battle.tscn") as PackedScene
-	var packed_settings := load("res://settings.tscn") as PackedScene
+	var packed_main := load("res://scenes/main.tscn") as PackedScene
+	var packed_ranking := load("res://scenes/ranking.tscn") as PackedScene
+	var packed_battle := load("res://scenes/battle.tscn") as PackedScene
+	var packed_settings := load("res://scenes/settings.tscn") as PackedScene
 	if packed_main == null or packed_ranking == null or packed_battle == null or packed_settings == null:
 		printerr("SCENE_LOAD_FAILED")
 		quit(1)

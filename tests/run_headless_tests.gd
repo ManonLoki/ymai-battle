@@ -152,7 +152,7 @@ func _test_player_identity_and_tokens() -> void:
 	for field in fields:
 		_assert(user_src.find(field) >= 0, "RankedUser still carries %s" % field)
 	_assert(user_src.find("device") < 0, "RankedUser has no device-level field at all")
-	for path in ["res://ranking.gd", "res://battle.gd", "res://scenes/fighter_view.gd"]:
+	for path in ["res://scenes/ranking.gd", "res://scenes/battle.gd", "res://scenes/fighter_view.gd"]:
 		var src := FileAccess.get_file_as_string(path)
 		_assert(src.find("deviceName") < 0 and src.find("deviceId") < 0, "%s never reads a device field" % path)
 		_assert(src.find("dailyUsage") < 0, "%s reads channelUsage, the only feed with tokens" % path)
@@ -304,10 +304,10 @@ func _test_compact_numbers() -> void:
 	_assert(seen.size() == 4, "each magnitude picks its own unit")
 
 	# 界面上确实用的是这个函数，而不是各写各的。
-	for path in ["res://ranking.gd", "res://battle.gd", "res://scenes/fighter_view.gd", "res://scripts/combat_log.gd"]:
+	for path in ["res://scenes/ranking.gd", "res://scenes/battle.gd", "res://scenes/fighter_view.gd", "res://scripts/combat_log.gd"]:
 		var src := FileAccess.get_file_as_string(path)
 		_assert(src.find("NumberFormat.compact(") >= 0, "%s renders numbers through the shared compact helper" % path)
-	_assert(FileAccess.get_file_as_string("res://ranking.gd").find("_format_millions") < 0, "the old M-only formatter is gone")
+	_assert(FileAccess.get_file_as_string("res://scenes/ranking.gd").find("_format_millions") < 0, "the old M-only formatter is gone")
 
 
 ## 胜率曲线：人均战力比 1:1 精确落在 50%，人数另算，两端收敛到 30%/70% 而不是 0/100%。
@@ -1401,7 +1401,7 @@ func _test_settings() -> void:
 	_assert(AppSettings.window_mode_for(AppSettings.Mode.FULLSCREEN) == DisplayServer.WINDOW_MODE_FULLSCREEN, "fullscreen maps to WINDOW_MODE_FULLSCREEN")
 
 	# 场景本身：三个固定模式按钮都在设计器节点树里，运行时只绑定模式数据。
-	var packed := load("res://settings.tscn") as PackedScene
+	var packed := load("res://scenes/settings.tscn") as PackedScene
 	_assert(packed != null, "settings.tscn loads")
 	var scene: Node = packed.instantiate()
 	root.add_child(scene)
@@ -1417,7 +1417,7 @@ func _test_settings() -> void:
 	_assert(scene.get_node_or_null("%WindowedButton") != null, "windowed mode button is scene-authored")
 	_assert(scene.get_node_or_null("%MaximizedButton") != null, "maximized mode button is scene-authored")
 	_assert(scene.get_node_or_null("%FullscreenButton") != null, "fullscreen mode button is scene-authored")
-	var settings_src := FileAccess.get_file_as_string("res://settings.gd")
+	var settings_src := FileAccess.get_file_as_string("res://scenes/settings.gd")
 	_assert(settings_src.find("Button.new") < 0 and settings_src.find("%ModeList.add_child") < 0, "settings binds fixed mode controls without constructing them in code")
 	# 服务器那一栏：输入框 + 保存 + 还原默认 + 一行说明当前用的是哪台。
 	var input := scene.get_node_or_null("%ServerInput") as LineEdit
@@ -1480,7 +1480,7 @@ func _test_server_settings() -> void:
 
 ## 主菜单：三个按钮都在，且能切到对应场景。
 func _test_main_menu() -> void:
-	var packed := load("res://main.tscn") as PackedScene
+	var packed := load("res://scenes/main.tscn") as PackedScene
 	_assert(packed != null, "main.tscn loads")
 	var main: Node = packed.instantiate()
 	root.add_child(main)
@@ -1499,7 +1499,7 @@ func _test_main_menu() -> void:
 	_assert(settings_btn != null, "Main has Settings button")
 	_assert(settings_btn != null and settings_btn.text.find("设置") >= 0, "Settings button is labeled for settings")
 	_assert(settings_btn != null and quit_btn != null and settings_btn.get_index() < quit_btn.get_index(), "Settings sits above Quit")
-	var ranking_script := FileAccess.get_file_as_string("res://main.gd")
+	var ranking_script := FileAccess.get_file_as_string("res://scenes/main.gd")
 	_assert(ranking_script.find("ranking.tscn") >= 0, "Main can switch to Ranking")
 	_assert(ranking_script.find("battle.tscn") >= 0, "Main can switch to Battle")
 	_assert(ranking_script.find("settings.tscn") >= 0, "Main can switch to Settings")
@@ -1530,7 +1530,7 @@ func _first_sprite(node: Node) -> Sprite2D:
 
 ## 主菜单的视差背景（三层各自以不同速度滚）和退出按钮。
 func _test_main_parallax_and_quit() -> void:
-	var packed := load("res://main.tscn") as PackedScene
+	var packed := load("res://scenes/main.tscn") as PackedScene
 	_assert(packed != null, "main.tscn loads for parallax")
 	var main: Node = packed.instantiate()
 	root.add_child(main)
@@ -1564,7 +1564,7 @@ func _test_main_parallax_and_quit() -> void:
 			var gap := layer_sprites[1].position.x - layer_sprites[0].position.x
 			_assert(is_equal_approx(gap, backdrop.wrap_widths[layer_index]), "the second parallax copy begins exactly one wrap width later")
 	_assert(images.size() >= 2 and _images_differ(images[0], images[1]), "two layer images are not pixel-identical")
-	var tscn := FileAccess.get_file_as_string("res://main.tscn")
+	var tscn := FileAccess.get_file_as_string("res://scenes/main.tscn")
 	var parallax_src := FileAccess.get_file_as_string("res://scripts/menu_parallax.gd")
 	_assert(tscn.find("ParallaxBackdrop") >= 0, "main scene references the parallax backdrop")
 	_assert(tscn.find("res://assets/backgrounds/far.png") >= 0, "far background image is scene-authored")
@@ -1600,7 +1600,7 @@ func _test_main_parallax_and_quit() -> void:
 		if cb.get_method() == &"_on_quit_pressed":
 			saw_quit_handler = true
 	_assert(saw_quit_handler, "Quit button is wired to the shipped quit handler")
-	var main_src := FileAccess.get_file_as_string("res://main.gd")
+	var main_src := FileAccess.get_file_as_string("res://scenes/main.gd")
 	_assert(main_src.find("func _on_quit_pressed") >= 0, "quit handler exists")
 	_assert(main_src.find("get_tree().quit()") >= 0, "quit handler uses SceneTree.quit")
 	main.queue_free()
@@ -1660,7 +1660,7 @@ func _test_battle_and_ranking_backgrounds() -> void:
 				all_distinct = false
 	_assert(all_distinct, "all sixteen battle backgrounds are visually distinct files")
 
-	var battle := (load("res://battle.tscn") as PackedScene).instantiate()
+	var battle := (load("res://scenes/battle.tscn") as PackedScene).instantiate()
 	battle.skip_autoload = true
 	battle.record_path = TEST_BATTLE_RECORD_PATH
 	root.add_child(battle)
@@ -1710,7 +1710,7 @@ func _test_battle_and_ranking_backgrounds() -> void:
 	var arena_scrim := battle.get_node("BackgroundLayer/ArenaTint") as ColorRect
 	_assert(floor_scrim.color.a >= 0.4 and floor_scrim.color.a < 0.8, "lower arena is dimmed without hiding the generated floor")
 	_assert(arena_scrim.color.a >= 0.2 and arena_scrim.color.a < 0.5, "fighter zone keeps a light readability tint")
-	var log := battle.get_node("%Log") as RichTextLabel
+	var log := battle.get_node("%BattleLog") as RichTextLabel
 	var record_panel := battle.get_node("%RecordPanel") as PanelContainer
 	var log_style := log.get_theme_stylebox("normal") as StyleBoxFlat
 	var record_style := record_panel.get_theme_stylebox("panel") as StyleBoxFlat
@@ -1731,7 +1731,7 @@ func _test_battle_and_ranking_backgrounds() -> void:
 	battle.queue_free()
 	await process_frame
 
-	var ranking := (load("res://ranking.tscn") as PackedScene).instantiate()
+	var ranking := (load("res://scenes/ranking.tscn") as PackedScene).instantiate()
 	var ranking_backdrop := ranking.get_node_or_null("%RankingBackdrop") as TextureRect
 	var ranking_scrim := ranking.get_node_or_null("%RankingScrim") as ColorRect
 	var content_panel := ranking.get_node_or_null("%ContentPanel") as Panel
@@ -1829,7 +1829,7 @@ func _test_app_icon_and_cursors() -> void:
 	_assert(pimg != null and _opaque_count(pimg) > 0, "pressed cursor has opaque pixels")
 	_assert(_images_differ(aimg, pimg), "arrow and pressed cursors differ")
 
-	var packed := load("res://main.tscn") as PackedScene
+	var packed := load("res://scenes/main.tscn") as PackedScene
 	_assert(packed != null, "main.tscn loads for cursor apply")
 	var main: Node = packed.instantiate()
 	root.add_child(main)
@@ -1986,8 +1986,8 @@ func _test_api_contract() -> void:
 	var api_src := FileAccess.get_file_as_string("res://scripts/token_usage_api.gd")
 	_assert(api_src.find("https://codex-tracker.yunmai365.com/api/v1/token-usage") >= 0, "API URL is the exact token-usage endpoint")
 	_assert(api_src.find("HTTPClient.METHOD_GET") >= 0, "token-usage is fetched with GET")
-	var ranking_src := FileAccess.get_file_as_string("res://ranking.gd")
-	var battle_src := FileAccess.get_file_as_string("res://battle.gd")
+	var ranking_src := FileAccess.get_file_as_string("res://scenes/ranking.gd")
+	var battle_src := FileAccess.get_file_as_string("res://scenes/battle.gd")
 	# 两个场景都只认 TokenUsageApi.fetch_ranking 这一个入口；
 	# HTTPRequest 的生命周期和 channelUsage 的位置都不该再出现在场景脚本里。
 	_assert(ranking_src.find("TokenUsageApi.fetch_ranking") >= 0, "Ranking enter path fetches the ranking")
@@ -2040,14 +2040,14 @@ func _scan_dir(path: String, found: PackedStringArray) -> void:
 
 ## 战绩榜不靠字体里的奖牌字符，改用圆底 + 名次数字。
 func _test_no_medals() -> void:
-	var ranking_src := FileAccess.get_file_as_string("res://ranking.gd") + FileAccess.get_file_as_string("res://ranking.tscn")
+	var ranking_src := FileAccess.get_file_as_string("res://scenes/ranking.gd") + FileAccess.get_file_as_string("res://scenes/ranking.tscn")
 	for needle in ["medal", "badge", "金牌", "银牌", "铜牌", "勋章", "奖杯"]:
 		_assert(ranking_src.find(needle) < 0, "Ranking has no %s" % needle)
 
 
 ## 把一串事件渲染成完整战报文本，方便按子串断言。
 func _joined_log(events: Array[StrikeResult]) -> String:
-	var battle: Node = (load("res://battle.gd") as GDScript).new()
+	var battle: Node = (load("res://scenes/battle.gd") as GDScript).new()
 	CombatLog.annotate(events)
 	var blob := ""
 	for event in events:
@@ -2317,7 +2317,7 @@ func _test_icons_and_layout() -> void:
 	_assert(view_src.find("SkillCatalog.load_icon") >= 0, "fighter view loads skill/buff icons")
 	_assert(view_src.find("buff_row") >= 0 and view_src.find("skill_row") >= 0, "fighter view has separate buff and skill rows")
 	_assert(view_src.find("sort_for_display") >= 0, "fighter view lays out skills by display group")
-	var battle_tscn := FileAccess.get_file_as_string("res://battle.tscn")
+	var battle_tscn := FileAccess.get_file_as_string("res://scenes/battle.tscn")
 	_assert(battle_tscn.find("Vector2(320, 330)") >= 0, "champion slot moved up from y=480")
 	_assert(battle_tscn.find("Vector2(960, 330)") >= 0, "opponent slot moved up from y=480")
 	_assert(battle_tscn.find("Vector2(0, 240)") >= 0, "combat log min height is 240px")
@@ -2325,7 +2325,7 @@ func _test_icons_and_layout() -> void:
 	_assert(fighter_tscn.find("StatusRow") >= 0, "StatusRow holds name/bar/value")
 	_assert(fighter_tscn.find("BuffRow") >= 0 and fighter_tscn.find("SkillRow") >= 0, "BuffRow and SkillRow are separate")
 	_assert(fighter_tscn.find("NameLabel") >= 0 and fighter_tscn.find("HpBar") >= 0 and fighter_tscn.find("HpLabel") >= 0, "name, bar and value exist")
-	var battle_gd := FileAccess.get_file_as_string("res://battle.gd")
+	var battle_gd := FileAccess.get_file_as_string("res://scenes/battle.gd")
 	_assert(battle_gd.find("play_crit_fx") >= 0, "Battle plays crit FX on crit strikes")
 	_assert(battle_gd.find("play_dodge") >= 0, "Battle plays dodge retreat on dodges")
 	_assert(battle_gd.find("play_poison_fx") >= 0 and battle_gd.find("poison_tick") >= 0, "Battle plays poison FX on poison ticks")
@@ -2426,7 +2426,7 @@ func _has_gold_crown(image: Image) -> bool:
 ## 挂在 await 上的播放协程能自己收手，不会去碰已经没了的场景树。
 func _test_battle_playback() -> void:
 	_remove_test_battle_record()
-	var packed := load("res://battle.tscn") as PackedScene
+	var packed := load("res://scenes/battle.tscn") as PackedScene
 	var battle: Node = packed.instantiate()
 	battle.skip_autoload = true
 	battle.record_path = TEST_BATTLE_RECORD_PATH
@@ -2441,7 +2441,7 @@ func _test_battle_playback() -> void:
 	_assert(battle.get_node("%ResultPanel").visible, "result panel shows after the war")
 
 	# 战报按时间正序往下排，并且自动跟到最下方。
-	var log_node: RichTextLabel = battle.get_node("%Log")
+	var log_node: RichTextLabel = battle.get_node("%BattleLog")
 	# add_text 追加的内容不进 text 属性，读全文要走 get_parsed_text。
 	var log_lines := log_node.get_parsed_text().split("\n")
 	_assert(log_lines.size() > 2, "the war leaves a multi-line report")
@@ -2484,7 +2484,7 @@ func _test_battle_playback() -> void:
 ## 结果面板的胜负文案和 MVP 评选，赢和输两种都要评。
 func _test_result_copy() -> void:
 	_remove_test_battle_record()
-	var packed := load("res://battle.tscn") as PackedScene
+	var packed := load("res://scenes/battle.tscn") as PackedScene
 	var battle: Node = packed.instantiate()
 	battle.skip_autoload = true
 	battle.record_path = TEST_BATTLE_RECORD_PATH
@@ -2504,7 +2504,7 @@ func _test_result_copy() -> void:
 	battle._show_result()
 	_assert(battle.get_node("%ResultLabel").text == "甲在经过多轮鏖战，惜败于%s" % battle._war.current_opponent.username, "lose copy names the knocking challenger")
 	_assert(battle.get_node("%MvpLabel").text.find("【乙】") >= 0, "输掉的场次照样评 MVP")
-	var tscn := FileAccess.get_file_as_string("res://battle.tscn")
+	var tscn := FileAccess.get_file_as_string("res://scenes/battle.tscn")
 	_assert(tscn.find("挑战者（乱序逐个上场）") < 0, "side tag 挑战者（乱序逐个上场） is gone")
 	_assert(tscn.find("text = \"榜一\"") < 0, "side tag 榜一 is gone")
 	_assert(tscn.find("榜一胜率") < 0, "HUD win-rate percent label is gone")
@@ -2570,7 +2570,7 @@ func _test_tv_remote() -> void:
 	_assert(back_setting == "false", "the engine does not quit on BACK; each scene handles it")
 
 	# 主菜单：焦点从“查看排行”一路往下走，再走回来。
-	var main: Node = (load("res://main.tscn") as PackedScene).instantiate()
+	var main: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
 	root.add_child(main)
 	await process_frame
 	var ranking_btn: Button = main.get_node("%RankingButton")
@@ -2611,16 +2611,16 @@ func _test_tv_remote() -> void:
 	await process_frame
 
 	# 三个场景都得自己接住 BACK：主菜单退出，另外两个回主菜单。
-	for path in ["res://main.gd", "res://ranking.gd", "res://battle.gd"]:
+	for path in ["res://scenes/main.gd", "res://scenes/ranking.gd", "res://scenes/battle.gd"]:
 		var src := FileAccess.get_file_as_string(path)
 		_assert(src.find("NOTIFICATION_WM_GO_BACK_REQUEST") >= 0, "%s handles the Android go-back notification" % path)
 		_assert(src.find("TvRemote.consume_back(event") >= 0, "%s handles the BACK key event" % path)
 		_assert(src.find("TvRemote.install()") >= 0, "%s installs the remote bindings" % path)
-	_assert(FileAccess.get_file_as_string("res://main.gd").find("get_tree().quit()") >= 0, "BACK on the main menu quits the app")
-	var battle_src := FileAccess.get_file_as_string("res://battle.gd")
+	_assert(FileAccess.get_file_as_string("res://scenes/main.gd").find("get_tree().quit()") >= 0, "BACK on the main menu quits the app")
+	var battle_src := FileAccess.get_file_as_string("res://scenes/battle.gd")
 	_assert(battle_src.find("%BackButton.focus_mode = Control.FOCUS_ALL") >= 0, "the battle 返回 button stays focusable during playback")
 	_assert(battle_src.find("focus_mode = Control.FOCUS_NONE") < 0, "nothing turns the battle 返回 button unfocusable")
-	var ranking_src := FileAccess.get_file_as_string("res://ranking.gd")
+	var ranking_src := FileAccess.get_file_as_string("res://scenes/ranking.gd")
 	_assert(ranking_src.find("%Scroll.scroll_vertical") >= 0, "the ranking list scrolls with the D-pad")
 
 
@@ -2687,14 +2687,14 @@ func _test_damage_tally() -> void:
 ## 一场打完 → 倒计时 → 清场，准备重新拉名单开下一轮。
 func _test_next_round_cycle() -> void:
 	_remove_test_battle_record()
-	var packed := load("res://battle.tscn") as PackedScene
+	var packed := load("res://scenes/battle.tscn") as PackedScene
 	var battle: Node = packed.instantiate()
 	battle.skip_autoload = true
 	battle.record_path = TEST_BATTLE_RECORD_PATH
 	root.add_child(battle)
 	await process_frame
 	_assert(battle.NEXT_ROUND_DELAY == 60.0, "打完一分钟后自动开下一轮")
-	var battle_src := FileAccess.get_file_as_string("res://battle.gd")
+	var battle_src := FileAccess.get_file_as_string("res://scenes/battle.gd")
 	_assert(battle_src.find("func _round_loop") >= 0, "有一层轮次循环在驱动下一轮")
 	_assert(battle_src.find("await _load_and_run()") >= 0, "下一轮重新拉一次今日名单")
 	var ranked: Array[RankedUser] = [_ranked("甲", 5000), _ranked("乙", 300), _ranked("丙", 300)]
@@ -2708,7 +2708,7 @@ func _test_next_round_cycle() -> void:
 	_assert(round_backdrop.current_index >= 0, "每次真正进入 _start_war 都会 Roll 一张背景")
 	_assert(battle.get_node("%ResultPanel").visible, "一场打完先出结果面板")
 	_assert(not battle.get_node("%MvpLabel").text.is_empty(), "结果面板带 MVP 一行")
-	_assert(battle.get_node("%Log").get_parsed_text().find("MVP") >= 0, "MVP 也写进战报")
+	_assert(battle.get_node("%BattleLog").get_parsed_text().find("MVP") >= 0, "MVP 也写进战报")
 	battle._countdown(2.0, "下一轮")
 	await process_frame
 	_assert(battle.get_node("%NextRoundLabel").text.find("下一轮") >= 0, "倒计时告诉玩家下一轮什么时候开始")
@@ -2716,7 +2716,7 @@ func _test_next_round_cycle() -> void:
 	await create_timer(1.2).timeout
 	battle._leaving = false
 	battle._reset_for_next_round()
-	_assert(battle.get_node("%Log").get_parsed_text().is_empty(), "新一轮开始前战报清空")
+	_assert(battle.get_node("%BattleLog").get_parsed_text().is_empty(), "新一轮开始前战报清空")
 	_assert(not battle.get_node("%ResultPanel").visible, "新一轮开始前结果面板收起")
 	_assert(battle.get_node("%ChampionSlot").get_child_count() == 1, "固定擂主视图留在场景树里")
 	_assert(not battle.get_node("%ChampionView").visible and not battle.get_node("%OpponentView").visible, "下一轮前两个固定角色视图已复位并隐藏")
@@ -2758,7 +2758,7 @@ func _test_round_record() -> void:
 
 ## 右侧战绩榜：场次、名次、前三名的金银铜牌。
 func _test_record_board() -> void:
-	var battle: Node = (load("res://battle.tscn") as PackedScene).instantiate()
+	var battle: Node = (load("res://scenes/battle.tscn") as PackedScene).instantiate()
 	battle.skip_autoload = true
 	battle.record_path = TEST_BATTLE_RECORD_PATH
 	root.add_child(battle)

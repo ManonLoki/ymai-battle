@@ -1,6 +1,6 @@
-[gd_scene load_steps=7 format=3 uid="uid://pl4j5r38is58"]
+[gd_scene format=3 uid="uid://pl4j5r38is58"]
 
-[ext_resource type="Script" path="res://battle.gd" id="1_battle"]
+[ext_resource type="Script" path="res://scenes/battle.gd" id="1_battle"]
 [ext_resource type="Script" path="res://scripts/battle_parallax.gd" id="2_parallax"]
 [ext_resource type="Shader" path="res://shaders/battle_parallax.gdshader" id="3_shader"]
 [ext_resource type="Texture2D" path="res://assets/battle_backgrounds/ember_forge.png" id="4_preview"]
@@ -129,7 +129,7 @@ layout_mode = 2
 focus_mode = 2
 text = "返回"
 
-[node name="Status" type="Label" parent="HUD/Margin/VBox/TopBar"]
+[node name="MatchupLabel" type="Label" parent="HUD/Margin/VBox/TopBar"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -172,7 +172,7 @@ layout_mode = 2
 mouse_filter = 2
 theme_override_constants/separation = 16
 
-[node name="Log" type="RichTextLabel" parent="HUD/Margin/VBox/BottomRow"]
+[node name="BattleLog" type="RichTextLabel" parent="HUD/Margin/VBox/BottomRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 240)
 layout_mode = 2

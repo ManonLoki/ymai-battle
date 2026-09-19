@@ -69,7 +69,7 @@ static func displayed_body_width(body_scale: float) -> float:
 	return float(SpriteFactory.SIZE) * FighterView.BASE_SPRITE_SCALE * absf(body_scale)
 
 
-## Sprite2D 局部坐标系里后退 1 个身位的位移（Visual.scale 再乘一次后等于世界 1 身宽）。
+## Body 局部坐标系里后退 1 个身位的位移（Visual.scale 再乘一次后等于世界 1 身宽）。
 static func dodge_sprite_offset() -> float:
 	return -float(SpriteFactory.SIZE) * FighterView.BASE_SPRITE_SCALE * DODGE_BODY_LENGTHS
 

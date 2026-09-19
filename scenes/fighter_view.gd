@@ -19,7 +19,7 @@ const ICON_GAP := 4
 const LEGACY_CRIT_AMOUNT := 28
 
 @onready var visual: Node2D = $Visual
-@onready var sprite: Sprite2D = $Visual/Sprite2D
+@onready var sprite: Sprite2D = $Visual/Body
 @onready var _afterimages: Node2D = $Visual/Afterimages
 @onready var _ghosts: Array[Sprite2D] = [
 	$Visual/Afterimages/Ghost0,
@@ -86,8 +86,8 @@ func bind(fighter: Fighter, face_left: bool) -> void:
 	sprite.position = Vector2.ZERO
 	sprite.rotation = 0.0
 	sprite.modulate = Color.WHITE
-	# 体型差放在 Visual 上而不是 Sprite2D 上：受击动画会把 Sprite2D 的 scale 压扁再弹回
-	# 固定值，写在 Sprite2D 上会被它覆盖掉。翻转也合并到这里。
+	# 体型差放在 Visual 上而不是 Body 上：受击动画会把 Body 的 scale 压扁再弹回
+	# 固定值，写在 Body 上会被它覆盖掉。翻转也合并到这里。
 	var body := CHAMPION_BODY_SCALE if fighter.is_champion else CHALLENGER_BODY_SCALE
 	visual.scale = Vector2(-body if face_left else body, body)
 	# 立绘以原点为中心，放大后脚会陷进地里、缩小后浮在半空，按半身高补回来。
@@ -418,7 +418,7 @@ func _hide_transient_fx() -> void:
 	sprite.modulate = Color.WHITE
 
 
-## 重影是场景内固定的两张 Sprite2D；收起时只清运行时贴图和变换，不删节点。
+## 重影是场景内固定的两张 Ghost 精灵；收起时只清运行时贴图和变换，不删节点。
 func _hide_afterimages() -> void:
 	for i in _ghosts.size():
 		var ghost := _ghosts[i]
