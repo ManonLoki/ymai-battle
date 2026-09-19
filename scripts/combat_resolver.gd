@@ -38,10 +38,24 @@ const CHAMPION_ENDURANCE_EDGE_BASE := 2
 const CHAMPION_ENDURANCE_EDGE_PER_CHALLENGER := 0.008
 const CHAMPION_ENDURANCE_EDGE_CAP := 0.030
 
-## 每个 agent 换一个 buff，所以 agent 数量本身就是战力的一部分。
-## 擂主每比挑战者平均多带一个 buff，命中率就再让出这么多，
-## 多开几个 agent 才不会变成白嫖胜率。同样由蒙特卡洛回归标定。
-const AGENT_BUFF_HIT_EDGE := 0.030
+## agent buff 折算成命中当量时，各字段值多少。命中 / 闪避是直接加减命中率的，
+## 算一比一；暴击和减伤走的是伤害（暴击 ×2 相当于期望伤害 ×(1+p)，减伤 ×(1-p)），
+## 换算成“多打掉 / 少挨下几次”只值半个命中，所以按 0.5 折。
+##
+## 以前这里只数 buff 的**个数**，因为数值区间窄（5%~10%），哪种 buff 都差不多值钱。
+## 区间放宽到 5%~20% 之后，一个 20% 的闪避和一个 5% 的暴击差了三四倍，
+## 再按个数计价的话，手里全是闪避的那一边就白赚一截胜率。
+const AGENT_BUFF_HIT_WEIGHT := {
+	"accuracy_bonus": 1.0,
+	"dodge_bonus": 1.0,
+	"crit_chance": 0.5,
+	"damage_reduction": 0.5,
+}
+
+## 擂主的 buff 命中当量每比挑战者平均高 1 点，命中率就让出这么多。
+## 多开几个 agent、或者掷到更高的数值，才不会变成白嫖胜率。
+## 由 tests 里的蒙特卡洛回归标定，改 buff 区间或权重都要重新跑。
+const AGENT_BUFF_HIT_EDGE := 0.550
 
 ## 目标胜率每偏离 50% 一个标准正态分位，命中率就偏离中心这么多。
 ## 一场仗要掷几十次骰子，命中率上几个百分点就足以决定胜负，
@@ -218,6 +232,16 @@ static func can_awaken(fighter: Fighter) -> bool:
 static func probit(p: float) -> float:
 	var x := 2.0 * clampf(p, MIN_WIN_RATE, MAX_WIN_RATE) - 1.0
 	return 1.2517 * x + 0.371 * x * x * x
+
+
+## 一身 agent buff 折算成多少命中当量。按 AGENT_BUFF_HIT_WEIGHT 把各字段加权求和，
+## 掷出来的真实数值直接参与，所以手气好掷到高数值的那一场也会如实计价。
+static func agent_buff_hit_value(buffs: Array[SkillDef]) -> float:
+	var total := 0.0
+	for buff in buffs:
+		for prop in AGENT_BUFF_HIT_WEIGHT:
+			total += float(buff.get(prop)) * float(AGENT_BUFF_HIT_WEIGHT[prop])
+	return total
 
 
 ## 人数超过 BASE 之后，擂主每多一个对手要多让出的命中率，封顶以免大榜单把命中率打穿。

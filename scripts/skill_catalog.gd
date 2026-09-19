@@ -59,9 +59,11 @@ const FAMILY_DISPLAY_GROUP := {
 	FAMILY_TECHNIQUE: DISPLAY_GROUP_TECHNIQUE,
 }
 
-## 渠道专属 buff 的数值区间：每场随机落在 5%~10% 之间。
+## 渠道专属 buff 的数值区间：每场随机落在 5%~20% 之间。
+## 区间开得比技能池宽，是因为 buff 的数量取决于当天真的用过几个渠道，
+## 多带一个 buff 本身就稀少，落到手里就该看得出差别。
 const AGENT_BUFF_MIN := 0.05
-const AGENT_BUFF_MAX := 0.10
+const AGENT_BUFF_MAX := 0.20
 
 ## 技能池的数据表，一行就是一条技能的全部配置：
 ##   id   技能标识，同时也是图标文件名（assets/icons/<id>.png）。

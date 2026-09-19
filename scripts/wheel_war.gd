@@ -93,15 +93,18 @@ func simulate_turn(rng: RollSource) -> Array[StrikeResult]:
 	return events
 
 
-## 擂主的 buff 数比挑战者平均多几个。多带一个 agent 就是实打实的战力，
+## 擂主这一身 buff 比挑战者平均值钱多少，单位是命中当量（见 CombatResolver.agent_buff_hit_value）。
+## 多带一个 agent、或者这一场掷到更高的数值，都是实打实的战力，
 ## 反解命中率时要扣掉，否则多开 agent 的人等于白嫖胜率。
+## 按当量而不是按个数算，是因为 buff 数值每场重掷、区间还挺宽，
+## 同样一个 buff 掷到 5% 和掷到 20% 根本不是一回事。
 func _champion_buff_edge() -> float:
 	if waiting.is_empty():
 		return 0.0
-	var total := 0
+	var total := 0.0
 	for fighter in waiting:
-		total += fighter.agent_buffs.size()
-	return float(champion.agent_buffs.size()) - float(total) / float(waiting.size())
+		total += CombatResolver.agent_buff_hit_value(fighter.agent_buffs)
+	return CombatResolver.agent_buff_hit_value(champion.agent_buffs) - total / float(waiting.size())
 
 
 ## 擂主这一场的技能张数比挑战者平均多几张。发牌张数每场重掷（擂主 6~8、挑战者 2~4），
