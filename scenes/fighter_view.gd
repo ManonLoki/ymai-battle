@@ -51,13 +51,14 @@ var _skull_fx: Node2D
 var _guard_fx: Node2D
 ## 闪避 / 凌波微步的重影容器，不含本体。
 var _afterimages: Node2D
-## 当前正在跑的染色 Tween。新特效来了要先把旧的 kill 掉，否则颜色会打架。
-var _fx_tween: Tween
-var _stun_tween: Tween
-var _skull_tween: Tween
-var _guard_tween: Tween
-var _poison_stop: Tween
-var _paralyze_stop: Tween
+## 各路特效正在跑的 Tween，按名字存一份。同名的新特效来了要先把旧的 kill 掉，
+## 否则两个会抢着改同一个属性（染色最明显）；换人时 _hide_transient_fx 一把全停。
+var _tweens: Dictionary = {}
+## 盖在身上的覆盖特效（眩晕、骷髅、罩子）。换人时统一收起来，
+## 加一种覆盖特效只要建好挂进这个数组，不用再往 _hide_transient_fx 里补一行。
+var _overlays: Array[Node2D] = []
+## 一次性爆发粒子。换人时统一停喷。
+var _bursts: Array[CPUParticles2D] = []
 
 
 func _ready() -> void:
@@ -70,7 +71,7 @@ func _ready() -> void:
 		Vector2(118, 22), Vector2(18, 12), Vector2(10, 4), Vector2(0, 6),
 		Vector2(-8, 2), Vector2(-8, -2), Vector2(0, -6),
 	])
-	slash.color = Color(0.95, 0.95, 1.0, 0.95)
+	slash.color = CombatFx.SLASH_COLOR
 	# 粒子 / 重影 / 眩晕 / 骷髅只建一次，之后反复 restart。中毒和麻痹共用爆发构建。
 	_crit_fx = CombatFx.make_burst(CombatFx.CRIT_COLOR, CombatFx.CRIT_AMOUNT, Vector2(0, 90), 9.0)
 	_crit_fx.name = "CritFx"
@@ -85,19 +86,18 @@ func _ready() -> void:
 	_stun_fx = CombatFx.make_stun("StunFx")
 	_skull_fx = CombatFx.make_skull("SkullFx")
 	_guard_fx = CombatFx.make_guard("GuardFx")
-	$Visual.add_child(_crit_fx)
-	$Visual.add_child(_poison_fx)
-	$Visual.add_child(_paralyze_fx)
+	_bursts = [_crit_fx, _poison_fx, _paralyze_fx]
+	_overlays = [_stun_fx, _skull_fx, _guard_fx]
 	$Visual.add_child(_afterimages)
-	$Visual.add_child(_stun_fx)
-	$Visual.add_child(_skull_fx)
-	$Visual.add_child(_guard_fx)
+	for fx in _bursts:
+		$Visual.add_child(fx)
+	for overlay in _overlays:
+		$Visual.add_child(overlay)
 	# 这几个 Label 是场景里摆好的，得单独套上中文字体。
 	for label in [name_label, hp_label, tip_label]:
 		label.add_theme_font_override("font", ThemeHelper.UI_FONT)
 	tip_panel.visible = false
-	if anim_player.has_animation(&"idle"):
-		anim_player.play(&"idle")
+	_play(&"idle")
 
 
 ## 把一名角色绑到这个视图上。换人时重复调用，所有状态都要复位。
@@ -137,8 +137,7 @@ func bind(fighter: Fighter, face_left: bool) -> void:
 	position = _home
 	visible = true
 	_hide_transient_fx()
-	if anim_player.has_animation(&"idle"):
-		anim_player.play(&"idle")
+	_play(&"idle")
 
 
 ## 重建两行图标：上面一行 agent buff，下面一行本场抽到的技能。
@@ -227,11 +226,16 @@ func set_hp(hp: int, max_hp: int) -> void:
 	hp_label.text = "%s / %s" % [NumberFormat.compact(hp), NumberFormat.compact(max_hp)]
 
 
+## 播一个动画，没建出来就不播。五个播放点都走这里，省得每处都写一遍 has_animation。
+func _play(anim: StringName) -> void:
+	if anim_player.has_animation(anim):
+		anim_player.play(anim)
+
+
 ## 回到站立：换回站立立绘并循环播待机动画。
 func play_idle() -> void:
 	sprite.texture = _idle_tex
-	if anim_player.has_animation(&"idle"):
-		anim_player.play(&"idle")
+	_play(&"idle")
 
 
 ## 出招：换攻击立绘，亮出从自身砍向对手的剑。
@@ -239,35 +243,29 @@ func play_attack() -> void:
 	sprite.texture = _attack_tex
 	slash.visible = true
 	# 每次都重置刀光的颜色和大小，暴击特效可能把它改过。
-	slash.color = Color(0.95, 0.95, 1.0, 0.95)
+	slash.color = CombatFx.SLASH_COLOR
 	slash.scale = Vector2.ONE
 	slash.position = Vector2.ZERO
-	if anim_player.has_animation(&"attack"):
-		anim_player.play(&"attack")
+	_play(&"attack")
 
 
 ## 挨打：换受击立绘（脸上带红痕）。
 func play_hurt() -> void:
 	sprite.texture = _hurt_tex
-	if anim_player.has_animation(&"hurt"):
-		anim_player.play(&"hurt")
+	_play(&"hurt")
 
 
 ## 倒下：转倒并淡出，不再回到站立。
 func play_death() -> void:
-	if anim_player.has_animation(&"death"):
-		anim_player.play(&"death")
+	_play(&"death")
 
 
 ## 闪避 / 凌波微步：后退约 1 个自身身位，原位到终点叠 3 个当前立绘。
 func play_dodge() -> void:
 	var offset := Vector2(CombatFx.dodge_sprite_offset(), 0.0)
 	CombatFx.spawn_afterimages(sprite, _afterimages, offset)
-	if anim_player.has_animation(&"dodge"):
-		anim_player.play(&"dodge")
-	var fade := create_tween()
-	fade.tween_interval(0.36)
-	fade.tween_callback(func() -> void:
+	_play(&"dodge")
+	_after(&"dodge", 0.36, func() -> void:
 		if is_instance_valid(_afterimages):
 			NodeUtil.clear_children(_afterimages)
 	)
@@ -277,73 +275,43 @@ func play_dodge() -> void:
 func play_crit_fx() -> void:
 	CombatFx.burst(_crit_fx)
 	slash.visible = true
-	slash.color = Color(1.0, 0.85, 0.2, 0.95)
-	_fx_tween = _restart_tint(Color(1.0, 0.92, 0.35), Color.WHITE, 0.28, true)
+	slash.color = CombatFx.CRIT_SLASH_COLOR
+	_tint(CombatFx.CRIT_TINT, 0.28, true)
 
 
 ## 中毒特效：红色粒子 + 立绘泛红后回白。粒子一轮结束后关掉。
 func play_poison_fx() -> void:
 	CombatFx.burst(_poison_fx)
-	_poison_stop = _stop_burst_later(_poison_fx, _poison_stop)
-	_fx_tween = _restart_tint(Color(1.0, 0.35, 0.32), Color.WHITE, 0.35, false)
+	_stop_burst_later(&"poison_stop", _poison_fx)
+	_tint(CombatFx.POISON_TINT, 0.35, false)
 
 
 ## 麻痹特效：黄色粒子 + 立绘泛黄后回白。粒子一轮结束后关掉。
 func play_paralyze_fx() -> void:
 	CombatFx.burst(_paralyze_fx)
-	_paralyze_stop = _stop_burst_later(_paralyze_fx, _paralyze_stop)
-	_fx_tween = _restart_tint(Color(1.0, 0.95, 0.35), Color.WHITE, 0.35, false)
+	_stop_burst_later(&"paralyze_stop", _paralyze_fx)
+	_tint(CombatFx.PARALYZE_TINT, 0.35, false)
 
 
 ## 混乱特效：头顶眩晕星转一圈就收掉，不在过期后还挂着。
 func play_confuse_fx() -> void:
 	_stun_fx.visible = true
 	_stun_fx.rotation = 0.0
-	if _stun_tween:
-		_stun_tween.kill()
-	_stun_tween = create_tween()
-	_stun_tween.tween_property(_stun_fx, "rotation", TAU, 0.8)
-	_stun_tween.tween_callback(_hide_stun)
+	var spin := _own(&"stun", create_tween())
+	spin.tween_property(_stun_fx, "rotation", TAU, 0.8)
+	spin.tween_callback(_hide_stun)
 
 
 ## 绝对防御：身上罩一层罩子，表示这一下百毒不侵。
 func play_guard_fx() -> void:
-	_guard_fx.visible = true
-	_guard_fx.modulate = Color(1, 1, 1, 1)
-	_guard_fx.scale = Vector2(0.55, 0.55)
-	if _guard_tween:
-		_guard_tween.kill()
-	_guard_tween = create_tween()
-	_guard_tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	_guard_tween.tween_property(_guard_fx, "scale", Vector2(1.08, 1.08), 0.16)
-	_guard_tween.tween_property(_guard_fx, "scale", Vector2.ONE, 0.1)
-	_guard_tween.tween_interval(0.28)
-	_guard_tween.tween_property(_guard_fx, "modulate:a", 0.0, 0.22)
-	_guard_tween.tween_callback(func() -> void:
-		if is_instance_valid(_guard_fx):
-			_guard_fx.visible = false
-			_guard_fx.modulate = Color.WHITE
-	)
-	_fx_tween = _restart_tint(Color(0.7, 0.95, 1.0), Color.WHITE, 0.32, true)
+	# 罩子先弹过头一点再收回来，像“砰”地撑开。
+	_own(&"guard", CombatFx.pop_fade(_guard_fx, 0.55, 0.16, 0.28, 0.22, 1.08))
+	_tint(CombatFx.GUARD_TINT, 0.32, true)
 
 
 ## 幻影刺杀：在对方身上盖红色画了 X 的骷髅。
 func play_assassinate_fx() -> void:
-	_skull_fx.visible = true
-	_skull_fx.modulate = Color(1, 1, 1, 1)
-	_skull_fx.scale = Vector2(0.6, 0.6)
-	if _skull_tween:
-		_skull_tween.kill()
-	_skull_tween = create_tween()
-	_skull_tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	_skull_tween.tween_property(_skull_fx, "scale", Vector2.ONE, 0.18)
-	_skull_tween.tween_interval(0.45)
-	_skull_tween.tween_property(_skull_fx, "modulate:a", 0.0, 0.2)
-	_skull_tween.tween_callback(func() -> void:
-		if is_instance_valid(_skull_fx):
-			_skull_fx.visible = false
-			_skull_fx.modulate = Color.WHITE
-	)
+	_own(&"skull", CombatFx.pop_fade(_skull_fx, 0.6, 0.18, 0.45, 0.2))
 
 
 ## 回血特效：一次性粒子场景 + 立绘泛绿后回白。吸血和治疗共用。
@@ -353,28 +321,51 @@ func play_heal_fx() -> void:
 	fx.restart()
 	fx.emitting = true
 	# 粒子播完自己删掉，不然一场下来会攒一堆节点。
-	var life := create_tween()
-	life.tween_interval(0.7)
-	life.tween_callback(fx.queue_free)
-	_fx_tween = _restart_tint(Color(0.55, 1.0, 0.7), Color.WHITE, 0.35, false)
+	# 这条计时故意不具名：两次治疗挨得近时，新的一条不能把上一个 fx 的回收计时顶掉。
+	_after(&"", 0.7, fx.queue_free)
+	_tint(CombatFx.HEAL_TINT, 0.35, false)
 
 
-## 立绘染色：立刻变成 from，再在 duration 内过渡到 to。
-## 每次都先 kill 掉上一个 Tween，否则两个特效会抢着改同一个 modulate。
-func _restart_tint(from: Color, to: Color, duration: float, ease_out: bool) -> Tween:
-	if _fx_tween:
-		_fx_tween.kill()
-	var tween := create_tween()
+## 立绘染色：立刻变成 from，再在 duration 内回到白。
+## 具名成 tint，所以下一个特效来的时候会把上一条染色停掉，两边不会抢同一个 modulate。
+func _tint(from: Color, duration: float, ease_out: bool) -> void:
+	var tween := _own(&"tint", create_tween())
 	if ease_out:
 		tween.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	sprite.modulate = from
-	tween.tween_property(sprite, "modulate", to, duration)
+	tween.tween_property(sprite, "modulate", Color.WHITE, duration)
+
+
+## 记下一条具名 Tween，并把同名的上一条停掉。名字就是“哪种特效”。
+func _own(key: StringName, tween: Tween) -> Tween:
+	_kill(key)
+	_tweens[key] = tween
 	return tween
 
 
-## 测试拿它核对五种动画都建出来了。
+## 停掉并忘掉一条具名 Tween。没有这个名字就什么都不做。
+func _kill(key: StringName) -> void:
+	var tween: Tween = _tweens.get(key)
+	if tween:
+		tween.kill()
+	_tweens.erase(key)
+
+
+## 等 seconds 秒再做一件事。key 为空表示这条计时不具名，
+## 谁也不会把它顶掉，也不会在换人时被停——用于必须跑完的收尾（比如回收粒子节点）。
+func _after(key: StringName, seconds: float, action: Callable) -> Tween:
+	var tween := create_tween()
+	if not key.is_empty():
+		_own(key, tween)
+	tween.tween_interval(seconds)
+	tween.tween_callback(action)
+	return tween
+
+
+## 测试拿它核对五种动画都建出来了。直接问 AnimationPlayer 要，
+## 而不是另抄一份名字——抄的那份可以在动画库其实是空的时候照样通过。
 func animation_names() -> PackedStringArray:
-	return PackedStringArray(["idle", "attack", "hurt", "death", "dodge"])
+	return PackedStringArray(anim_player.get_animation_list())
 
 
 ## 当前显示身宽（像素），闪避位移按它的 1 倍算。
@@ -387,33 +378,21 @@ func dodge_ghost_count() -> int:
 	return 1 + _afterimages.get_child_count()
 
 
+## 换人前把所有还在跑的特效收干净：具名 Tween 全停，覆盖层全收起，粒子全停喷。
 func _hide_transient_fx() -> void:
+	for key in _tweens.keys():
+		_kill(key)
 	if _afterimages:
 		NodeUtil.clear_children(_afterimages)
-	_hide_stun()
-	if _skull_fx:
-		_skull_fx.visible = false
-		_skull_fx.modulate = Color.WHITE
-	if _guard_fx:
-		_guard_fx.visible = false
-		_guard_fx.modulate = Color.WHITE
-		_guard_fx.scale = Vector2.ONE
-	if _stun_tween:
-		_stun_tween.kill()
-	if _skull_tween:
-		_skull_tween.kill()
-	if _guard_tween:
-		_guard_tween.kill()
-	if _poison_stop:
-		_poison_stop.kill()
-	if _paralyze_stop:
-		_paralyze_stop.kill()
-	if _poison_fx:
-		_poison_fx.emitting = false
-	if _paralyze_fx:
-		_paralyze_fx.emitting = false
-	if _crit_fx:
-		_crit_fx.emitting = false
+	for overlay in _overlays:
+		if is_instance_valid(overlay):
+			overlay.visible = false
+			overlay.modulate = Color.WHITE
+			overlay.scale = Vector2.ONE
+			overlay.rotation = 0.0
+	for fx in _bursts:
+		if is_instance_valid(fx):
+			fx.emitting = false
 	sprite.modulate = Color.WHITE
 
 
@@ -424,136 +403,17 @@ func _hide_stun() -> void:
 
 
 ## 一次性爆发播完就停喷，下一轮再 restart。
-func _stop_burst_later(particles: CPUParticles2D, previous: Tween) -> Tween:
-	if previous:
-		previous.kill()
-	var life := create_tween()
-	life.tween_interval(particles.lifetime)
-	life.tween_callback(func() -> void:
+func _stop_burst_later(key: StringName, particles: CPUParticles2D) -> void:
+	_after(key, particles.lifetime, func() -> void:
 		if is_instance_valid(particles):
 			particles.emitting = false
 	)
-	return life
 
 
-## 五种动画全部用代码建，场景文件里不存动画数据。
+## 五种动画全部用代码建（关键帧在 FighterAnims 里），场景文件里不存动画数据。
 ## 已经建过就直接返回（场景被复用时会重复调）。
 func _build_animations() -> void:
 	if anim_player.has_animation(&"idle"):
 		return
-	var lib := AnimationLibrary.new()
-	lib.add_animation(&"idle", _idle_anim())
-	lib.add_animation(&"attack", _attack_anim())
-	lib.add_animation(&"hurt", _hurt_anim())
-	lib.add_animation(&"death", _death_anim())
-	lib.add_animation(&"dodge", _dodge_anim())
 	# 空字符串表示默认库，动画名前面就不用带库名前缀。
-	anim_player.add_animation_library(&"", lib)
-
-
-## 待机：整个人上下浮动，循环播放。
-func _idle_anim() -> Animation:
-	var anim := Animation.new()
-	anim.length = 0.8
-	anim.loop_mode = Animation.LOOP_LINEAR
-	var track := anim.add_track(Animation.TYPE_VALUE)
-	anim.track_set_path(track, NodePath("Visual/Sprite2D:position:y"))
-	anim.track_insert_key(track, 0.0, 0.0)
-	anim.track_insert_key(track, 0.4, -8.0)
-	anim.track_insert_key(track, 0.8, 0.0)
-	return anim
-
-
-## 出招：前冲 + 微微转身 + 剑从自身砍向对手。
-func _attack_anim() -> Animation:
-	var anim := Animation.new()
-	anim.length = 0.36
-	anim.loop_mode = Animation.LOOP_NONE
-	# 往前冲出去再收回来。
-	var pos_track := anim.add_track(Animation.TYPE_VALUE)
-	anim.track_set_path(pos_track, NodePath("Visual/Sprite2D:position:x"))
-	anim.track_insert_key(pos_track, 0.0, 0.0)
-	anim.track_insert_key(pos_track, 0.12, 48.0)
-	anim.track_insert_key(pos_track, 0.36, 0.0)
-	# 顺带扭一点角度，冲劲更足。
-	var rot_track := anim.add_track(Animation.TYPE_VALUE)
-	anim.track_set_path(rot_track, NodePath("Visual/Sprite2D:rotation"))
-	anim.track_insert_key(rot_track, 0.0, 0.0)
-	anim.track_insert_key(rot_track, 0.12, 0.18)
-	anim.track_insert_key(rot_track, 0.36, 0.0)
-	# 剑只在最前面那一下亮，并往对手方向送出去。
-	var slash_track := anim.add_track(Animation.TYPE_VALUE)
-	anim.track_set_path(slash_track, NodePath("Visual/Slash:modulate:a"))
-	anim.track_insert_key(slash_track, 0.0, 0.0)
-	anim.track_insert_key(slash_track, 0.08, 1.0)
-	anim.track_insert_key(slash_track, 0.36, 0.0)
-	var slash_pos := anim.add_track(Animation.TYPE_VALUE)
-	anim.track_set_path(slash_pos, NodePath("Visual/Slash:position:x"))
-	anim.track_insert_key(slash_pos, 0.0, 0.0)
-	anim.track_insert_key(slash_pos, 0.14, 90.0)
-	anim.track_insert_key(slash_pos, 0.36, 40.0)
-	var slash_vis := anim.add_track(Animation.TYPE_VALUE)
-	anim.track_set_path(slash_vis, NodePath("Visual/Slash:visible"))
-	anim.track_insert_key(slash_vis, 0.0, true)
-	anim.track_insert_key(slash_vis, 0.36, false)
-	return anim
-
-
-## 受击：往后弹一下，同时闪红。
-func _hurt_anim() -> Animation:
-	var anim := Animation.new()
-	anim.length = 0.28
-	anim.loop_mode = Animation.LOOP_NONE
-	var pos_track := anim.add_track(Animation.TYPE_VALUE)
-	anim.track_set_path(pos_track, NodePath("Visual/Sprite2D:position:x"))
-	anim.track_insert_key(pos_track, 0.0, 0.0)
-	anim.track_insert_key(pos_track, 0.08, -22.0)
-	anim.track_insert_key(pos_track, 0.28, 0.0)
-	var mod_track := anim.add_track(Animation.TYPE_VALUE)
-	anim.track_set_path(mod_track, NodePath("Visual/Sprite2D:modulate"))
-	anim.track_insert_key(mod_track, 0.0, Color.WHITE)
-	anim.track_insert_key(mod_track, 0.06, Color("ff6b6b"))
-	anim.track_insert_key(mod_track, 0.28, Color.WHITE)
-	return anim
-
-
-## 闪避：往后撤约 1 个身位，顺便压扁一点表示发力。
-func _dodge_anim() -> Animation:
-	var anim := Animation.new()
-	anim.length = 0.36
-	anim.loop_mode = Animation.LOOP_NONE
-	var pos_track := anim.add_track(Animation.TYPE_VALUE)
-	anim.track_set_path(pos_track, NodePath("Visual/Sprite2D:position:x"))
-	var dodge_x := CombatFx.dodge_sprite_offset()
-	anim.track_insert_key(pos_track, 0.0, 0.0)
-	anim.track_insert_key(pos_track, 0.12, dodge_x)
-	anim.track_insert_key(pos_track, 0.36, 0.0)
-	# 关键帧写的是绝对 scale，所以必须和 BASE_SPRITE_SCALE 对得上。
-	var scale_track := anim.add_track(Animation.TYPE_VALUE)
-	anim.track_set_path(scale_track, NodePath("Visual/Sprite2D:scale"))
-	var base := BASE_SPRITE_SCALE
-	anim.track_insert_key(scale_track, 0.0, Vector2(base, base))
-	anim.track_insert_key(scale_track, 0.12, Vector2(base - 0.8, base + 0.4))
-	anim.track_insert_key(scale_track, 0.36, Vector2(base, base))
-	return anim
-
-
-## 倒下：转倒 + 整体淡到很暗 + 往下沉，结束后停在这个状态不再复位。
-func _death_anim() -> Animation:
-	var anim := Animation.new()
-	anim.length = 0.5
-	anim.loop_mode = Animation.LOOP_NONE
-	var rot_track := anim.add_track(Animation.TYPE_VALUE)
-	anim.track_set_path(rot_track, NodePath("Visual/Sprite2D:rotation"))
-	anim.track_insert_key(rot_track, 0.0, 0.0)
-	anim.track_insert_key(rot_track, 0.5, 1.2)
-	# "." 指 FighterView 自己：连名字血条一起淡下去。
-	var mod_track := anim.add_track(Animation.TYPE_VALUE)
-	anim.track_set_path(mod_track, NodePath(".:modulate:a"))
-	anim.track_insert_key(mod_track, 0.0, 1.0)
-	anim.track_insert_key(mod_track, 0.5, 0.15)
-	var pos_track := anim.add_track(Animation.TYPE_VALUE)
-	anim.track_set_path(pos_track, NodePath("Visual/Sprite2D:position:y"))
-	anim.track_insert_key(pos_track, 0.0, 0.0)
-	anim.track_insert_key(pos_track, 0.5, 40.0)
-	return anim
+	anim_player.add_animation_library(&"", FighterAnims.library(BASE_SPRITE_SCALE))

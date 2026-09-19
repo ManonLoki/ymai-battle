@@ -127,8 +127,19 @@ const AGENT_BUFF_SPECS := {
 	AgentChannels.CHANNEL_WORKBUDDY: {"id": "buff_workbuddy", "name": "WORKBUDDY 减伤", "prop": "damage_reduction", "label": "减伤"},
 }
 
-## id -> 在 SPECS 里的行号。第一次用到时算一遍就缓存，之后查表都是 O(1)。
+## id -> 在 SPECS 里的行号，查表 O(1)。
 static var _rank_by_id: Dictionary = {}
+## 行号 -> 渲染好的说明文案。模板和 DESC_CONSTANTS 全是常量，渲染结果不会变，
+## 所以整个进程只拼一次——pool() 每场都要建一整副牌，别把 18 份文案重拼一遍。
+static var _desc_by_rank: PackedStringArray = PackedStringArray()
+
+
+## 两张索引都只由常量表算出来，进程启动时一次建好，运行期不再变。
+static func _static_init() -> void:
+	for i in SPECS.size():
+		var spec: Dictionary = SPECS[i]
+		_rank_by_id[str(spec["id"])] = i
+		_desc_by_rank.append(_describe(str(spec["desc"]), spec["value"]))
 
 
 ## 空技能。用它而不是 null，调用方就不用到处判空。
@@ -148,24 +159,27 @@ static func agent_buff_template(channel: String, amount: float = -1.0) -> SkillD
 		return none_buff()
 	var spec: Dictionary = AGENT_BUFF_SPECS[channel]
 	var label := str(spec["label"])
+	# 百分数一律走 _percent：技能说明和 buff 说明用的是同一口径，测试也照着它对。
 	if amount < 0.0:
-		var span := "%s +%.0f%%~%.0f%%" % [label, AGENT_BUFF_MIN * 100.0, AGENT_BUFF_MAX * 100.0]
+		var span := "%s +%s~%s" % [label, _percent(AGENT_BUFF_MIN), _percent(AGENT_BUFF_MAX)]
 		return _build(spec, AGENT_BUFF_MIN, span)
-	return _build(spec, amount, "%s +%.0f%%" % [label, amount * 100.0])
+	return _build(spec, amount, "%s +%s" % [label, _percent(amount)])
 
 
 ## 可抽技能池。每次返回全新的对象，调用方可以随便洗牌、改数值。
 ## 顺序就是 SPECS 的顺序——洗牌是定种子的，调换行会改掉所有回归结果。
 static func pool() -> Array[SkillDef]:
 	var items: Array[SkillDef] = []
-	for spec in SPECS:
-		items.append(_from_spec(spec))
+	for i in SPECS.size():
+		items.append(_from_spec(i))
 	return items
 
 
-## 按一行配置建出技能定义，概率和布尔开关都走这一条路。
-static func _from_spec(spec: Dictionary) -> SkillDef:
-	return _build(spec, spec["value"], _describe(str(spec["desc"]), spec["value"]))
+## 按表里第 rank 行建出技能定义，概率和布尔开关都走这一条路。
+## 说明文案读预渲染好的那份，对象本身仍是新的。
+static func _from_spec(rank: int) -> SkillDef:
+	var spec: Dictionary = SPECS[rank]
+	return _build(spec, spec["value"], _desc_by_rank[rank])
 
 
 ## 技能和渠道 buff 共用的建法：图标文件名和 id 同名，数值按 prop 写进去。
@@ -211,9 +225,6 @@ static func tooltip_text(skill: SkillDef) -> String:
 
 ## 一条技能在 SPECS 里的行号，不在表里（agent buff、空技能）返回 -1。
 static func spec_rank(skill_id: String) -> int:
-	if _rank_by_id.is_empty():
-		for i in SPECS.size():
-			_rank_by_id[str(SPECS[i]["id"])] = i
 	return _rank_by_id.get(skill_id, -1)
 
 
@@ -318,7 +329,7 @@ static func by_id(skill_id: String) -> SkillDef:
 	for channel in AGENT_BUFF_SPECS:
 		if str(AGENT_BUFF_SPECS[channel]["id"]) == skill_id:
 			return agent_buff_template(channel)
-	var spec := spec_of(skill_id)
-	if spec.is_empty():
+	var rank := spec_rank(skill_id)
+	if rank < 0:
 		return none_buff()
-	return _from_spec(spec)
+	return _from_spec(rank)

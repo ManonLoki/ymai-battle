@@ -66,8 +66,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _on_back_pressed() -> void:
 	if _leaving:
 		return
-	_leaving = true
-	get_tree().change_scene_to_file(MAIN_SCENE)
+	_leaving = TvRemote.leave_to(self, MAIN_SCENE)
 
 
 ## 拉一次接口并渲染榜单。日期每次进场景时现取，所以跨天重进就是新一天的榜。

@@ -59,7 +59,7 @@ static func apply(control: Control, font_size: int = 18) -> void:
 	control.theme = theme
 
 
-## 一块纯色圆角底。按钮、面板、徽章都从它派生。
+## 一块纯色圆角底。按钮和面板都从它派生。
 static func make_flat(color: Color, radius: int = 8) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
 	box.bg_color = color
@@ -69,6 +69,15 @@ static func make_flat(color: Color, radius: int = 8) -> StyleBoxFlat:
 	box.content_margin_right = 12
 	box.content_margin_top = 8
 	box.content_margin_bottom = 8
+	return box
+
+
+## 一个纯色圆片：圆角开到边长的一半，且不留内边距。
+## 奖牌徽章这类“只有一个居中数字”的小圆用它——make_flat 的内边距会把它撑成椭圆。
+static func make_circle(color: Color, diameter: int) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = color
+	box.set_corner_radius_all(diameter / 2)
 	return box
 
 

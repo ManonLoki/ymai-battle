@@ -9,7 +9,6 @@ extends RefCounted
 ## 出手方的名字；中毒 / 麻痹这类自身事件里填的是当事人自己。
 ## skip_reason 的两个取值。写和读都走常量，免得两头各拼一次字符串。
 const SKIP_PARALYZE := "paralyze"
-const SKIP_ROOT := "root"
 const SKIP_HEAL := "heal"
 
 var attacker_name: String = ""

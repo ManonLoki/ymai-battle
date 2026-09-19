@@ -13,6 +13,17 @@ const STUN_COLOR := Color(1.0, 0.92, 0.25, 1.0)
 const GUARD_FILL := Color(0.45, 0.88, 1.0, 0.28)
 const GUARD_RIM := Color(0.78, 0.96, 1.0, 0.95)
 
+## 立绘闪一下的染色，和上面的粒子色是同一族但更淡——直接拿粒子色去染立绘会糊成一坨。
+## 和粒子色放在一起，是为了“中毒是什么颜色”只有一个答案。
+const CRIT_TINT := Color(1.0, 0.92, 0.35)
+const POISON_TINT := Color(1.0, 0.35, 0.32)
+const PARALYZE_TINT := Color(1.0, 0.95, 0.35)
+const GUARD_TINT := Color(0.7, 0.95, 1.0)
+const HEAL_TINT := Color(0.55, 1.0, 0.7)
+## 刀光：平时是冷白，暴击那一下换成金的。
+const SLASH_COLOR := Color(0.95, 0.95, 1.0, 0.95)
+const CRIT_SLASH_COLOR := Color(1.0, 0.85, 0.2, 0.95)
+
 ## 暴击粒子数，明显大于改前的 28。
 const CRIT_AMOUNT := 96
 const STATUS_AMOUNT := 18
@@ -23,6 +34,40 @@ const GHOST_TOTAL := AFTERIMAGE_EXTRAS + 1
 const DODGE_BODY_LENGTHS := 1.0
 const DODGE_START_ALPHA := 0.5
 const DODGE_END_ALPHA := 1.0
+
+
+## 盖在身上闪一下的覆盖层（绝对防御的罩子、幻影刺杀的骷髅）：
+## 弹出 → 停一会 → 淡出 → 收起并把 modulate 复位。三种覆盖特效差的只是这几个数，
+## 所以形状写在这里一份，调用方只给数值——再加一种覆盖特效不用再抄一遍。
+##
+## overshoot 大于 0 时先弹过头再收回来，罩子才有“砰”地撑开的感觉。
+## 返回这条 Tween，调用方自己保管（下次播之前要先 kill 掉）。
+static func pop_fade(
+	node: Node2D,
+	from_scale: float,
+	pop_time: float,
+	hold: float,
+	fade: float,
+	overshoot: float = 0.0,
+) -> Tween:
+	node.visible = true
+	node.modulate = Color.WHITE
+	node.scale = Vector2(from_scale, from_scale)
+	var tween := node.create_tween()
+	tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	if overshoot > 0.0:
+		tween.tween_property(node, "scale", Vector2(overshoot, overshoot), pop_time)
+		tween.tween_property(node, "scale", Vector2.ONE, pop_time * 0.625)
+	else:
+		tween.tween_property(node, "scale", Vector2.ONE, pop_time)
+	tween.tween_interval(hold)
+	tween.tween_property(node, "modulate:a", 0.0, fade)
+	tween.tween_callback(func() -> void:
+		if is_instance_valid(node):
+			node.visible = false
+			node.modulate = Color.WHITE
+	)
+	return tween
 
 
 ## 立绘在屏幕上的显示身宽（不含 Visual 翻转符号）。

@@ -17,12 +17,6 @@ const TURN_BEAT := 0.12
 ## 挥击动画挥到一半的时刻，挨打方在这里结算才像被打中。
 ## 跟着 FighterView 的出手动画长度走，和上面那条战报节奏是两回事，别合成一个。
 const HIT_IMPACT_DELAY := 0.12
-## 奖牌徽章的直径，圆角取一半就是正圆。
-const BADGE_PX := 22
-## 徽章里名次数字的字号。
-const BADGE_FONT_PX := 13
-## 战绩榜一行（名字、胜场）的字号。
-const ROW_FONT_PX := 16
 
 var _war: WheelWar
 var _rng: RollSource
@@ -91,10 +85,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _on_back_pressed() -> void:
 	# 已经在走人的路上就别再切一次场景。
-	if _leaving or not is_inside_tree():
+	if _leaving:
 		return
-	_leaving = true
-	get_tree().change_scene_to_file(MAIN_SCENE)
+	_leaving = TvRemote.leave_to(self, MAIN_SCENE)
 
 
 ## 这个场景是否还在演出中。离开场景树之后 get_tree() 会是 null，
@@ -164,7 +157,7 @@ func _reset_for_next_round() -> void:
 	%ResultLabel.text = ""
 	%MvpLabel.text = ""
 	%NextRoundLabel.text = ""
-	%Log.text = ""
+	%Log.clear()
 	%RemainingLabel.text = "右侧剩余 —"
 	# 上一轮可能因为报错把状态栏染红了，去掉覆盖回到默认色。
 	%Status.remove_theme_color_override("font_color")
@@ -221,12 +214,7 @@ func _start_war(ranked: Array[RankedUser]) -> void:
 	_champion_view.bind(_war.champion, false)
 	_bind_current_opponent()
 	_update_hud()
-	_append_log("车轮战开始：%s（%s · %d 技能）迎战其余 %d 人" % [
-		_war.champion.username,
-		_war.champion.agent_buff_text(),
-		_war.champion.skills.size(),
-		_war.remaining_including_current(),
-	])
+	_append_log(CombatLog.opening_line(_war.champion, _war.remaining_including_current()))
 	_append_log("战力 %s vs 其余合计 %s" % [
 		NumberFormat.compact(_war.champion.tokens),
 		NumberFormat.compact(_war.others_power),
@@ -234,62 +222,11 @@ func _start_war(ranked: Array[RankedUser]) -> void:
 	await _run_loop()
 
 
-## 右侧战绩榜：今天打了几场，以及每位上过榜一的玩家各赢了几场。
-## 前三名挂金银铜牌，没赢过的也留在榜上（0 场），因为他确实当过榜一。
+## 右侧战绩榜：板子本身怎么画归 RecordBoard，这里只管把当天的战绩递过去。
 func _refresh_record_board() -> void:
-	# 正在打的这一场还没记进去，所以显示 rounds + 1。
-	%RoundLabel.text = "今日第 %d 场" % maxi(1, _record.rounds + 1)
-	%RecordTitle.text = "今日榜一战绩 · 共 %d 场" % _record.rounds
-	NodeUtil.clear_children(%RecordList)
-	var rows := _record.standings()
-	# 当天第一场（或者刚跨天）时榜是空的，放一句占位。
-	if rows.is_empty():
-		%RecordList.add_child(ThemeHelper.make_label("还没有人打完一场", ThemeHelper.MUTED, 15))
-		return
-	for i in range(rows.size()):
-		%RecordList.add_child(_record_row(i + 1, rows[i]))
-
-
-## 战绩榜的一行：奖牌 + 名字 + 胜场。
-func _record_row(rank: int, row: Dictionary) -> Control:
-	var line := HBoxContainer.new()
-	line.add_theme_constant_override("separation", 8)
-	line.add_child(_medal(rank))
-	var name_label := ThemeHelper.make_label("【%s】" % str(row.get("username", "")), _rank_color(rank), ROW_FONT_PX)
-	# 名字占满中间，把胜场推到最右。
-	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	line.add_child(name_label)
-	var wins_label := ThemeHelper.make_label("%d 场" % int(row.get("wins", 0)), ThemeHelper.TEXT, ROW_FONT_PX)
-	wins_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	line.add_child(wins_label)
-	return line
-
-
-## 前三名用奖牌色，之后的用普通文字色。
-func _rank_color(rank: int) -> Color:
-	return ThemeHelper.medal_color(rank) if ThemeHelper.has_medal(rank) else ThemeHelper.TEXT
-
-
-## 前三名的金银铜牌。用一个圆底 + 名次数字，不依赖字体里有没有奖牌字符。
-func _medal(rank: int) -> Control:
-	var badge := Panel.new()
-	badge.custom_minimum_size = Vector2(BADGE_PX, BADGE_PX)
-	var box := StyleBoxFlat.new()
-	# 圆角开到边长的一半就是正圆。
-	box.set_corner_radius_all(BADGE_PX / 2)
-	box.bg_color = ThemeHelper.medal_color(rank) if ThemeHelper.has_medal(rank) else ThemeHelper.CARD
-	badge.add_theme_stylebox_override("panel", box)
-	# 名次数字铺满整个圆，居中显示。亮底上用深色字，暗底上用浅灰字。
-	var number := ThemeHelper.make_label(
-		str(rank),
-		ThemeHelper.BG if ThemeHelper.has_medal(rank) else ThemeHelper.MUTED,
-		BADGE_FONT_PX,
-	)
-	number.set_anchors_preset(Control.PRESET_FULL_RECT)
-	number.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	number.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	badge.add_child(number)
-	return badge
+	%RoundLabel.text = RecordBoard.round_text(_record)
+	%RecordTitle.text = RecordBoard.title_text(_record)
+	RecordBoard.refresh(%RecordList, _record)
 
 
 ## 把当前挑战者绑到右侧视图；人打完了就把右侧藏起来。
@@ -348,17 +285,15 @@ func _turn_loop() -> void:
 				return
 			_bind_current_opponent()
 			if _war.current_opponent:
-				_append_log("下一位：%s（%s · %d 技能）" % [
-					_war.current_opponent.username,
-					_war.current_opponent.agent_buff_text(),
-					_war.current_opponent.skills.size(),
-				])
+				_append_log(CombatLog.next_up_line(_war.current_opponent))
 		_update_hud()
 		if not await _wait(TURN_BEAT):
 			return
 
 
 ## 播一条战报事件：先动画后文字，节奏跟着动画长度走。
+## 两条路径没有交集，所以分成两个函数：没有攻击动作的（中毒掉血、被跳过的行动）
+## 一帧就演完，挥击那条要等动画。
 func _play_event(event: StrikeResult, champion: Fighter, opponent: Fighter) -> void:
 	if not _is_live():
 		return
@@ -370,24 +305,40 @@ func _play_event(event: StrikeResult, champion: Fighter, opponent: Fighter) -> v
 	if event.self_hit:
 		defender_view = attacker_view
 		defender = attacker
-	# 中毒掉血和被跳过的行动没有攻击动作，单独走一条短路径。
-	# 状态粒子只在真正结算到身上时播：中毒掉血、麻痹无法行动、混乱打自己。
 	if event.poison_tick or event.skip_reason != "":
-		if event.poison_tick:
-			attacker_view.play_poison_fx()
-			attacker_view.set_hp(event.defender_hp_after, attacker.max_hp)
-		elif event.skip_reason == StrikeResult.SKIP_PARALYZE:
-			attacker_view.play_paralyze_fx()
-		elif event.skip_reason == StrikeResult.SKIP_HEAL:
-			attacker_view.play_heal_fx()
-			attacker_view.set_hp(event.attacker_hp_after, attacker.max_hp)
-		_append_log(_event_text(event))
-		if event.revived:
-			attacker_view.play_idle()
-			attacker_view.set_hp(event.defender_hp_after, attacker.max_hp)
-		elif event.defender_died:
-			attacker_view.play_death()
+		_play_tick(event, attacker_view, attacker)
 		return
+	await _play_strike(event, attacker_view, attacker, defender_view, defender)
+
+
+## 没有攻击动作的一条：中毒掉血、麻痹跳过、治疗跳过。全在出手方自己身上演，
+## 不用等动画，所以这条路径里一个 await 也没有。
+## 状态粒子只在真正结算到身上时播。
+func _play_tick(event: StrikeResult, attacker_view: FighterView, attacker: Fighter) -> void:
+	if event.poison_tick:
+		attacker_view.play_poison_fx()
+		attacker_view.set_hp(event.defender_hp_after, attacker.max_hp)
+	elif event.skip_reason == StrikeResult.SKIP_PARALYZE:
+		attacker_view.play_paralyze_fx()
+	elif event.skip_reason == StrikeResult.SKIP_HEAL:
+		attacker_view.play_heal_fx()
+		attacker_view.set_hp(event.attacker_hp_after, attacker.max_hp)
+	_append_log(_event_text(event))
+	if event.revived:
+		attacker_view.play_idle()
+		attacker_view.set_hp(event.defender_hp_after, attacker.max_hp)
+	elif event.defender_died:
+		attacker_view.play_death()
+
+
+## 真正挥一下的那条：出招 → 等挥到一半 → 挨打方的反应 → 文字 → 等动画收尾。
+func _play_strike(
+	event: StrikeResult,
+	attacker_view: FighterView,
+	attacker: Fighter,
+	defender_view: FighterView,
+	defender: Fighter,
+) -> void:
 	if event.self_hit:
 		attacker_view.play_confuse_fx()
 	attacker_view.play_attack()
@@ -451,6 +402,13 @@ func _await_oneshot(player: AnimationPlayer) -> void:
 	await _wait(remaining / maxf(0.01, absf(player.speed_scale)))
 
 
+## 记一场并立刻落盘，中途关掉 app 也不丢，然后把右侧榜刷新到最新。
+func _commit_record(champion_won: bool) -> void:
+	_record.record_round(_war.champion.username, champion_won)
+	_record.save()
+	_refresh_record_board()
+
+
 ## 事件的战报文字。单独包一层是为了让测试能直接调。
 func _event_text(event: StrikeResult) -> String:
 	return CombatLog.line_for(event)
@@ -458,11 +416,20 @@ func _event_text(event: StrikeResult) -> String:
 
 ## 战报按时间正序往下排：新的一条追加到末尾。
 ## %Log 开了 scroll_following，追加后会自动滚到最下方，始终停在最新一条上。
+##
+## 用 add_text 而不是 `%Log.text += ...`：赋值 text 会把整条战报推倒重排，
+## 一场十几个挑战者能攒上千行，越打到后面越卡（每行都要重新排版全部中文字形）。
+## add_text 只追加这一段。代价是 text 属性不再跟着变，要读内容得用 get_parsed_text()。
 func _append_log(text: String) -> void:
-	if %Log.text.is_empty():
-		%Log.text = text
+	if _log_text().is_empty():
+		%Log.add_text(text)
 	else:
-		%Log.text += "\n" + text
+		%Log.add_text("\n" + text)
+
+
+## 当前战报全文。add_text 追加的内容不进 text 属性，统一从这里读。
+func _log_text() -> String:
+	return %Log.get_parsed_text()
 
 
 ## 拉取失败之类没打起来的情况，也用结果面板说明一下，
@@ -479,20 +446,14 @@ func _show_notice(text: String) -> void:
 func _show_result() -> void:
 	%ResultPanel.visible = true
 	%BackButton.grab_focus()
-	if _war.outcome == WheelWar.Outcome.CHAMPION_DOWN:
-		# 擂主倒下时场上那位就是终结者；万一是空的（不该发生）就写个通称。
-		var killer := "挑战者"
-		if _war.current_opponent != null:
-			killer = _war.current_opponent.username
-		%ResultLabel.text = "%s在经过多轮鏖战，惜败于%s" % [_war.champion.username, killer]
-		%ResultLabel.add_theme_color_override("font_color", ThemeHelper.DANGER)
-	else:
-		%ResultLabel.text = "%s经过艰难的鏖战，终于干掉了所有的挑战者，成为了唯一神" % _war.champion.username
-		%ResultLabel.add_theme_color_override("font_color", ThemeHelper.OK_GREEN)
-	# 记一场并立刻落盘，中途关掉 app 也不丢。
-	_record.record_round(_war.champion.username, _war.outcome == WheelWar.Outcome.ALL_OPPONENTS_DOWN)
-	_record.save()
-	_refresh_record_board()
+	var won := _war.champion_won()
+	# 擂主倒下时场上那位就是终结者；万一是空的（不该发生）就写个通称。
+	var killer := "挑战者"
+	if _war.current_opponent != null:
+		killer = _war.current_opponent.username
+	%ResultLabel.text = CombatLog.outcome_line(_war.champion.username, killer, won)
+	%ResultLabel.add_theme_color_override("font_color", ThemeHelper.OK_GREEN if won else ThemeHelper.DANGER)
+	_commit_record(won)
 	# MVP 只看挑战者对擂主的输出，跟这一场谁赢了没关系。
 	var mvp_line := CombatLog.mvp_line(_tally.best())
 	%MvpLabel.text = mvp_line

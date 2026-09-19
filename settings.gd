@@ -81,5 +81,4 @@ func _on_mode_pressed(mode: int) -> void:
 func _on_back_pressed() -> void:
 	if _leaving:
 		return
-	_leaving = true
-	get_tree().change_scene_to_file(MAIN_SCENE)
+	_leaving = TvRemote.leave_to(self, MAIN_SCENE)

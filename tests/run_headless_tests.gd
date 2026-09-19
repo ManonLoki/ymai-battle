@@ -498,6 +498,14 @@ func _test_skills() -> void:
 	_assert(SkillCatalog.display_group("skill_poison") == SkillCatalog.DISPLAY_GROUP_STATUS, "poison is 附加")
 	_assert(SkillCatalog.display_group("skill_heal") == SkillCatalog.DISPLAY_GROUP_RECOVER, "heal is 治疗")
 	_assert(SkillCatalog.display_group("skill_awaken") == SkillCatalog.DISPLAY_GROUP_TECHNIQUE, "awaken is 高级")
+	# FAMILY_ORDER 和 DISPLAY_GROUP_ORDER 是两张表，排序同时读它们。
+	# 只要族序按分组单调递增，两者就不会打架；这一条就是钉住这件事。
+	var last_group_rank := -1
+	for family in SkillCatalog.FAMILY_ORDER:
+		var group: String = SkillCatalog.FAMILY_DISPLAY_GROUP[family]
+		var group_rank: int = SkillCatalog.DISPLAY_GROUP_ORDER.find(group)
+		_assert(group_rank >= last_group_rank, "family %s does not jump back a display group" % family)
+		last_group_rank = group_rank
 	var mixed: Array[SkillDef] = [
 		SkillCatalog.by_id("skill_assassinate"),
 		SkillCatalog.by_id("skill_heal"),
@@ -513,6 +521,14 @@ func _test_skills() -> void:
 	_assert(shown_ids == PackedStringArray(["skill_crit", "skill_guard", "skill_poison", "skill_lifesteal", "skill_heal", "skill_assassinate"]), "display order is 增强 → 附加 → 治疗 → 高级")
 	for i in range(1, shown.size()):
 		_assert(SkillCatalog.display_group_rank(shown[i].icon_id) >= SkillCatalog.display_group_rank(shown[i - 1].icon_id), "display ranks never go backwards")
+	var roster_fighter := _make_fighter("甲", 100, AgentChannels.CHANNEL_CLAUDE, true)
+	roster_fighter.skills = [SkillCatalog.by_id("skill_crit"), SkillCatalog.by_id("skill_dodge")]
+	var roster := CombatLog.roster_line(roster_fighter)
+	_assert(roster.find("甲") >= 0 and roster.find("2 技能") >= 0, "出场介绍写清名字和技能张数")
+	_assert(CombatLog.opening_line(roster_fighter, 4).find("其余 4 人") >= 0, "开场白写清对面几个人")
+	_assert(CombatLog.next_up_line(roster_fighter).find("下一位") >= 0, "换人那句带“下一位”")
+	_assert(CombatLog.outcome_line("甲", "乙", true).find("唯一神") >= 0, "擂主全胜是唯一神")
+	_assert(CombatLog.outcome_line("甲", "乙", false).find("惜败于乙") >= 0, "擂主倒下时写出终结者")
 	var heal_tip := SkillCatalog.by_id("skill_heal").description
 	_assert(heal_tip.find("不进攻") >= 0 and heal_tip.find("闪避") >= 0, "heal tooltip says skip attack and full dodge")
 	_assert(heal_tip.find("幻影刺杀") >= 0, "heal tooltip names the assassinate exception")
@@ -2018,7 +2034,8 @@ func _test_battle_playback() -> void:
 
 	# 战报按时间正序往下排，并且自动跟到最下方。
 	var log_node: RichTextLabel = battle.get_node("%Log")
-	var log_lines := log_node.text.split("\n")
+	# add_text 追加的内容不进 text 属性，读全文要走 get_parsed_text。
+	var log_lines := log_node.get_parsed_text().split("\n")
 	_assert(log_lines.size() > 2, "the war leaves a multi-line report")
 	_assert(log_lines[0].find("车轮战开始") >= 0, "the opening line stays at the top")
 	_assert(log_lines[log_lines.size() - 1].find("车轮战开始") < 0, "the newest line is at the bottom, not the top")
@@ -2271,7 +2288,7 @@ func _test_next_round_cycle() -> void:
 	await battle._start_war(ranked)
 	_assert(battle.get_node("%ResultPanel").visible, "一场打完先出结果面板")
 	_assert(not battle.get_node("%MvpLabel").text.is_empty(), "结果面板带 MVP 一行")
-	_assert(battle.get_node("%Log").text.find("MVP") >= 0, "MVP 也写进战报")
+	_assert(battle.get_node("%Log").get_parsed_text().find("MVP") >= 0, "MVP 也写进战报")
 	battle._countdown(2.0, "下一轮")
 	await process_frame
 	_assert(battle.get_node("%NextRoundLabel").text.find("下一轮") >= 0, "倒计时告诉玩家下一轮什么时候开始")
@@ -2279,7 +2296,7 @@ func _test_next_round_cycle() -> void:
 	await create_timer(1.2).timeout
 	battle._leaving = false
 	battle._reset_for_next_round()
-	_assert(battle.get_node("%Log").text.is_empty(), "新一轮开始前战报清空")
+	_assert(battle.get_node("%Log").get_parsed_text().is_empty(), "新一轮开始前战报清空")
 	_assert(not battle.get_node("%ResultPanel").visible, "新一轮开始前结果面板收起")
 	_assert(battle.get_node("%ChampionSlot").get_child_count() == 0, "上一场的角色被清掉")
 	_assert(battle._war == null and battle._tally == null, "上一场的状态被丢弃")

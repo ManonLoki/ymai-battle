@@ -155,18 +155,6 @@ func stacked_lingbo() -> float:
 	return stacked("lingbo_chance")
 
 
-func stacked_poison() -> float:
-	return stacked("poison_chance")
-
-
-func stacked_paralyze() -> float:
-	return stacked("paralyze_chance")
-
-
-func stacked_confuse() -> float:
-	return stacked("confuse_chance")
-
-
 func stacked_guard() -> float:
 	return stacked("guard_chance")
 
@@ -204,8 +192,8 @@ func has_lifesteal() -> bool:
 ## 用属性名字符串索引，加技能时只要往 SkillCatalog 的表里补一行就行。
 ##
 ## 公开是因为表驱动的效果派发（CombatResolver.ON_HIT_STATUSES）只有字段名，
-## 拿不到对应的 stacked_xxx 具名方法。手写的调用点仍然走下面那些具名包装，
-## 它们有类型、也好搜。
+## 拿不到对应的 stacked_xxx 具名方法；中毒 / 麻痹 / 混乱三个字段就只有这一条路，
+## 所以它们没有具名包装。手写的调用点仍然走上面那些包装，它们有类型、也好搜。
 func stacked(prop: String) -> float:
 	var total := 0.0
 	for buff in agent_buffs:

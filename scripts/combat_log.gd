@@ -137,6 +137,33 @@ static func _awaken_line(event: StrikeResult) -> String:
 	return line + "\n"
 
 
+## 出场介绍里的一个人：“某某（XX 暴击 + YY 命中 · 5 技能）”。
+## 开场和“下一位”共用同一份格式，两处写法不会再分叉。
+static func roster_line(fighter: Fighter) -> String:
+	return "%s（%s · %d 技能）" % [
+		fighter.username,
+		fighter.agent_buff_text(),
+		fighter.skills.size(),
+	]
+
+
+## 车轮战的开场白。
+static func opening_line(champion: Fighter, challenger_count: int) -> String:
+	return "车轮战开始：%s迎战其余 %d 人" % [roster_line(champion), challenger_count]
+
+
+## 换人时的那一句。
+static func next_up_line(fighter: Fighter) -> String:
+	return "下一位：%s" % roster_line(fighter)
+
+
+## 一场打完的结论。champion_won 为假时 killer 是终结擂主的那位挑战者。
+static func outcome_line(champion_name: String, killer_name: String, champion_won: bool) -> String:
+	if champion_won:
+		return "%s经过艰难的鏖战，终于干掉了所有的挑战者，成为了唯一神" % champion_name
+	return "%s在经过多轮鏖战，惜败于%s" % [champion_name, killer_name]
+
+
 ## 结果面板和战报共用的 MVP 那句话。best 是 DamageTally.best() 的结果。
 static func mvp_line(best: Dictionary) -> String:
 	var username := str(best.get("username", ""))

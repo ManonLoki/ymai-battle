@@ -116,6 +116,11 @@ func _champion_skill_edge() -> float:
 	return float(champion.skills.size()) - float(total) / float(waiting.size())
 
 
+## 擂主赢没赢下这一场。胜负的判定标准归 WheelWar，别在场景脚本里就地比 outcome。
+func champion_won() -> bool:
+	return outcome == Outcome.ALL_OPPONENTS_DOWN
+
+
 ## 换下一位挑战者上场；队列空了就是挑战者全灭，擂主赢下整场。
 func _advance_opponent() -> void:
 	if waiting.is_empty():

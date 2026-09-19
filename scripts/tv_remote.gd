@@ -72,6 +72,16 @@ static func ensure_focus(fallback: Control) -> bool:
 	return true
 
 
+## 切回某个场景，并回答“这次真的开始走了吗”。
+## 已经离开场景树就什么都不做——那时 get_tree() 可能已经是 null。
+## 调用方拿返回值置自己的 _leaving 标记，重复按返回键不会切两次场景。
+static func leave_to(node: Node, scene_path: String) -> bool:
+	if not node.is_inside_tree():
+		return false
+	node.get_tree().change_scene_to_file(scene_path)
+	return true
+
+
 ## 往某个动作上补一个键盘事件。动作不存在就先建，已经绑过同一个键就跳过。
 static func _add_key(action: StringName, key: Key) -> void:
 	if not InputMap.has_action(action):

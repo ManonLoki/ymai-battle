@@ -64,8 +64,7 @@ const STATUS_TURNS := 3
 ## 两条硬约束，改之前先读：
 ## 1. **行的顺序就是掷骰顺序**。调换顺序等于改掉所有定种子测试的结果，
 ##    以及蒙特卡洛标定出来的胜率。
-## 2. **概率为 0 时不许掷骰**（见 _apply_on_hit_status 里的守卫）。白掷一次
-##    会让这一场后面所有点数整体错位，同样会让定种子测试失去意义。
+## 2. **概率为 0 时不许掷骰**——这条由 _rolls 统一守着，所有判定都走它。
 const ON_HIT_STATUSES := [
 	["poison_chance", "poison_turns", STATUS_TURNS, "poisoned"],
 	["paralyze_chance", "paralyze_turns", STATUS_TURNS, "paralyzed"],
@@ -256,6 +255,17 @@ static func hit_chance(attacker: Fighter, defender: Fighter, champion_hit_chance
 	return clampf(raw, MIN_HIT_CHANCE, MAX_HIT_CHANCE)
 
 
+## 掷一次概率骰。**全场所有概率判定都必须走这里**，因为它守着一条硬约束：
+## 概率为 0 时一次骰子也不掷。白掷一次会让这一场后面所有点数整体错位，
+## 定种子测试和蒙特卡洛标定出来的胜率会一起失效。
+## 顺带把 chance 收成一个值——以前写成 `x.stacked_y() > 0.0 and rng.randf() < x.stacked_y()`，
+## 同一份加总要走两遍技能表。
+static func _rolls(rng: RollSource, chance: float) -> bool:
+	if chance <= 0.0:
+		return false
+	return rng.randf() < chance
+
+
 ## 结算一名角色的一次行动：先跑中毒掉血，再判定麻痹 / 治疗 / 混乱，
 ## 最后才真正出手。返回这次行动产生的全部战报事件。
 static func resolve_action(actor: Fighter, defender: Fighter, champion_hit_chance: float, rng: RollSource) -> Array[StrikeResult]:
@@ -273,7 +283,7 @@ static func resolve_action(actor: Fighter, defender: Fighter, champion_hit_chanc
 		events.append(_skip_event(actor, StrikeResult.SKIP_PARALYZE))
 		return events
 	# 治疗：触发则回血、不进攻，并进入 100% 闪避直到下一次行动。
-	if actor.has_heal() and rng.randf() < heal_chance(actor):
+	if actor.has_heal() and _rolls(rng, heal_chance(actor)):
 		var healed := actor.apply_heal(heal_amount(actor))
 		actor.heal_guard = true
 		var heal_event := _skip_event(actor, StrikeResult.SKIP_HEAL)
@@ -286,7 +296,7 @@ static func resolve_action(actor: Fighter, defender: Fighter, champion_hit_chanc
 	# 混乱：有一半概率把这一手打到自己身上。
 	if actor.confuse_turns > 0:
 		actor.confuse_turns -= 1
-		if rng.randf() < CONFUSE_SELF_HIT_CHANCE:
+		if _rolls(rng, CONFUSE_SELF_HIT_CHANCE):
 			target = actor
 			self_hit = true
 	# 打自己时连击和反击都不该发生，这两条 resolve_strikes 自己按 defender != attacker 拦着。
@@ -318,7 +328,7 @@ static func resolve_strikes(
 	var awakened := false
 	var paid := 0
 	# 潜能激发只在主动出手上掷；反击和追击都不另开一轮。
-	if not is_counter and can_awaken(attacker) and rng.randf() < AWAKEN_CHANCE:
+	if not is_counter and can_awaken(attacker) and _rolls(rng, AWAKEN_CHANCE):
 		paid = awaken_cost(attacker)
 		attacker.apply_damage(paid)
 		awakened = true
@@ -345,7 +355,7 @@ static func resolve_strikes(
 	if not is_counter and defender != attacker and defender.is_alive():
 		if first.lingbo:
 			should_counter = true
-		elif first.hit and defender.stacked_counter() > 0.0 and rng.randf() < defender.stacked_counter():
+		elif first.hit and _rolls(rng, defender.stacked_counter()):
 			should_counter = true
 	if should_counter:
 		# 反击既不能再反击，也不能掷连击：只还一下。
@@ -360,9 +370,9 @@ static func resolve_strikes(
 ## 名字次数之和再共享一次首击（2+3=5），所以一次出手最多打五下。
 static func _roll_extra_strikes(attacker: Fighter, rng: RollSource) -> int:
 	var named := 0
-	if attacker.stacked_triple() > 0.0 and rng.randf() < attacker.stacked_triple():
+	if _rolls(rng, attacker.stacked_triple()):
 		named += 3
-	if attacker.stacked_double() > 0.0 and rng.randf() < attacker.stacked_double():
+	if _rolls(rng, attacker.stacked_double()):
 		named += 2
 	if named <= 0:
 		return 0
@@ -427,7 +437,7 @@ static func _one_strike(
 	var roll := rng.randf()
 	# 幻影刺杀在命中骰之后掷，这样“本会闪掉的点数”仍然进队列，测试能证明它无视闪避。
 	var assassinated := false
-	if allow_techniques and attacker != defender and attacker.stacked_assassinate() > 0.0 and rng.randf() < assassinate_chance(attacker):
+	if allow_techniques and attacker != defender and attacker.stacked_assassinate() > 0.0 and _rolls(rng, assassinate_chance(attacker)):
 		assassinated = true
 	# 治疗留下的 100% 闪避：普通挥击全部当闪避，不走凌波微步；幻影刺杀仍能打中。
 	if not assassinated and defender.heal_guard:
@@ -437,7 +447,7 @@ static func _one_strike(
 		result.defender_died = not defender.is_alive()
 		return result
 	# 凌波微步：非追击挥击打来时掷中，本下记为闪避并稍后还击。刺杀已中则无视闪避，不再掷。
-	if not assassinated and allow_techniques and attacker != defender and defender.stacked_lingbo() > 0.0 and rng.randf() < defender.stacked_lingbo():
+	if not assassinated and allow_techniques and attacker != defender and _rolls(rng, defender.stacked_lingbo()):
 		result.dodged = true
 		result.lingbo = true
 		result.defender_hp_after = defender.hp
@@ -456,8 +466,7 @@ static func _one_strike(
 	# 绝对防御：打中了但伤害归零，不挂中毒/麻痹/混乱，也不吸血。
 	# 每一次打中的挥击都掷一次——首击、连击追击、反击、混乱自伤，以及幻影刺杀：
 	# 刺杀无视的是**闪避**，不是防御，所以它掷中之后仍要过这一关。
-	# 掷点只在对方真带着这张牌时才掷，概率为 0 时白掷会让后面的点数整体错位。
-	if defender.stacked_guard() > 0.0 and rng.randf() < defender.stacked_guard():
+	if _rolls(rng, defender.stacked_guard()):
 		result.guarded = true
 		result.damage = 0
 		result.defender_hp_after = defender.hp
@@ -479,7 +488,7 @@ static func _one_strike(
 	# 伤害：基准值 →（暴击 ×2）→ 增伤 → 对方减伤。
 	var damage := float(strike_damage(defender))
 	var crit_chance := attacker.stacked_crit() + extra_crit
-	if crit_chance > 0.0 and rng.randf() < crit_chance:
+	if _rolls(rng, crit_chance):
 		result.crit = true
 		damage *= CRIT_MULTIPLIER
 	damage *= 1.0 + attacker.stacked_damage_bonus() + extra_damage
@@ -510,9 +519,7 @@ static func _apply_on_hit_status(attacker: Fighter, defender: Fighter, rng: Roll
 	if attacker == defender:
 		return
 	for status in ON_HIT_STATUSES:
-		var chance := attacker.stacked(str(status[0]))
-		# 概率为 0 就直接跳过，连骰子都不掷——见 ON_HIT_STATUSES 的约束 2。
-		if chance <= 0.0 or rng.randf() >= chance:
+		if not _rolls(rng, attacker.stacked(str(status[0]))):
 			continue
 		defender.set(str(status[1]), status[2])
 		var flag := str(status[3])
