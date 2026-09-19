@@ -17,8 +17,8 @@ const ORIGINAL_HUMANS := 4
 const ANIMAL_START := 8
 
 ## 擂主头顶王冠的颜色。
-const GOLD := Color(0.98, 0.84, 0.12)
-const GOLD_DARK := Color(0.72, 0.52, 0.06)
+const CROWN_GOLD := Color(0.98, 0.84, 0.12)
+const CROWN_GOLD_DARK := Color(0.72, 0.52, 0.06)
 ## 受击姿势下脸上那道红痕。
 const HURT_FLASH := Color("f85149")
 
@@ -58,7 +58,7 @@ static func make_texture(appearance_id: int, pose: String = "idle", crowned: boo
 	var lean := LEAN_ATTACK if attack else (LEAN_HURT if hurt else 0)
 	# 按编号分派到各自的画法。
 	match id:
-		0, 1, 2, 3:
+		_ when id < ORIGINAL_HUMANS:
 			_draw_human_base(image, palette, lean, attack, hurt)
 		4:
 			_draw_human_tall(image, palette, lean, attack, hurt)
@@ -68,7 +68,7 @@ static func make_texture(appearance_id: int, pose: String = "idle", crowned: boo
 			_draw_human_mage(image, palette, lean, attack, hurt)
 		7:
 			_draw_human_visor(image, palette, lean, attack, hurt)
-		8:
+		ANIMAL_START:
 			_draw_cat(image, palette, lean, attack, hurt)
 		9:
 			_draw_dog(image, palette, lean, attack, hurt)
@@ -98,13 +98,13 @@ static func _fill_rect(image: Image, x: int, y: int, w: int, h: int, color: Colo
 
 ## 擂主的王冠：一条底边 + 三个尖，尖顶点上一点暗色当阴影。
 static func _draw_crown(image: Image, lean: int) -> void:
-	_fill_rect(image, 11 + lean, 4, 10, 2, GOLD)
-	_fill_rect(image, 11 + lean, 3, 2, 3, GOLD)
-	_fill_rect(image, 15 + lean, 1, 2, 4, GOLD)
-	_fill_rect(image, 19 + lean, 3, 2, 3, GOLD)
-	_px(image, 16 + lean, 1, GOLD_DARK)
-	_px(image, 12 + lean, 3, GOLD_DARK)
-	_px(image, 20 + lean, 3, GOLD_DARK)
+	_fill_rect(image, 11 + lean, 4, 10, 2, CROWN_GOLD)
+	_fill_rect(image, 11 + lean, 3, 2, 3, CROWN_GOLD)
+	_fill_rect(image, 15 + lean, 1, 2, 4, CROWN_GOLD)
+	_fill_rect(image, 19 + lean, 3, 2, 3, CROWN_GOLD)
+	_px(image, 16 + lean, 1, CROWN_GOLD_DARK)
+	_px(image, 12 + lean, 3, CROWN_GOLD_DARK)
+	_px(image, 20 + lean, 3, CROWN_GOLD_DARK)
 
 
 ## 0~3 号：标准人形，持剑。四个编号只有配色不同。

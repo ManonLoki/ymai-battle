@@ -7,6 +7,10 @@ extends RefCounted
 ## 一次“行动”可能产出多条：中毒掉血、连击的每一下、对方的反击各算一条。
 
 ## 出手方的名字；中毒 / 麻痹 / 定身这类自身事件里填的是当事人自己。
+## skip_reason 的两个取值。写和读都走常量，免得两头各拼一次字符串。
+const SKIP_PARALYZE := "paralyze"
+const SKIP_ROOT := "root"
+
 var attacker_name: String = ""
 ## 挨打方的名字；自伤（混乱）时会被改写成出手方自己。
 var defender_name: String = ""
@@ -42,8 +46,8 @@ var paralyzed: bool = false
 var confused: bool = false
 ## 这条事件是中毒的每回合掉血，不是谁打的。
 var poison_tick: bool = false
-## 本次行动被跳过的原因："paralyze" / "root"，空串表示正常行动。
-var skipped: String = ""
+## 本次行动被跳过的原因，空串表示正常行动。取值只有下面两个常量。
+var skip_reason: String = ""
 ## 连击序号：0 是首击，1、2 是追加出来的。
 var extra_index: int = 0
 ## 出手方这一下回了多少血（吸血或治疗），0 表示没回。

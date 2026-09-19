@@ -52,3 +52,24 @@ func fetch_usage() -> Dictionary:
 ## 统一的失败返回，保证调用方永远能拿到同一套字段。
 static func _fail(message: String) -> Dictionary:
 	return {"ok": false, "data": {}, "error": message}
+
+
+## 拉一次接口并直接聚合成当日排行榜。对战和排行两个场景要的都是这个结果，
+## 它们不该各自知道 HTTPRequest 要挂在树上、也不该知道明细藏在 data.channelUsage 里。
+##
+## host 只用来临时挂这个 Node（HTTPRequest 必须在场景树里），用完就地释放。
+## 返回 {"ok": bool, "date": String, "users": Array[RankedUser], "error": String}。
+static func fetch_ranking(host: Node) -> Dictionary:
+	var api := TokenUsageApi.new()
+	host.add_child(api)
+	var result: Dictionary = await api.fetch_usage()
+	if is_instance_valid(api):
+		api.queue_free()
+	if not bool(result.get("ok", false)):
+		return {"ok": false, "date": "", "users": [] as Array[RankedUser], "error": str(result.get("error", "未知错误"))}
+	var data: Dictionary = result.get("data", {})
+	var usage: Array = data.get("channelUsage", [])
+	# 日期每次现取，跨天之后自然就是新一天的榜。
+	var today := DayClock.today()
+	var users: Array[RankedUser] = RankingAggregator.rank_users(usage, today)
+	return {"ok": true, "date": today, "users": users, "error": ""}

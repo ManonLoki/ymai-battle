@@ -9,8 +9,8 @@ const SETTINGS_SCENE := "res://settings.tscn"
 
 
 func _ready() -> void:
-	# 光标和遥控器映射在每个场景都装一次，从任何入口进来都成立。
-	GameCursor.boot()
+	# 光标由 CursorController autoload 全局接管（装贴图 + 每个事件切换），
+	# 这里不用再管；遥控器映射是幂等的，每个场景都装一次。
 	TvRemote.install()
 	ThemeHelper.apply(self, 22)
 	# 主菜单是唯一的启动入口，所以上次选的窗口模式在这里应用一次就够了，
@@ -25,10 +25,6 @@ func _ready() -> void:
 	%RankingButton.grab_focus()
 
 
-func _input(event: InputEvent) -> void:
-	GameCursor.handle_event(event)
-
-
 ## 电视遥控器的 BACK 键：引擎会把它变成这个通知（前提是
 ## project.godot 里 quit_on_go_back=false，否则引擎自己就退了）。
 func _notification(what: int) -> void:
@@ -38,8 +34,7 @@ func _notification(what: int) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	# 主菜单已经是最外层，返回就等于退出游戏。
-	if TvRemote.is_back(event):
-		accept_event()
+	if TvRemote.consume_back(event, self):
 		_on_quit_pressed()
 	elif TvRemote.is_navigation(event):
 		# 焦点万一掉了，方向键会全哑，这里补回去。

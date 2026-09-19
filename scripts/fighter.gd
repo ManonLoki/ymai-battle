@@ -169,11 +169,6 @@ func stacked_counter() -> float:
 	return _sum("counter_chance")
 
 
-## 主 agent 的 buff，只用于头像悬停说明；没有 agent 时回落到“无”。
-func primary_agent_buff() -> SkillDef:
-	return agent_buffs[0] if agent_buffs.size() > 0 else SkillCatalog.none_buff()
-
-
 ## 战报里“某某（XX 暴击 · N 技能）”那一段的 buff 文案。
 func agent_buff_text() -> String:
 	if agent_buffs.is_empty():

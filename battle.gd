@@ -10,13 +10,19 @@ const MAIN_SCENE := "res://main.tscn"
 const FIGHTER_VIEW := preload("res://scenes/fighter_view.tscn")
 ## 一场打完之后隔多久自动开下一轮。拉名单失败时也按这个间隔重试。
 const NEXT_ROUND_DELAY := 60.0
+## 人数不够时的说明，状态栏和结果面板用的是同一句。
+const SHORT_ROSTER_MSG := "上榜人数不足，无法开战（需要至少 2 人）"
 ## 每条战报事件之间的停顿，太快看不清、太慢一场打不完。
-const EVENT_BEAT := 0.12
+const TURN_BEAT := 0.12
 ## 挥击动画挥到一半的时刻，挨打方在这里结算才像被打中。
 ## 跟着 FighterView 的出手动画长度走，和上面那条战报节奏是两回事，别合成一个。
 const HIT_IMPACT_DELAY := 0.12
 ## 奖牌徽章的直径，圆角取一半就是正圆。
 const BADGE_PX := 22
+## 徽章里名次数字的字号。
+const BADGE_FONT_PX := 13
+## 战绩榜一行（名字、胜场）的字号。
+const ROW_FONT_PX := 16
 
 var _war: WheelWar
 var _rng: RollSource
@@ -30,7 +36,7 @@ var _opponent_view: FighterView
 var _busy := false
 ## 玩家中途点“返回”时场景会立刻被释放，但 _run_loop / _play_event 还挂在 await 上。
 ## 这个标记让所有等待点都能及时收手，不再去碰已经离开场景树的节点。
-var _aborted := false
+var _leaving := false
 ## 测试用：设成 true 就不自动开打，由测试自己喂名单。
 var skip_autoload := false
 
@@ -41,8 +47,7 @@ func _ready() -> void:
 	ThemeHelper.apply(%HUD.get_node("Margin") as Control, 18)
 	ThemeHelper.apply(%ResultPanel, 18)
 	%Backdrop.color = ThemeHelper.BG
-	ThemeHelper.style_button(%BackButton, false)
-	%BackButton.custom_minimum_size = ThemeHelper.BACK_BUTTON_MIN_SIZE
+	ThemeHelper.style_back_button(%BackButton)
 	%BackButton.pressed.connect(_on_back_pressed)
 	%ResultPanel.visible = false
 	# 结果面板压在立绘和战报上面，没有底色会糊成一片。
@@ -78,8 +83,7 @@ func _notification(what: int) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if TvRemote.is_back(event):
-		get_viewport().set_input_as_handled()
+	if TvRemote.consume_back(event, self):
 		_on_back_pressed()
 	elif TvRemote.is_navigation(event):
 		TvRemote.ensure_focus(%BackButton)
@@ -87,16 +91,16 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _on_back_pressed() -> void:
 	# 已经在走人的路上就别再切一次场景。
-	if _aborted or not is_inside_tree():
+	if _leaving or not is_inside_tree():
 		return
-	_aborted = true
+	_leaving = true
 	get_tree().change_scene_to_file(MAIN_SCENE)
 
 
 ## 这个场景是否还在演出中。离开场景树之后 get_tree() 会是 null，
 ## 所以每个 await 前后都要先问一句，不能只靠 is_instance_valid。
 func _is_live() -> bool:
-	return not _aborted and is_instance_valid(self) and is_inside_tree()
+	return not _leaving and is_instance_valid(self) and is_inside_tree()
 
 
 ## 带中止检查的等待。返回 false 表示场景已经没了，调用方应当直接收尾。
@@ -179,32 +183,28 @@ func _reset_for_next_round() -> void:
 ## 此时结果面板只放一句错误说明，外层照样等一分钟再试。
 func _load_and_run() -> bool:
 	%Status.text = "正在拉取今日对战名单…"
-	var api := TokenUsageApi.new()
-	add_child(api)
-	var result: Dictionary = await api.fetch_usage()
-	if is_instance_valid(api):
-		api.queue_free()
+	var result: Dictionary = await TokenUsageApi.fetch_ranking(self)
 	if not _is_live():
 		return false
 	if not bool(result.get("ok", false)):
 		var reason := str(result.get("error", "未知错误"))
-		%Status.text = "加载失败：%s" % reason
-		%Status.add_theme_color_override("font_color", ThemeHelper.DANGER)
-		_show_notice("拉取今日名单失败：%s" % reason)
-		return false
-	var data: Dictionary = result.get("data", {})
-	var usage: Array = data.get("channelUsage", [])
-	# 日期每轮现取，跨天之后自动换成新一天的榜单。
-	var today := DayClock.today()
-	var ranked: Array[RankedUser] = RankingAggregator.rank_users(usage, today)
+		return _fail_round("加载失败：%s" % reason, "拉取今日名单失败：%s" % reason)
+	var ranked: Array[RankedUser] = result.get("users", [] as Array[RankedUser])
 	# 一个人没法打车轮战。
 	if ranked.size() < 2:
-		%Status.text = "上榜人数不足，无法开战（需要至少 2 人）"
-		%Status.add_theme_color_override("font_color", ThemeHelper.DANGER)
-		_show_notice("上榜人数不足，无法开战（需要至少 2 人）")
-		return false
+		return _fail_round(SHORT_ROSTER_MSG, SHORT_ROSTER_MSG)
 	await _start_war(ranked)
 	return true
+
+
+## 这一轮开不起来：顶部状态栏标红，结果面板放一句说明。
+## 两个失败出口的文案不同但动作完全一样，所以只留这一份。
+## 固定返回 false，调用方可以直接 `return _fail_round(...)`。
+func _fail_round(status_text: String, notice_text: String) -> bool:
+	%Status.text = status_text
+	%Status.add_theme_color_override("font_color", ThemeHelper.DANGER)
+	_show_notice(notice_text)
+	return false
 
 
 ## 用一份名单摆开战场并开打。
@@ -228,8 +228,8 @@ func _start_war(ranked: Array[RankedUser]) -> void:
 		_war.remaining_including_current(),
 	])
 	_append_log("战力 %s vs 其余合计 %s" % [
-		ThemeHelper.compact(_war.champion.tokens),
-		ThemeHelper.compact(_war.others_total_power),
+		NumberFormat.compact(_war.champion.tokens),
+		NumberFormat.compact(_war.others_power),
 	])
 	await _run_loop()
 
@@ -244,11 +244,7 @@ func _refresh_record_board() -> void:
 	var rows := _record.standings()
 	# 当天第一场（或者刚跨天）时榜是空的，放一句占位。
 	if rows.is_empty():
-		var empty := Label.new()
-		empty.text = "还没有人打完一场"
-		empty.add_theme_color_override("font_color", ThemeHelper.MUTED)
-		empty.add_theme_font_size_override("font_size", 15)
-		%RecordList.add_child(empty)
+		%RecordList.add_child(ThemeHelper.make_label("还没有人打完一场", ThemeHelper.MUTED, 15))
 		return
 	for i in range(rows.size()):
 		%RecordList.add_child(_record_row(i + 1, rows[i]))
@@ -259,18 +255,12 @@ func _record_row(rank: int, row: Dictionary) -> Control:
 	var line := HBoxContainer.new()
 	line.add_theme_constant_override("separation", 8)
 	line.add_child(_medal(rank))
-	var name_label := Label.new()
-	name_label.text = "【%s】" % str(row.get("username", ""))
+	var name_label := ThemeHelper.make_label("【%s】" % str(row.get("username", "")), _rank_color(rank), ROW_FONT_PX)
 	# 名字占满中间，把胜场推到最右。
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_label.add_theme_color_override("font_color", _rank_color(rank))
-	name_label.add_theme_font_size_override("font_size", 16)
 	line.add_child(name_label)
-	var wins_label := Label.new()
-	wins_label.text = "%d 场" % int(row.get("wins", 0))
+	var wins_label := ThemeHelper.make_label("%d 场" % int(row.get("wins", 0)), ThemeHelper.TEXT, ROW_FONT_PX)
 	wins_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	wins_label.add_theme_color_override("font_color", ThemeHelper.TEXT)
-	wins_label.add_theme_font_size_override("font_size", 16)
 	line.add_child(wins_label)
 	return line
 
@@ -289,15 +279,15 @@ func _medal(rank: int) -> Control:
 	box.set_corner_radius_all(BADGE_PX / 2)
 	box.bg_color = ThemeHelper.medal_color(rank) if ThemeHelper.has_medal(rank) else ThemeHelper.CARD
 	badge.add_theme_stylebox_override("panel", box)
-	# 名次数字铺满整个圆，居中显示。
-	var number := Label.new()
-	number.text = str(rank)
+	# 名次数字铺满整个圆，居中显示。亮底上用深色字，暗底上用浅灰字。
+	var number := ThemeHelper.make_label(
+		str(rank),
+		ThemeHelper.BG if ThemeHelper.has_medal(rank) else ThemeHelper.MUTED,
+		BADGE_FONT_PX,
+	)
 	number.set_anchors_preset(Control.PRESET_FULL_RECT)
 	number.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	number.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	number.add_theme_font_size_override("font_size", 13)
-	# 亮底上用深色字，暗底上用浅灰字。
-	number.add_theme_color_override("font_color", ThemeHelper.BG if ThemeHelper.has_medal(rank) else ThemeHelper.MUTED)
 	badge.add_child(number)
 	return badge
 
@@ -330,6 +320,17 @@ func _update_hud() -> void:
 ## 一回合一回合推进，把每条事件播完再算下一回合。
 func _run_loop() -> void:
 	_busy = true
+	await _turn_loop()
+	_busy = false
+	# 中途被打断时 _is_live() 已经是 false，所以结果面板照样不会弹出来。
+	if _is_live():
+		_show_result()
+
+
+## 一回合一回合地演，直到分出胜负或者场景被换走。
+## 单独拆出来是为了让 _busy 成为严格的“进函数置位、出函数复位”，
+## 中途任何一个中止点都只要 return，不用记得先把标记清掉。
+func _turn_loop() -> void:
 	while _is_live() and _war.outcome == WheelWar.Outcome.ONGOING:
 		# simulate_turn 里可能已经换人了，先记住这回合打的是谁。
 		var previous_opponent: Fighter = _war.current_opponent
@@ -344,7 +345,6 @@ func _run_loop() -> void:
 			if is_instance_valid(_opponent_view):
 				await _await_oneshot(_opponent_view.anim_player)
 			if not _is_live():
-				_busy = false
 				return
 			_bind_current_opponent()
 			if _war.current_opponent:
@@ -354,12 +354,8 @@ func _run_loop() -> void:
 					_war.current_opponent.skills.size(),
 				])
 		_update_hud()
-		if not await _wait(EVENT_BEAT):
-			_busy = false
+		if not await _wait(TURN_BEAT):
 			return
-	_busy = false
-	if _is_live():
-		_show_result()
 
 
 ## 播一条战报事件：先动画后文字，节奏跟着动画长度走。
@@ -375,7 +371,7 @@ func _play_event(event: StrikeResult, champion: Fighter, opponent: Fighter) -> v
 		defender_view = attacker_view
 		defender = attacker
 	# 中毒掉血和被跳过的行动没有攻击动作，单独走一条短路径。
-	if event.poison_tick or event.skipped != "":
+	if event.poison_tick or event.skip_reason != "":
 		if event.poison_tick:
 			attacker_view.play_poison_fx()
 			attacker_view.set_hp(event.defender_hp_after, attacker.max_hp)
@@ -487,7 +483,7 @@ func _show_result() -> void:
 	_record.save()
 	_refresh_record_board()
 	# MVP 只看挑战者对擂主的输出，跟这一场谁赢了没关系。
-	var mvp_line := _tally.mvp_line()
+	var mvp_line := CombatLog.mvp_line(_tally.best())
 	%MvpLabel.text = mvp_line
 	%MvpLabel.add_theme_color_override("font_color", ThemeHelper.GOLD)
 	_append_log(mvp_line)

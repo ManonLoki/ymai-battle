@@ -103,8 +103,8 @@ func bind(fighter: Fighter, face_left: bool) -> void:
 
 ## 重建两行图标：上面一行 agent buff，下面一行本场抽到的技能。
 func _fill_icons(fighter: Fighter) -> void:
-	_clear_row(buff_row)
-	_clear_row(skill_row)
+	NodeUtil.clear_children(buff_row)
+	NodeUtil.clear_children(skill_row)
 	# 每个 agent 一个 buff 图标，用了几个 agent 就挂几个。
 	for buff in fighter.agent_buffs:
 		if buff.icon_id.is_empty():
@@ -117,11 +117,6 @@ func _fill_icons(fighter: Fighter) -> void:
 	_fit_row(buff_row)
 	_fit_row(skill_row)
 	_align_icon_rows_to_hp()
-
-
-## 清空一行图标。用 free 而不是 queue_free：下一句就要重新排版，不能等到帧末。
-func _clear_row(row: HBoxContainer) -> void:
-	NodeUtil.clear_children(row)
 
 
 ## 把一行的尺寸收紧到刚好装下现有图标，免得空 HBox 撑开布局。
@@ -189,7 +184,7 @@ func _hide_instant_tip() -> void:
 func set_hp(hp: int, max_hp: int) -> void:
 	hp_bar.max_value = maxi(1, max_hp)
 	hp_bar.value = hp
-	hp_label.text = "%s / %s" % [ThemeHelper.compact(hp), ThemeHelper.compact(max_hp)]
+	hp_label.text = "%s / %s" % [NumberFormat.compact(hp), NumberFormat.compact(max_hp)]
 
 
 ## 回到站立：换回站立立绘并循环播待机动画。

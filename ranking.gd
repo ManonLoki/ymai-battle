@@ -5,6 +5,8 @@ extends Control
 const MAIN_SCENE := "res://main.tscn"
 ## 遥控器上下键一次滚多少像素：榜单本身不吃焦点，只能手动推 ScrollContainer。
 const SCROLL_STEP := 64
+## 表头字号，比正文小一号；正文跟随场景主题。
+const HEADER_FONT_PX := 14
 ## 表格的四列：标题就是表头文字，expand 的列会被拉伸撑开，
 ## right 的列（战力）数字右对齐才好比较。加减列只要动这一张表。
 const COLUMNS := [
@@ -26,9 +28,7 @@ func _ready() -> void:
 	%Background.color = ThemeHelper.BG
 	%Title.add_theme_color_override("font_color", ThemeHelper.TEXT)
 	%Status.add_theme_color_override("font_color", ThemeHelper.MUTED)
-	ThemeHelper.style_button(%BackButton, false)
-	# 返回按钮比主菜单的按钮小一圈。
-	%BackButton.custom_minimum_size = ThemeHelper.BACK_BUTTON_MIN_SIZE
+	ThemeHelper.style_back_button(%BackButton)
 	%BackButton.pressed.connect(_on_back_pressed)
 	# 场上唯一可聚焦的控件，一进来就给它焦点。
 	%BackButton.grab_focus()
@@ -47,8 +47,7 @@ func _notification(what: int) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if TvRemote.is_back(event):
-		accept_event()
+	if TvRemote.consume_back(event, self):
 		_on_back_pressed()
 		return
 	TvRemote.ensure_focus(%BackButton)
@@ -74,13 +73,8 @@ func _on_back_pressed() -> void:
 ## 拉一次接口并渲染榜单。日期每次进场景时现取，所以跨天重进就是新一天的榜。
 func _load_ranking() -> void:
 	%Status.text = "正在拉取今日排行…"
-	_clear_grid()
-	# HTTPRequest 必须挂在树上，用完就地释放。
-	var api := TokenUsageApi.new()
-	add_child(api)
-	var result: Dictionary = await api.fetch_usage()
-	if is_instance_valid(api):
-		api.queue_free()
+	NodeUtil.clear_children(%Grid)
+	var result: Dictionary = await TokenUsageApi.fetch_ranking(self)
 	# await 期间玩家可能已经按返回走了，节点没了就别再碰界面。
 	if not is_instance_valid(self):
 		return
@@ -88,11 +82,7 @@ func _load_ranking() -> void:
 		%Status.text = "加载失败：%s" % str(result.get("error", "未知错误"))
 		%Status.add_theme_color_override("font_color", ThemeHelper.DANGER)
 		return
-	var data: Dictionary = result.get("data", {})
-	var usage: Array = data.get("channelUsage", [])
-	var today := DayClock.today()
-	var ranked: Array[RankedUser] = RankingAggregator.rank_users(usage, today)
-	_render(today, ranked)
+	_render(str(result.get("date", "")), result.get("users", [] as Array[RankedUser]))
 
 
 ## 把聚合结果铺进表格。
@@ -102,15 +92,10 @@ func _render(date: String, ranked: Array[RankedUser]) -> void:
 	%Status.text = "%d 人上榜 · Token 即基础战力" % ranked.size()
 	# 上一次可能因为报错被染成红色，这里改回普通说明色。
 	%Status.add_theme_color_override("font_color", ThemeHelper.MUTED)
-	_clear_grid()
+	NodeUtil.clear_children(%Grid)
 	_add_header()
 	for user in ranked:
 		_add_row(user)
-
-
-## 清空表格。立刻释放而不是 queue_free：下一句就要往里填新行。
-func _clear_grid() -> void:
-	NodeUtil.clear_children(%Grid)
 
 
 func _add_header() -> void:
@@ -127,20 +112,16 @@ func _add_row(user: RankedUser) -> void:
 	if user.agents.size() > 1:
 		agent_text = ", ".join(user.agents)
 	# 紧凑值方便扫一眼，括号里的精确值方便核对。
-	var tokens_text := "%s  (%s)" % [ThemeHelper.compact(user.tokens), ThemeHelper.with_commas(user.tokens)]
+	var tokens_text := "%s  (%s)" % [NumberFormat.compact(user.tokens), NumberFormat.with_commas(user.tokens)]
 	_add_cells([str(user.rank), user.username, agent_text, tokens_text], ThemeHelper.TEXT, false)
 
 
 ## 往 GridContainer 里塞一行单元格。列数由 %Grid 的 columns 决定。
 func _add_cells(texts: PackedStringArray, color: Color, header: bool) -> void:
 	for i in range(texts.size()):
-		var label := Label.new()
-		label.text = texts[i]
-		label.add_theme_color_override("font_color", color)
+		var label := ThemeHelper.make_label(texts[i], color, HEADER_FONT_PX if header else 0)
 		# 表格不参与遥控器导航，翻页靠 _unhandled_input 直接推滚动条。
 		label.focus_mode = Control.FOCUS_NONE
-		if header:
-			label.add_theme_font_size_override("font_size", 14)
 		var column: Dictionary = COLUMNS[i]
 		if bool(column.get("right", false)):
 			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT

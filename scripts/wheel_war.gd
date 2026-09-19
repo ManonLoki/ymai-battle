@@ -14,12 +14,12 @@ var waiting: Array[Fighter] = []
 ## 正在场上的那位挑战者，没人了就是 null。
 var current_opponent: Fighter
 ## 其余人的合计战力（RMS 口径，见 CombatResolver.aggregate_power）。
-var others_total_power: int = 0
+var others_power: int = 0
 ## 擂主本场的目标胜率，始终落在 [MIN_WIN_RATE, MAX_WIN_RATE] 内。
 ## 它是“最终获胜的概率”，不是单次命中率。
 var win_rate: float = 0.5
 ## 由 win_rate 反解出的擂主单次命中率，通常只在 50% 附近浮动几个点。
-var champion_hit: float = 0.5
+var champion_hit_chance: float = 0.5
 var outcome: Outcome = Outcome.ONGOING
 
 
@@ -42,8 +42,8 @@ func setup(ranked: Array[RankedUser], rng: RollSource) -> void:
 	# 出场顺序随机，同一份榜单每场打起来都不一样。
 	rng.shuffle(challengers)
 	waiting = challengers
-	others_total_power = CombatResolver.aggregate_power(powers)
-	win_rate = CombatResolver.champion_win_rate(champion.tokens, others_total_power)
+	others_power = CombatResolver.aggregate_power(powers)
+	win_rate = CombatResolver.champion_win_rate(champion.tokens, others_power)
 	# 每位挑战者吃 HITS_PER_DUEL 次命中就倒下；擂主的血条要扛完所有人，
 	# 于是两边需要的有效命中总数相等，胜负回到命中率和技能上。
 	champion.hits_to_down = CombatResolver.HITS_PER_DUEL * waiting.size()
@@ -53,7 +53,7 @@ func setup(ranked: Array[RankedUser], rng: RollSource) -> void:
 	SkillGrant.apply(champion, rng)
 	for fighter in waiting:
 		SkillGrant.apply(fighter, rng)
-	champion_hit = CombatResolver.calibrated_hit_chance(win_rate, _champion_buff_edge(), _champion_skill_edge(), waiting.size())
+	champion_hit_chance = CombatResolver.calibrated_hit_chance(win_rate, _champion_buff_edge(), _champion_skill_edge(), waiting.size())
 	# 让第一位挑战者上场。
 	_advance_opponent()
 
@@ -75,7 +75,7 @@ func simulate_turn(rng: RollSource) -> Array[StrikeResult]:
 	if outcome != Outcome.ONGOING or champion == null or current_opponent == null:
 		return events
 	# 擂主先手。
-	events.append_array(CombatResolver.resolve_action(champion, current_opponent, champion_hit, rng))
+	events.append_array(CombatResolver.resolve_action(champion, current_opponent, champion_hit_chance, rng))
 	# 挑战者被打倒就直接换下一位，这回合到此为止。
 	if not current_opponent.is_alive():
 		_advance_opponent()
@@ -85,7 +85,7 @@ func simulate_turn(rng: RollSource) -> Array[StrikeResult]:
 		outcome = Outcome.CHAMPION_DOWN
 		return events
 	# 挑战者还手。
-	events.append_array(CombatResolver.resolve_action(current_opponent, champion, champion_hit, rng))
+	events.append_array(CombatResolver.resolve_action(current_opponent, champion, champion_hit_chance, rng))
 	if not champion.is_alive():
 		outcome = Outcome.CHAMPION_DOWN
 	# 挑战者可能死在擂主的反击下，同样要换人。

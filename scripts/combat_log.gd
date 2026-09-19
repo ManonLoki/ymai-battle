@@ -13,7 +13,7 @@ static func annotate(events: Array[StrikeResult]) -> void:
 		var event: StrikeResult = events[i]
 		# 只有“打中了的主动首击”才当一串连击的开头：
 		# 追击自己、反击、中毒掉血、被跳过的行动都不算。
-		if not event.hit or event.extra_index != 0 or event.countered or event.poison_tick or event.skipped != "":
+		if not event.hit or event.extra_index != 0 or event.countered or event.poison_tick or event.skip_reason != "":
 			continue
 		# 往后数连续属于同一个人的追击，数出这一串一共几下。
 		var n := 1
@@ -44,16 +44,16 @@ static func line_for(event: StrikeResult) -> String:
 static func _body(event: StrikeResult) -> String:
 	# 中毒掉血：不是谁打的，单独一句。
 	if event.poison_tick:
-		var tick := "%s 中毒，损失 %s 生命" % [event.attacker_name, ThemeHelper.compact(event.damage)]
+		var tick := "%s 中毒，损失 %s 生命" % [event.attacker_name, NumberFormat.compact(event.damage)]
 		if event.revived:
 			tick += "，浴火重生！"
 		elif event.defender_died:
 			tick += "，倒下！"
 		return tick
 	# 行动被跳过。
-	if event.skipped == "paralyze":
+	if event.skip_reason == StrikeResult.SKIP_PARALYZE:
 		return "%s 麻痹，无法行动" % event.attacker_name
-	if event.skipped == "root":
+	if event.skip_reason == StrikeResult.SKIP_ROOT:
 		return "%s 被定身，错过行动" % event.attacker_name
 	# 混乱下打自己。
 	if event.self_hit:
@@ -64,7 +64,7 @@ static func _body(event: StrikeResult) -> String:
 			return "%s因为【混乱】打了自己，伤害被全部减免" % event.attacker_name
 		var self_line := "%s因为【混乱】对自己造成了【%s】伤害" % [
 			event.attacker_name,
-			ThemeHelper.compact(event.damage),
+			NumberFormat.compact(event.damage),
 		]
 		if event.revived:
 			self_line += "，浴火重生！"
@@ -103,9 +103,21 @@ static func _body(event: StrikeResult) -> String:
 	var line := "\n".join(chunks)
 	# 回血、复活、击倒这几个后缀挂在最后。
 	if event.heal_amount > 0:
-		line += "，回复 %s" % ThemeHelper.compact(event.heal_amount)
+		line += "，回复 %s" % NumberFormat.compact(event.heal_amount)
 	if event.revived:
 		line += "，浴火重生！"
 	elif event.defender_died:
 		line += "，击倒！"
 	return line
+
+
+## 结果面板和战报共用的 MVP 那句话。best 是 DamageTally.best() 的结果。
+static func mvp_line(best: Dictionary) -> String:
+	var username := str(best.get("username", ""))
+	# 全场没人碰到擂主（比如擂主一路秒杀），MVP 就空着。
+	if username.is_empty():
+		return "本场没有挑战者伤到擂主，MVP 空缺"
+	return "【%s】获得了本场战斗 MVP，造成了【%s】伤害" % [
+		username,
+		NumberFormat.compact(int(best.get("damage", 0))),
+	]

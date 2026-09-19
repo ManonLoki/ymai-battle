@@ -53,29 +53,14 @@ static func sanitize(mode: int) -> int:
 
 ## 读出上次选的模式。文件不在 / 读不动 / 不是合法值都给默认。
 static func load_mode(path: String = SAVE_PATH) -> int:
-	if not FileAccess.file_exists(path):
-		return DEFAULT_MODE
-	var file := FileAccess.open(path, FileAccess.READ)
-	if file == null:
-		return DEFAULT_MODE
-	var text := file.get_as_text()
-	file.close()
-	var parsed: Variant = JSON.parse_string(text)
-	if typeof(parsed) != TYPE_DICTIONARY:
-		return DEFAULT_MODE
-	var data: Dictionary = parsed
 	# JSON 里的数字回来是浮点，转成 int 再校验。
-	return sanitize(int(data.get(MODE_KEY, DEFAULT_MODE)))
+	return sanitize(int(JsonStore.read_dict(path).get(MODE_KEY, DEFAULT_MODE)))
 
 
 ## 写下选择。整份设置一起重写，目前也就这一项。
+## 存不下就算了（磁盘满、只读目录），不值得为此打断游戏。
 static func save_mode(mode: int, path: String = SAVE_PATH) -> void:
-	var file := FileAccess.open(path, FileAccess.WRITE)
-	# 存不下就算了（磁盘满、只读目录），不值得为此打断游戏。
-	if file == null:
-		return
-	file.store_string(JSON.stringify({MODE_KEY: sanitize(mode)}))
-	file.close()
+	JsonStore.write_dict(path, {MODE_KEY: sanitize(mode)})
 
 
 ## 把模式应用到当前窗口。先定模式再定边框：

@@ -1,4 +1,4 @@
-class_name AgentSkills
+class_name AgentChannels
 extends RefCounted
 
 ## 服务端 channel 标识与展示名的对照表。channel 同时决定角色拿到哪种专属 buff。

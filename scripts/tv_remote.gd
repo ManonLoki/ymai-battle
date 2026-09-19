@@ -43,6 +43,19 @@ static func is_navigation(event: InputEvent) -> bool:
 	return false
 
 
+## 接住并吃掉 BACK 事件，返回“这一下是不是返回键”。
+##
+## 吃事件走 viewport：accept_event() 是 Control 才有的，而对战场景是 Node2D，
+## 以前两边各写各的，行为就分叉了。这里统一成对两种节点都成立的那一种。
+static func consume_back(event: InputEvent, node: Node) -> bool:
+	if not is_back(event):
+		return false
+	var viewport := node.get_viewport()
+	if viewport != null:
+		viewport.set_input_as_handled()
+	return true
+
+
 ## 没有任何控件持有焦点时，把焦点还给 fallback。
 ## 电视上没有鼠标，焦点一旦丢了方向键就全哑了，所以每次导航前都补一次。
 static func ensure_focus(fallback: Control) -> bool:

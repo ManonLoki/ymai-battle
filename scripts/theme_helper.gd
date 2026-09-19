@@ -36,14 +36,6 @@ const BACK_BUTTON_MIN_SIZE := Vector2(120, 40)
 ## 战绩榜上挂奖牌的名次上限，medal_color 的分档也按它来。
 const MEDAL_RANKS := 3
 
-## 紧凑写法的进位表，从大到小匹配。
-const COMPACT_UNITS := [
-	[1000000000, "B"],
-	[1000000, "M"],
-	[1000, "K"],
-]
-
-
 ## 这个名次有没有奖牌。挑底色、字色的地方都问它，
 ## 免得每个调用方各自记一遍“前三名”这个边界。
 static func has_medal(rank: int) -> bool:
@@ -113,28 +105,19 @@ static func style_button(button: Button, filled: bool = true) -> void:
 		button.add_theme_color_override("font_color", TEXT)
 
 
-## 数字的紧凑写法：按当前大小自动挂 K / M / B，保留两位小数（四舍五入）。
-## 1234 → "1.23K"，348431491 → "348.43M"，2500000000 → "2.50B"。
-## 不足 1000 的直接原样输出，不补小数点。
-static func compact(n: int) -> String:
-	# 先把符号摘出来单独处理，后面只跟绝对值打交道。
-	var sign_text := "-" if n < 0 else ""
-	var value := absi(n)
-	# 从大到小匹配，第一个够得着的单位就是要用的那个。
-	for unit in COMPACT_UNITS:
-		var step := int(unit[0])
-		if value >= step:
-			return "%s%.2f%s" % [sign_text, float(value) / float(step), str(unit[1])]
-	return sign_text + str(value)
+## 次级“返回”按钮。style_button 会盖上主按钮的最小尺寸，所以必须紧跟着改回来——
+## 把这两步绑在一起，新加的页面就不会只抄走前半句。
+static func style_back_button(button: Button) -> void:
+	style_button(button, false)
+	button.custom_minimum_size = BACK_BUTTON_MIN_SIZE
 
 
-## 千分位写法，排行榜上和 compact 并排显示精确值。
-static func with_commas(n: int) -> String:
-	var s := str(n)
-	var out := ""
-	for i in range(s.length()):
-		# 从右往左每三位插一个逗号，开头不插。
-		if i > 0 and (s.length() - i) % 3 == 0:
-			out += ","
-		out += s[i]
-	return out
+## 运行时现造的 Label。四个场景都要按“文字 + 颜色 + 字号”造一堆，
+## 主题覆盖的键名只在这里写一次。font_size 传 0 表示跟随父级主题。
+static func make_label(text: String, color: Color, font_size: int = 0) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_color_override("font_color", color)
+	if font_size > 0:
+		label.add_theme_font_size_override("font_size", font_size)
+	return label

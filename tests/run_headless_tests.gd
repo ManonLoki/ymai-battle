@@ -159,7 +159,7 @@ func _test_buff_per_agent() -> void:
 	var many := ranked[1] if ranked[0].username == "独修" else ranked[0]
 	var one := ranked[0] if ranked[0].username == "独修" else ranked[1]
 	_assert(many.channels.size() == 3, "a three-agent player keeps all three channels")
-	_assert(many.channels[0] == AgentSkills.CHANNEL_CODEX, "channels are ordered by usage")
+	_assert(many.channels[0] == AgentChannels.CHANNEL_CODEX, "channels are ordered by usage")
 	_assert(one.channels.size() == 1, "a single-agent player keeps one channel")
 
 	var triple := Fighter.from_ranked(many, true)
@@ -194,27 +194,27 @@ func _test_buff_per_agent() -> void:
 
 ## 数字紧凑写法：按大小自动挂 K / M / B，四舍五入到小数点后两位。
 func _test_compact_numbers() -> void:
-	_assert(ThemeHelper.compact(0) == "0", "zero stays plain")
-	_assert(ThemeHelper.compact(1) == "1", "single digits stay plain")
-	_assert(ThemeHelper.compact(999) == "999", "under a thousand stays plain")
-	_assert(ThemeHelper.compact(1000) == "1.00K", "a thousand switches to K")
-	_assert(ThemeHelper.compact(1234) == "1.23K", "K keeps two decimals")
-	_assert(ThemeHelper.compact(999499) == "999.50K", "just under a million is still K")
-	_assert(ThemeHelper.compact(1000000) == "1.00M", "a million switches to M")
-	_assert(ThemeHelper.compact(348431491) == "348.43M", "the real board's champion reads as M")
-	_assert(ThemeHelper.compact(1000000000) == "1.00B", "a billion switches to B")
-	_assert(ThemeHelper.compact(2500000000) == "2.50B", "B keeps two decimals")
-	_assert(ThemeHelper.compact(-1234) == "-1.23K", "negatives keep their sign")
+	_assert(NumberFormat.compact(0) == "0", "zero stays plain")
+	_assert(NumberFormat.compact(1) == "1", "single digits stay plain")
+	_assert(NumberFormat.compact(999) == "999", "under a thousand stays plain")
+	_assert(NumberFormat.compact(1000) == "1.00K", "a thousand switches to K")
+	_assert(NumberFormat.compact(1234) == "1.23K", "K keeps two decimals")
+	_assert(NumberFormat.compact(999499) == "999.50K", "just under a million is still K")
+	_assert(NumberFormat.compact(1000000) == "1.00M", "a million switches to M")
+	_assert(NumberFormat.compact(348431491) == "348.43M", "the real board's champion reads as M")
+	_assert(NumberFormat.compact(1000000000) == "1.00B", "a billion switches to B")
+	_assert(NumberFormat.compact(2500000000) == "2.50B", "B keeps two decimals")
+	_assert(NumberFormat.compact(-1234) == "-1.23K", "negatives keep their sign")
 
 	# 四舍五入，不是截断。
-	_assert(ThemeHelper.compact(1230000) == "1.23M", "an exact second decimal survives")
-	_assert(ThemeHelper.compact(1234999) == "1.23M", "a third digit below half rounds down")
-	_assert(ThemeHelper.compact(1235000) == "1.24M", "a third digit at half rounds up")
+	_assert(NumberFormat.compact(1230000) == "1.23M", "an exact second decimal survives")
+	_assert(NumberFormat.compact(1234999) == "1.23M", "a third digit below half rounds down")
+	_assert(NumberFormat.compact(1235000) == "1.24M", "a third digit at half rounds up")
 
 	# 单位是跟着当前数字走的，不是固定写死 M。
 	var seen: Dictionary = {}
 	for value in [500, 5000, 5000000, 5000000000]:
-		var text := ThemeHelper.compact(int(value))
+		var text := NumberFormat.compact(int(value))
 		var unit := text.substr(text.length() - 1, 1)
 		seen[unit] = true
 	_assert(seen.size() == 4, "each magnitude picks its own unit")
@@ -222,7 +222,7 @@ func _test_compact_numbers() -> void:
 	# 界面上确实用的是这个函数，而不是各写各的。
 	for path in ["res://ranking.gd", "res://battle.gd", "res://scenes/fighter_view.gd", "res://scripts/combat_log.gd"]:
 		var src := FileAccess.get_file_as_string(path)
-		_assert(src.find("ThemeHelper.compact(") >= 0, "%s renders numbers through the shared compact helper" % path)
+		_assert(src.find("NumberFormat.compact(") >= 0, "%s renders numbers through the shared compact helper" % path)
 	_assert(FileAccess.get_file_as_string("res://ranking.gd").find("_format_millions") < 0, "the old M-only formatter is gone")
 
 
@@ -309,22 +309,22 @@ func _disarm(fighter: Fighter) -> void:
 func _test_skills() -> void:
 	var rng_lo := RollSource.new(1)
 	rng_lo.push([0.0])
-	var buff_lo := SkillGrant.roll_agent_buff(AgentSkills.CHANNEL_CODEX, rng_lo)
+	var buff_lo := SkillGrant.roll_agent_buff(AgentChannels.CHANNEL_CODEX, rng_lo)
 	_assert(buff_lo.id == "buff_codex", "CODEX buff type is crit")
 	_assert(is_equal_approx(buff_lo.crit_chance, 0.05), "agent buff floor is 5%")
 	var rng_hi := RollSource.new(1)
 	rng_hi.push([1.0])
-	var buff_hi := SkillGrant.roll_agent_buff(AgentSkills.CHANNEL_CODEX, rng_hi)
+	var buff_hi := SkillGrant.roll_agent_buff(AgentChannels.CHANNEL_CODEX, rng_hi)
 	_assert(is_equal_approx(buff_hi.crit_chance, 0.10), "agent buff ceiling is 10%")
 	var rng_c := RollSource.new(1)
 	rng_c.push([0.0])
-	_assert(is_equal_approx(SkillGrant.roll_agent_buff(AgentSkills.CHANNEL_CLAUDE, rng_c).accuracy_bonus, 0.05), "CLAUDE buff is accuracy")
+	_assert(is_equal_approx(SkillGrant.roll_agent_buff(AgentChannels.CHANNEL_CLAUDE, rng_c).accuracy_bonus, 0.05), "CLAUDE buff is accuracy")
 	var rng_g := RollSource.new(1)
 	rng_g.push([0.0])
-	_assert(is_equal_approx(SkillGrant.roll_agent_buff(AgentSkills.CHANNEL_GROK, rng_g).dodge_bonus, 0.05), "GROK buff is dodge")
+	_assert(is_equal_approx(SkillGrant.roll_agent_buff(AgentChannels.CHANNEL_GROK, rng_g).dodge_bonus, 0.05), "GROK buff is dodge")
 	var rng_w := RollSource.new(1)
 	rng_w.push([0.0])
-	_assert(is_equal_approx(SkillGrant.roll_agent_buff(AgentSkills.CHANNEL_WORKBUDDY, rng_w).damage_reduction, 0.05), "WORKBUDDY buff is damage reduction")
+	_assert(is_equal_approx(SkillGrant.roll_agent_buff(AgentChannels.CHANNEL_WORKBUDDY, rng_w).damage_reduction, 0.05), "WORKBUDDY buff is damage reduction")
 
 	var champ_skills: Array[SkillDef] = SkillGrant.pick_skills(SkillCatalog.CHAMPION_SKILL_CAP, RollSource.new(3))
 	var chal_skills: Array[SkillDef] = SkillGrant.pick_skills(SkillCatalog.CHALLENGER_SKILL_CAP, RollSource.new(4))
@@ -380,7 +380,7 @@ func _test_skills() -> void:
 
 	_disarm(attacker)
 	_disarm(defender)
-	var dodge_buff := SkillCatalog.agent_buff_template(AgentSkills.CHANNEL_GROK)
+	var dodge_buff := SkillCatalog.agent_buff_template(AgentChannels.CHANNEL_GROK)
 	dodge_buff.dodge_bonus = 0.25
 	_give_buffs(defender, [dodge_buff])
 	var rng_dodge := RollSource.new(1)
@@ -392,7 +392,7 @@ func _test_skills() -> void:
 	rng_no_dodge.push([0.4])
 	_assert(CombatResolver.resolve_strikes(attacker, defender, win, rng_no_dodge)[0].hit, "same 0.4 roll hits without dodge")
 
-	var acc_buff := SkillCatalog.agent_buff_template(AgentSkills.CHANNEL_CLAUDE)
+	var acc_buff := SkillCatalog.agent_buff_template(AgentChannels.CHANNEL_CLAUDE)
 	acc_buff.accuracy_bonus = 0.20
 	_give_buffs(attacker, [acc_buff])
 	defender.hp = defender.max_hp
@@ -423,7 +423,7 @@ func _test_skills() -> void:
 	_disarm(defender)
 	defender.paralyze_turns = 3
 	var para_events: Array[StrikeResult] = CombatResolver.resolve_action(defender, attacker, win, RollSource.new(1))
-	_assert(para_events[0].skipped == "paralyze", "paralyze skips the action")
+	_assert(para_events[0].skip_reason == StrikeResult.SKIP_PARALYZE, "paralyze skips the action")
 	_assert(defender.paralyze_turns == 2, "paralyze lasts 3 turns")
 	_assert(attacker.hp == attacker.max_hp, "paralyzed fighter deals no damage")
 
@@ -487,7 +487,7 @@ func _test_skills() -> void:
 	CombatResolver.resolve_strikes(attacker, defender, win, rng_root)
 	_assert(defender.rooted_next, "root marks the next action as skipped")
 	var root_events: Array[StrikeResult] = CombatResolver.resolve_action(defender, attacker, win, RollSource.new(1))
-	_assert(root_events[0].skipped == "root", "root skips the next action")
+	_assert(root_events[0].skip_reason == StrikeResult.SKIP_ROOT, "root skips the next action")
 	_assert(not defender.rooted_next, "root is consumed after one skip")
 
 	_disarm(attacker)
@@ -550,12 +550,12 @@ func _test_skills() -> void:
 	var crushing := CombatResolver.champion_win_rate(1000000, 1)
 	for target in [hopeless, crushing]:
 		var hit := CombatResolver.calibrated_hit_chance(target)
-		var champ := _make_fighter("champ", 1000, AgentSkills.CHANNEL_CLAUDE, true)
-		var foe := _make_fighter("foe", 1000, AgentSkills.CHANNEL_GROK, false)
-		var champ_buff := SkillCatalog.agent_buff_template(AgentSkills.CHANNEL_CLAUDE)
+		var champ := _make_fighter("champ", 1000, AgentChannels.CHANNEL_CLAUDE, true)
+		var foe := _make_fighter("foe", 1000, AgentChannels.CHANNEL_GROK, false)
+		var champ_buff := SkillCatalog.agent_buff_template(AgentChannels.CHANNEL_CLAUDE)
 		champ_buff.accuracy_bonus = 0.10
 		_give_buffs(champ, [champ_buff])
-		var foe_buff := SkillCatalog.agent_buff_template(AgentSkills.CHANNEL_GROK)
+		var foe_buff := SkillCatalog.agent_buff_template(AgentChannels.CHANNEL_GROK)
 		foe_buff.dodge_bonus = 0.10
 		_give_buffs(foe, [foe_buff])
 		_assert(CombatResolver.hit_chance(champ, foe, hit) > CombatResolver.MIN_HIT_CHANCE, "champion can always land a hit (target %.2f)" % target)
@@ -592,7 +592,7 @@ func _ranked(name: String, tokens: int, channel: String = "") -> RankedUser:
 	user.username = name
 	user.tokens = tokens
 	user.channel = channel
-	user.agent_name = AgentSkills.agent_display_name(channel)
+	user.agent_name = AgentChannels.agent_display_name(channel)
 	if not channel.is_empty():
 		user.channels = PackedStringArray([channel])
 		user.agents = PackedStringArray([user.agent_name])
@@ -700,10 +700,10 @@ func _test_wheel_war() -> void:
 ## "head to head" 只有一个挑战者，整场只掷十几次骰子，随机性本身会把实测往 50% 拉，
 ## 所以它会稳定地比目标低几个点——容差留到 0.12 就是为了容下这种短局。
 func _test_win_rate_regression() -> void:
-	var codex := AgentSkills.CHANNEL_CODEX
-	var claude := AgentSkills.CHANNEL_CLAUDE
-	var grok := AgentSkills.CHANNEL_GROK
-	var buddy := AgentSkills.CHANNEL_WORKBUDDY
+	var codex := AgentChannels.CHANNEL_CODEX
+	var claude := AgentChannels.CHANNEL_CLAUDE
+	var grok := AgentChannels.CHANNEL_GROK
+	var buddy := AgentChannels.CHANNEL_WORKBUDDY
 	# [token, 当天用过的渠道...]，渠道数就是 buff 数。
 	var rosters := {
 		"today's real board": [
@@ -741,9 +741,9 @@ func _test_win_rate_regression() -> void:
 			user.tokens = int(row[0])
 			for c in range(1, row.size()):
 				user.channels.append(str(row[c]))
-				user.agents.append(AgentSkills.agent_display_name(str(row[c])))
+				user.agents.append(AgentChannels.agent_display_name(str(row[c])))
 			user.channel = user.channels[0]
-			user.agent_name = AgentSkills.agent_display_name(user.channel)
+			user.agent_name = AgentChannels.agent_display_name(user.channel)
 			roster.append(user)
 		# 120 次抽样的标准误约 4.5 个点，贴着 80% 上限的阵容会随机越界，
 		# 所以样本量提到 240，并按 2.5 个标准误给实测值留出抖动空间。
@@ -979,9 +979,10 @@ func _test_app_icon_and_cursors() -> void:
 	_assert(export_icon != null and export_icon == icon_res, "Windows export uses the same app icon")
 	var cursor_src := FileAccess.get_file_as_string("res://scripts/game_cursor.gd")
 	_assert(cursor_src.find("Input.set_custom_mouse_cursor") >= 0, "cursors use the custom-cursor API")
-	var main_src := FileAccess.get_file_as_string("res://main.gd")
-	_assert(main_src.find("GameCursor.boot") >= 0, "main start path boots the custom cursor")
-	_assert(main_src.find("GameCursor.handle_event") >= 0, "main input path applies cursor swaps")
+	# 光标是 autoload 全局接管的，场景脚本不该各自再装一遍。
+	var controller_src := FileAccess.get_file_as_string("res://scripts/cursor_controller.gd")
+	_assert(controller_src.find("GameCursor.boot") >= 0, "the cursor autoload boots the custom cursor")
+	_assert(controller_src.find("GameCursor.handle_event") >= 0, "the cursor autoload applies cursor swaps")
 
 	var arrow := load(GameCursor.ARROW_PATH) as Texture2D
 	var pressed := load(GameCursor.PRESSED_PATH) as Texture2D
@@ -1004,14 +1005,17 @@ func _test_app_icon_and_cursors() -> void:
 	press.button_index = MOUSE_BUTTON_LEFT
 	press.pressed = true
 	press.position = Vector2(12, 12)
-	main._input(press)
+	# 走真正的生产路径：autoload 的 _input，而不是某个场景自己抄的一份。
+	var cursor_autoload := root.get_node_or_null("CursorController")
+	_assert(cursor_autoload != null, "the cursor autoload is registered")
+	cursor_autoload._input(press)
 	_assert(GameCursor.applied_texture == GameCursor.pressed_texture, "mouse down applies the pressed cursor")
 
 	var release := InputEventMouseButton.new()
 	release.button_index = MOUSE_BUTTON_LEFT
 	release.pressed = false
 	release.position = Vector2(12, 12)
-	main._input(release)
+	cursor_autoload._input(release)
 	_assert(GameCursor.applied_texture == GameCursor.arrow_texture, "mouse up applies the arrow cursor")
 	main.queue_free()
 	await process_frame
@@ -1033,9 +1037,9 @@ func _test_fighter_anims() -> void:
 	_assert(view.anim_player.has_animation(&"dodge"), "dodge animation is playable")
 	_assert(view.has_method("play_crit_fx") and view.has_method("play_poison_fx") and view.has_method("play_heal_fx") and view.has_method("play_dodge"), "fighter view exposes crit/dodge/poison/heal fx")
 	_assert(SpriteFactory.COUNT >= 12, "appearance pool has at least 12 looks")
-	var user := _ranked("anim", 10, AgentSkills.CHANNEL_CODEX)
+	var user := _ranked("anim", 10, AgentChannels.CHANNEL_CODEX)
 	var fighter := Fighter.from_ranked(user, true)
-	_give_buffs(fighter, [SkillCatalog.agent_buff_template(AgentSkills.CHANNEL_CODEX)])
+	_give_buffs(fighter, [SkillCatalog.agent_buff_template(AgentChannels.CHANNEL_CODEX)])
 	var pool: Array[SkillDef] = SkillCatalog.pool()
 	fighter.skills.clear()
 	for i in range(mini(8, pool.size())):
@@ -1049,8 +1053,10 @@ func _test_fighter_anims() -> void:
 	var buff_icon := view.buff_row.get_child(0)
 	buff_icon.mouse_entered.emit()
 	_assert(view.tip_panel.visible, "buff hover shows the tip immediately")
-	_assert(view.tip_label.text.find(fighter.primary_agent_buff().display_name) >= 0, "instant tip contains the buff name")
-	_assert(view.tip_label.text.find(fighter.primary_agent_buff().description) >= 0, "instant tip contains the buff effect")
+	# 断言对着界面真正渲染的那一个 buff，而不是另一条只有测试在走的取值路径。
+	var shown_buff: SkillDef = fighter.agent_buffs[0]
+	_assert(view.tip_label.text.find(shown_buff.display_name) >= 0, "instant tip contains the buff name")
+	_assert(view.tip_label.text.find(shown_buff.description) >= 0, "instant tip contains the buff effect")
 	buff_icon.mouse_exited.emit()
 	_assert(not view.tip_panel.visible, "buff tip hides on mouse exit")
 	_assert(view.buff_row.get_parent() != view.skill_row, "buff row and skill row are separate")
@@ -1058,7 +1064,7 @@ func _test_fighter_anims() -> void:
 	_assert(view.skill_row.get_child_count() == fighter.skills.size(), "skill row holds only random skills")
 	_assert(fighter.skills.size() == 8, "champion bind uses 8 skills")
 	for child in view.buff_row.get_children():
-		_assert_icon_tooltip(child, fighter.primary_agent_buff())
+		_assert_icon_tooltip(child, fighter.agent_buffs[0])
 	for i in fighter.skills.size():
 		_assert_icon_tooltip(view.skill_row.get_child(i), fighter.skills[i])
 	await process_frame
@@ -1076,8 +1082,12 @@ func _test_api_contract() -> void:
 	_assert(api_src.find("HTTPClient.METHOD_GET") >= 0, "token-usage is fetched with GET")
 	var ranking_src := FileAccess.get_file_as_string("res://ranking.gd")
 	var battle_src := FileAccess.get_file_as_string("res://battle.gd")
-	_assert(ranking_src.find("TokenUsageApi") >= 0 and ranking_src.find("fetch_usage") >= 0, "Ranking enter path fetches usage")
-	_assert(battle_src.find("TokenUsageApi") >= 0 and battle_src.find("fetch_usage") >= 0, "Battle enter path fetches usage")
+	# 两个场景都只认 TokenUsageApi.fetch_ranking 这一个入口；
+	# HTTPRequest 的生命周期和 channelUsage 的位置都不该再出现在场景脚本里。
+	_assert(ranking_src.find("TokenUsageApi.fetch_ranking") >= 0, "Ranking enter path fetches the ranking")
+	_assert(battle_src.find("TokenUsageApi.fetch_ranking") >= 0, "Battle enter path fetches the ranking")
+	_assert(ranking_src.find("channelUsage") < 0 and battle_src.find("channelUsage") < 0, "scene scripts do not know the payload shape")
+	_assert(api_src.find("channelUsage") >= 0, "the API module owns the payload shape")
 	_assert(api_src.find("yunmai365.com/") < 0 or api_src.find("/api/v1/token-usage") >= 0, "api script targets token-usage")
 	var extra := _other_host_paths()
 	_assert(extra.is_empty(), "no other yunmai365 paths: %s" % ",".join(extra))
@@ -1156,7 +1166,7 @@ func _test_combat_log() -> void:
 
 	_disarm(attacker)
 	_disarm(defender)
-	var dodge_buff := SkillCatalog.agent_buff_template(AgentSkills.CHANNEL_GROK)
+	var dodge_buff := SkillCatalog.agent_buff_template(AgentChannels.CHANNEL_GROK)
 	dodge_buff.dodge_bonus = 0.25
 	_give_buffs(defender, [dodge_buff])
 	var rng_dodge := RollSource.new(1)
@@ -1212,7 +1222,7 @@ func _test_combat_log() -> void:
 		if ev.self_hit:
 			self_damage = ev.damage
 	_assert(self_damage > 0, "the confused fighter really hurt themselves")
-	_assert(self_log.find("甲因为【混乱】对自己造成了【%s】伤害" % ThemeHelper.compact(self_damage)) >= 0, "confuse self-hit log reads XXX因为【混乱】对自己造成了【N】伤害")
+	_assert(self_log.find("甲因为【混乱】对自己造成了【%s】伤害" % NumberFormat.compact(self_damage)) >= 0, "confuse self-hit log reads XXX因为【混乱】对自己造成了【N】伤害")
 	_assert(self_log.find("混乱了，对自己造成伤害") < 0, "the old confusion wording is gone")
 
 	# 自伤一样要过命中判定：掷到 0.999 就是挥空，不能还写成造成了伤害。
@@ -1386,13 +1396,13 @@ func _test_battle_playback() -> void:
 	quitter.skip_autoload = true
 	root.add_child(quitter)
 	await process_frame
-	var short_roster: Array[RankedUser] = [_ranked("champ", 400000000, AgentSkills.CHANNEL_CODEX)]
+	var short_roster: Array[RankedUser] = [_ranked("champ", 400000000, AgentChannels.CHANNEL_CODEX)]
 	for i in 4:
-		short_roster.append(_ranked("foe_%d" % i, 40000000, AgentSkills.CHANNEL_GROK))
+		short_roster.append(_ranked("foe_%d" % i, 40000000, AgentChannels.CHANNEL_GROK))
 	quitter._start_war(short_roster)
 	await process_frame
 	_assert(quitter._busy, "the playback loop is running")
-	quitter._aborted = true
+	quitter._leaving = true
 	root.remove_child(quitter)
 	# 计时器走的是真实时间，headless 下空跑帧几乎不耗时，所以要等一小段实时。
 	var deadline := Time.get_ticks_msec() + 3000
@@ -1490,7 +1500,7 @@ func _test_tv_remote() -> void:
 	# 一场接一场自动打，中途没人按遥控器，屏幕不能被系统熄掉。
 	_assert(bool(ProjectSettings.get_setting("display/window/energy_saving/keep_screen_on", false)), "工程设置里开了屏幕常亮")
 	_assert(FileAccess.get_file_as_string("res://scripts/tv_remote.gd").find("screen_set_keep_on(true)") >= 0, "运行时每次进场景再确认一次常亮")
-	_assert(FileAccess.get_file_as_string("res://scripts/fix_android_preset.py").find("permissions/wake_lock") >= 0, "Android 导出带上 WAKE_LOCK 权限")
+	_assert(FileAccess.get_file_as_string("res://tools/fix_android_preset.py").find("permissions/wake_lock") >= 0, "Android 导出带上 WAKE_LOCK 权限")
 
 	var back_setting := ""
 	for line in FileAccess.get_file_as_string("res://project.godot").split("\n"):
@@ -1543,7 +1553,7 @@ func _test_tv_remote() -> void:
 	for path in ["res://main.gd", "res://ranking.gd", "res://battle.gd"]:
 		var src := FileAccess.get_file_as_string(path)
 		_assert(src.find("NOTIFICATION_WM_GO_BACK_REQUEST") >= 0, "%s handles the Android go-back notification" % path)
-		_assert(src.find("TvRemote.is_back(event)") >= 0, "%s handles the BACK key event" % path)
+		_assert(src.find("TvRemote.consume_back(event") >= 0, "%s handles the BACK key event" % path)
 		_assert(src.find("TvRemote.install()") >= 0, "%s installs the remote bindings" % path)
 	_assert(FileAccess.get_file_as_string("res://main.gd").find("get_tree().quit()") >= 0, "BACK on the main menu quits the app")
 	var battle_src := FileAccess.get_file_as_string("res://battle.gd")
@@ -1605,12 +1615,12 @@ func _test_damage_tally() -> void:
 	_assert(not tally.totals.has("丁"), "混乱自伤不计分")
 	var top := tally.best()
 	_assert(str(top["username"]) == "乙" and int(top["damage"]) == 250, "MVP 是对擂主输出最高的挑战者")
-	var line := tally.mvp_line()
+	var line := CombatLog.mvp_line(tally.best())
 	_assert(line.find("【乙】") >= 0 and line.find("MVP") >= 0, "MVP 文案点名到人")
-	_assert(line.find(ThemeHelper.compact(250)) >= 0, "MVP 文案带上伤害数字")
+	_assert(line.find(NumberFormat.compact(250)) >= 0, "MVP 文案带上伤害数字")
 	var empty := DamageTally.new()
 	_assert(str(empty.best()["username"]).is_empty(), "没人伤到擂主时 MVP 空缺")
-	_assert(empty.mvp_line().find("空缺") >= 0, "空缺时也给一句说明")
+	_assert(CombatLog.mvp_line(empty.best()).find("空缺") >= 0, "空缺时也给一句说明")
 
 
 ## 一场打完 → 倒计时 → 清场，准备重新拉名单开下一轮。
@@ -1632,9 +1642,9 @@ func _test_next_round_cycle() -> void:
 	battle._countdown(2.0, "下一轮")
 	await process_frame
 	_assert(battle.get_node("%NextRoundLabel").text.find("下一轮") >= 0, "倒计时告诉玩家下一轮什么时候开始")
-	battle._aborted = true
+	battle._leaving = true
 	await create_timer(1.2).timeout
-	battle._aborted = false
+	battle._leaving = false
 	battle._reset_for_next_round()
 	_assert(battle.get_node("%Log").text.is_empty(), "新一轮开始前战报清空")
 	_assert(not battle.get_node("%ResultPanel").visible, "新一轮开始前结果面板收起")

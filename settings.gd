@@ -6,6 +6,8 @@ extends Control
 ## 选中的那个用实心主按钮样式，一眼能看出当前是哪种。
 
 const MAIN_SCENE := "res://main.tscn"
+## 模式按钮下面那行小字的字号。
+const NOTE_FONT_PX := 14
 
 ## 已经在切回主菜单的路上，避免连按两次返回触发两次切场景。
 var _leaving := false
@@ -21,8 +23,7 @@ func _ready() -> void:
 	%Background.color = ThemeHelper.BG
 	%Title.add_theme_color_override("font_color", ThemeHelper.TEXT)
 	%Hint.add_theme_color_override("font_color", ThemeHelper.MUTED)
-	ThemeHelper.style_button(%BackButton, false)
-	%BackButton.custom_minimum_size = ThemeHelper.BACK_BUTTON_MIN_SIZE
+	ThemeHelper.style_back_button(%BackButton)
 	%BackButton.pressed.connect(_on_back_pressed)
 	_mode = WindowSettings.load_mode()
 	_build_mode_buttons()
@@ -42,8 +43,7 @@ func _notification(what: int) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if TvRemote.is_back(event):
-		accept_event()
+	if TvRemote.consume_back(event, self):
 		_on_back_pressed()
 	elif TvRemote.is_navigation(event):
 		# 焦点万一掉了，方向键会全哑，这里补回去。
@@ -61,11 +61,7 @@ func _build_mode_buttons() -> void:
 		button.pressed.connect(_on_mode_pressed.bind(mode))
 		%ModeList.add_child(button)
 		_buttons[mode] = button
-		var note := Label.new()
-		note.text = WindowSettings.description(mode)
-		note.add_theme_color_override("font_color", ThemeHelper.MUTED)
-		note.add_theme_font_size_override("font_size", 14)
-		%ModeList.add_child(note)
+		%ModeList.add_child(ThemeHelper.make_label(WindowSettings.description(mode), ThemeHelper.MUTED, NOTE_FONT_PX))
 
 
 ## 选中的那个是实心主按钮，其余走描边。样式里带着最小尺寸，所以每次都要重套。

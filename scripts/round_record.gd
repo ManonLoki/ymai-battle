@@ -22,18 +22,8 @@ var champions: Dictionary = {}
 static func load_for(today: String, path: String = SAVE_PATH) -> RoundRecord:
 	var record := RoundRecord.new()
 	record.date = today
-	# 下面任何一步不对都直接返回这份空记录——存档坏了不该让游戏打不开。
-	if not FileAccess.file_exists(path):
-		return record
-	var file := FileAccess.open(path, FileAccess.READ)
-	if file == null:
-		return record
-	var text := file.get_as_text()
-	file.close()
-	var parsed: Variant = JSON.parse_string(text)
-	if typeof(parsed) != TYPE_DICTIONARY:
-		return record
-	var data: Dictionary = parsed
+	# 读不出来就是一份空记录——JsonStore 已经兜住了文件不在 / 坏掉的情况。
+	var data := JsonStore.read_dict(path)
 	# 关键的一步：存档是昨天的就当没有，当天战绩从零开始。
 	if str(data.get("date", "")) != today:
 		return record
@@ -92,13 +82,10 @@ func standings() -> Array[Dictionary]:
 
 ## 落盘。写不进去只警告不报错——战绩丢了不值得把游戏搞崩。
 func save(path: String = SAVE_PATH) -> void:
-	var file := FileAccess.open(path, FileAccess.WRITE)
-	if file == null:
-		push_warning("战绩存档写不进去：%s" % path)
-		return
-	file.store_string(JSON.stringify({
+	var ok := JsonStore.write_dict(path, {
 		"date": date,
 		"rounds": rounds,
 		"champions": champions,
-	}))
-	file.close()
+	})
+	if not ok:
+		push_warning("战绩存档写不进去：%s" % path)

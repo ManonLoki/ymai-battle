@@ -50,7 +50,7 @@ static func rank_users(channel_usage: Array, date: String) -> Array[RankedUser]:
 		user.channels = _channels_by_usage(rec["channels"])
 		# 排第一的渠道就是主渠道；一个渠道都没有时留空。
 		user.channel = user.channels[0] if user.channels.size() > 0 else ""
-		user.agent_name = AgentSkills.agent_display_name(user.channel)
+		user.agent_name = AgentChannels.agent_display_name(user.channel)
 		user.agents = _agent_list(user.channels)
 		users.append(user)
 
@@ -85,7 +85,7 @@ static func _channels_by_usage(channels: Dictionary) -> PackedStringArray:
 static func _agent_list(channels: PackedStringArray) -> PackedStringArray:
 	var names: PackedStringArray = PackedStringArray()
 	for channel in channels:
-		var display := AgentSkills.agent_display_name(channel)
+		var display := AgentChannels.agent_display_name(channel)
 		# 两个不同 channel 可能映射到同一个展示名，去重免得榜上重复。
 		if not display in names:
 			names.append(display)

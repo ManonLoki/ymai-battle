@@ -34,7 +34,7 @@ const CHAMPION_SKILL_EDGE_PER_SKILL := 0.0085
 ## 这份随场次拉长而膨胀的续航优势，超过 BASE 人之后按人头再扣一点命中率，
 ## 否则人多的大榜单里擂主会明显打超目标胜率。系数同样由蒙特卡洛标定。
 const CHAMPION_ENDURANCE_EDGE_BASE := 5
-const CHAMPION_ENDURANCE_EDGE_PER_OPPONENT := 0.004
+const CHAMPION_ENDURANCE_EDGE_PER_CHALLENGER := 0.004
 
 ## 每个 agent 换一个 buff，所以 agent 数量本身就是战力的一部分。
 ## 擂主每比挑战者平均多带一个 buff，命中率就再让出这么多，
@@ -166,8 +166,8 @@ static func probit(p: float) -> float:
 
 
 ## 人数超过 BASE 之后，擂主每多一个对手要多让出的命中率。
-static func champion_endurance_edge(opponent_count: int) -> float:
-	return CHAMPION_ENDURANCE_EDGE_PER_OPPONENT * float(maxi(0, opponent_count - CHAMPION_ENDURANCE_EDGE_BASE))
+static func champion_endurance_edge(challenger_count: int) -> float:
+	return CHAMPION_ENDURANCE_EDGE_PER_CHALLENGER * float(maxi(0, challenger_count - CHAMPION_ENDURANCE_EDGE_BASE))
 
 
 ## 把“这场仗擂主该赢多少次”的目标胜率，反解成他单次攻击的命中率。
@@ -178,32 +178,29 @@ static func champion_endurance_edge(opponent_count: int) -> float:
 ## 由 WheelWar 按这一场真实发出来的牌现算，不用任何平均值假设。
 ## 一场仗要掷几十次骰子，命中率上几个百分点就已经是压倒性优势，
 ## 所以算出来的命中率始终贴着 50% 附近——胜率是靠概率调出来的，不是锁出来的。
-static func calibrated_hit_chance(win_rate: float, buff_edge: float = 0.0, skill_edge: float = 0.0, opponent_count: int = 0) -> float:
-	var center := 0.5 - CHAMPION_SKILL_EDGE_PER_SKILL * skill_edge - AGENT_BUFF_HIT_EDGE * buff_edge - champion_endurance_edge(opponent_count)
+static func calibrated_hit_chance(win_rate: float, buff_edge: float = 0.0, skill_edge: float = 0.0, challenger_count: int = 0) -> float:
+	var center := 0.5 - CHAMPION_SKILL_EDGE_PER_SKILL * skill_edge - AGENT_BUFF_HIT_EDGE * buff_edge - champion_endurance_edge(challenger_count)
 	return clampf(center + probit(win_rate) * WIN_RATE_SPREAD, MIN_HIT_CHANCE, MAX_HIT_CHANCE)
-
-
-## 不含任何技能修正时的命中率：擂主拿反解出来的命中率，挑战者拿它的补集。
-static func base_hit_chance(attacker_is_champion: bool, champion_hit: float) -> float:
-	return champion_hit if attacker_is_champion else 1.0 - champion_hit
 
 
 ## 只算攻击方命中加成、还没被闪避扣减的命中率。
 ## 用于区分“自己失手”和“被对方闪掉”。
-static func hit_chance_before_dodge(attacker: Fighter, champion_hit: float) -> float:
-	var raw := base_hit_chance(attacker.is_champion, champion_hit) + attacker.stacked_accuracy()
+## 擂主拿反解出来的命中率，挑战者拿它的补集——双方的命中率之和恒为 1。
+static func hit_chance_before_dodge(attacker: Fighter, champion_hit_chance: float) -> float:
+	var base := champion_hit_chance if attacker.is_champion else 1.0 - champion_hit_chance
+	var raw := base + attacker.stacked_accuracy()
 	return clampf(raw, MIN_HIT_CHANCE, MAX_HIT_CHANCE)
 
 
 ## 最终命中率：基础命中 + 攻击方命中加成 - 防守方闪避，再夹回 [5%, 95%]。
-static func hit_chance(attacker: Fighter, defender: Fighter, champion_hit: float) -> float:
-	var raw := hit_chance_before_dodge(attacker, champion_hit) - defender.stacked_dodge()
+static func hit_chance(attacker: Fighter, defender: Fighter, champion_hit_chance: float) -> float:
+	var raw := hit_chance_before_dodge(attacker, champion_hit_chance) - defender.stacked_dodge()
 	return clampf(raw, MIN_HIT_CHANCE, MAX_HIT_CHANCE)
 
 
 ## 结算一名角色的一次行动：先跑中毒掉血，再判定麻痹 / 定身 / 混乱，
 ## 最后才真正出手。返回这次行动产生的全部战报事件。
-static func resolve_action(actor: Fighter, foe: Fighter, champion_hit: float, rng: RollSource) -> Array[StrikeResult]:
+static func resolve_action(actor: Fighter, defender: Fighter, champion_hit_chance: float, rng: RollSource) -> Array[StrikeResult]:
 	var events: Array[StrikeResult] = []
 	# 中毒先掉血，毒死了这一步就结束，连手都出不了。
 	if actor.poison_turns > 0:
@@ -213,14 +210,14 @@ static func resolve_action(actor: Fighter, foe: Fighter, champion_hit: float, rn
 	# 麻痹：整个行动跳过，回合数减一。
 	if actor.paralyze_turns > 0:
 		actor.paralyze_turns -= 1
-		events.append(_skip_event(actor, "paralyze"))
+		events.append(_skip_event(actor, StrikeResult.SKIP_PARALYZE))
 		return events
 	# 定身只作用一次，用掉就清掉标记。
 	if actor.rooted_next:
 		actor.rooted_next = false
-		events.append(_skip_event(actor, "root"))
+		events.append(_skip_event(actor, StrikeResult.SKIP_ROOT))
 		return events
-	var target := foe
+	var target := defender
 	var self_hit := false
 	# 混乱：有一半概率把这一手打到自己身上。
 	if actor.confuse_turns > 0:
@@ -229,7 +226,7 @@ static func resolve_action(actor: Fighter, foe: Fighter, champion_hit: float, rn
 			target = actor
 			self_hit = true
 	# 打自己时连击和反击都不该发生，这两条 resolve_strikes 自己按 defender != attacker 拦着。
-	var strikes := resolve_strikes(actor, target, champion_hit, rng)
+	var strikes := resolve_strikes(actor, target, champion_hit_chance, rng)
 	for strike in strikes:
 		strike.self_hit = self_hit
 		# 自伤时挨打方就是自己，战报里要写对名字。
@@ -246,13 +243,13 @@ static func resolve_action(actor: Fighter, foe: Fighter, champion_hit: float, rn
 static func resolve_strikes(
 	attacker: Fighter,
 	defender: Fighter,
-	champion_hit: float,
+	champion_hit_chance: float,
 	rng: RollSource,
 	is_counter: bool = false,
 ) -> Array[StrikeResult]:
 	var events: Array[StrikeResult] = []
 	# extra_index=0 标记这是首击，连击只看首击打没打中。
-	var first := _one_strike(attacker, defender, champion_hit, rng, 0)
+	var first := _one_strike(attacker, defender, champion_hit_chance, rng, 0)
 	events.append(first)
 	# 打空、把人打死了、或者这一手是打自己，都不进连击。
 	if not is_counter and first.hit and (not first.defender_died) and defender != attacker:
@@ -261,13 +258,13 @@ static func resolve_strikes(
 				break
 			# 追击同样要过命中判定，连击只是多给机会，不是保证打中。
 			# 这里直接调 _one_strike，所以追击自己不会再掷连击。
-			events.append(_one_strike(attacker, defender, champion_hit, rng, i + 1))
+			events.append(_one_strike(attacker, defender, champion_hit_chance, rng, i + 1))
 	# 治疗在整轮出手结束后统一结算一次。
 	_apply_heal_skill(attacker, events, rng)
 	# 反击：只看首击有没有打中，而且挨打的人得还站着。打自己时没有“对方”，也就没有反击。
 	if not is_counter and first.hit and defender != attacker and defender.is_alive() and defender.stacked_counter() > 0.0 and rng.randf() < defender.stacked_counter():
 		# 反击既不能再反击，也不能掷连击：只还一下。
-		var counters := resolve_strikes(defender, attacker, champion_hit, rng, true)
+		var counters := resolve_strikes(defender, attacker, champion_hit_chance, rng, true)
 		for counter in counters:
 			counter.countered = true
 		events.append_array(counters)
@@ -309,13 +306,13 @@ static func _skip_event(actor: Fighter, reason: String) -> StrikeResult:
 	result.attacker_name = actor.username
 	result.defender_name = actor.username
 	result.attacker_is_champion = actor.is_champion
-	result.skipped = reason
+	result.skip_reason = reason
 	result.defender_hp_after = actor.hp
 	return result
 
 
 ## 一次单独的挥击：命中判定 → 绝对防御 → 伤害 → 吸血 → 复活 → 挂状态。
-static func _one_strike(attacker: Fighter, defender: Fighter, champion_hit: float, rng: RollSource, extra_index: int) -> StrikeResult:
+static func _one_strike(attacker: Fighter, defender: Fighter, champion_hit_chance: float, rng: RollSource, extra_index: int) -> StrikeResult:
 	var result := StrikeResult.new()
 	result.attacker_name = attacker.username
 	result.defender_name = defender.username
@@ -325,8 +322,8 @@ static func _one_strike(attacker: Fighter, defender: Fighter, champion_hit: floa
 	result.extra_index = extra_index
 
 	# 两条命中率：扣闪避前的和扣闪避后的，差值就是被闪掉的那一段点数。
-	var before_dodge := hit_chance_before_dodge(attacker, champion_hit)
-	var chance := hit_chance(attacker, defender, champion_hit)
+	var before_dodge := hit_chance_before_dodge(attacker, champion_hit_chance)
+	var chance := hit_chance(attacker, defender, champion_hit_chance)
 	var roll := rng.randf()
 	if roll >= chance:
 		# 落在 [chance, before_dodge) 的点数是被闪避挡下的，再往上才是自己失手。

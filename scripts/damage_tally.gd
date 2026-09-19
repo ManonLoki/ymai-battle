@@ -36,15 +36,3 @@ func best() -> Dictionary:
 			best_damage = value
 	return {"username": best_name, "damage": best_damage}
 
-
-## 结果面板和战报共用的一句话。
-func mvp_line() -> String:
-	var top := best()
-	var username := str(top.get("username", ""))
-	# 全场没人碰到擂主（比如擂主一路秒杀），MVP 就空着。
-	if username.is_empty():
-		return "本场没有挑战者伤到擂主，MVP 空缺"
-	return "【%s】获得了本场战斗 MVP，造成了【%s】伤害" % [
-		username,
-		ThemeHelper.compact(int(top.get("damage", 0))),
-	]

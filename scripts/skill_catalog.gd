@@ -44,10 +44,10 @@ const POOL_SPECS := [
 ## 渠道 buff 的数据表：channel -> [id, 名字, 生效字段]。
 ## 具体数值每场重掷，由 SkillGrant.roll_agent_buff 填进去。
 const AGENT_BUFF_SPECS := {
-	AgentSkills.CHANNEL_CODEX: ["buff_codex", "CODEX 暴击", "crit_chance", "暴击概率"],
-	AgentSkills.CHANNEL_CLAUDE: ["buff_claude", "CLAUDE 命中", "accuracy_bonus", "命中概率"],
-	AgentSkills.CHANNEL_GROK: ["buff_grok", "GROK 闪避", "dodge_bonus", "闪避概率"],
-	AgentSkills.CHANNEL_WORKBUDDY: ["buff_workbuddy", "WORKBUDDY 减伤", "damage_reduction", "减伤"],
+	AgentChannels.CHANNEL_CODEX: ["buff_codex", "CODEX 暴击", "crit_chance", "暴击概率"],
+	AgentChannels.CHANNEL_CLAUDE: ["buff_claude", "CLAUDE 命中", "accuracy_bonus", "命中概率"],
+	AgentChannels.CHANNEL_GROK: ["buff_grok", "GROK 闪避", "dodge_bonus", "闪避概率"],
+	AgentChannels.CHANNEL_WORKBUDDY: ["buff_workbuddy", "WORKBUDDY 减伤", "damage_reduction", "减伤"],
 }
 
 
