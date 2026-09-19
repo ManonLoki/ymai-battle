@@ -1,21 +1,328 @@
-[gd_scene load_steps=2 format=3 uid="uid://bfighterview001"]
+[gd_scene load_steps=9 format=3 uid="uid://bfighterview001"]
 
 [ext_resource type="Script" path="res://scenes/fighter_view.gd" id="1_fv"]
+[ext_resource type="Texture2D" uid="uid://bddmttp1ktg8w" path="res://assets/fx/skull_x.png" id="2_skull"]
+
+[sub_resource type="Animation" id="Animation_idle"]
+resource_name = "idle"
+length = 0.8
+loop_mode = 1
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Visual/Sprite2D:position:y")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.4, 0.8),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [0.0, -8.0, 0.0]
+}
+
+[sub_resource type="Animation" id="Animation_attack"]
+resource_name = "attack"
+length = 0.36
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Visual/Sprite2D:position:x")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.12, 0.36),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [0.0, 48.0, 0.0]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("Visual/Sprite2D:rotation")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0, 0.12, 0.36),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [0.0, 0.18, 0.0]
+}
+tracks/2/type = "value"
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/path = NodePath("Visual/Slash:modulate:a")
+tracks/2/interp = 1
+tracks/2/loop_wrap = true
+tracks/2/keys = {
+"times": PackedFloat32Array(0, 0.08, 0.36),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [0.0, 1.0, 0.0]
+}
+tracks/3/type = "value"
+tracks/3/imported = false
+tracks/3/enabled = true
+tracks/3/path = NodePath("Visual/Slash:position:x")
+tracks/3/interp = 1
+tracks/3/loop_wrap = true
+tracks/3/keys = {
+"times": PackedFloat32Array(0, 0.14, 0.36),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [0.0, 90.0, 40.0]
+}
+tracks/4/type = "value"
+tracks/4/imported = false
+tracks/4/enabled = true
+tracks/4/path = NodePath("Visual/Slash:visible")
+tracks/4/interp = 1
+tracks/4/loop_wrap = true
+tracks/4/keys = {
+"times": PackedFloat32Array(0, 0.36),
+"transitions": PackedFloat32Array(1, 1),
+"update": 1,
+"values": [true, false]
+}
+
+[sub_resource type="Animation" id="Animation_hurt"]
+resource_name = "hurt"
+length = 0.28
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Visual/Sprite2D:position:x")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.08, 0.28),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [0.0, -22.0, 0.0]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("Visual/Sprite2D:modulate")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0, 0.06, 0.28),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [Color(1, 1, 1, 1), Color(1, 0.419608, 0.419608, 1), Color(1, 1, 1, 1)]
+}
+
+[sub_resource type="Animation" id="Animation_death"]
+resource_name = "death"
+length = 0.5
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Visual/Sprite2D:rotation")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.5),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [0.0, 1.2]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath(".:modulate:a")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0, 0.5),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [1.0, 0.15]
+}
+tracks/2/type = "value"
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/path = NodePath("Visual/Sprite2D:position:y")
+tracks/2/interp = 1
+tracks/2/loop_wrap = true
+tracks/2/keys = {
+"times": PackedFloat32Array(0, 0.5),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [0.0, 40.0]
+}
+
+[sub_resource type="Animation" id="Animation_dodge"]
+resource_name = "dodge"
+length = 0.36
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Visual/Sprite2D:position:x")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.12, 0.36),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [0.0, -224.0, 0.0]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("Visual/Sprite2D:scale")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0, 0.12, 0.36),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [Vector2(7, 7), Vector2(6.2, 7.4), Vector2(7, 7)]
+}
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_fighter"]
+_data = {
+&"attack": SubResource("Animation_attack"),
+&"death": SubResource("Animation_death"),
+&"dodge": SubResource("Animation_dodge"),
+&"hurt": SubResource("Animation_hurt"),
+&"idle": SubResource("Animation_idle")
+}
 
 [node name="FighterView" type="Node2D"]
 script = ExtResource("1_fv")
 
 [node name="Visual" type="Node2D" parent="."]
 
+[node name="Afterimages" type="Node2D" parent="Visual"]
+z_index = -1
+
+[node name="Ghost0" type="Sprite2D" parent="Visual/Afterimages"]
+visible = false
+texture_filter = 1
+modulate = Color(1, 1, 1, 0.5)
+
+[node name="Ghost1" type="Sprite2D" parent="Visual/Afterimages"]
+visible = false
+texture_filter = 1
+modulate = Color(1, 1, 1, 0.75)
+
 [node name="Sprite2D" type="Sprite2D" parent="Visual"]
 texture_filter = 1
 
 [node name="Slash" type="Polygon2D" parent="Visual"]
 visible = false
-color = Color(1, 0.95, 0.7, 0.9)
-polygon = PackedVector2Array(24, -10, 90, -36, 110, -8, 90, 20, 24, 8)
+color = Color(0.95, 0.95, 1, 0.95)
+polygon = PackedVector2Array(10, -4, 18, -14, 118, -38, 136, -8, 118, 22, 18, 12, 10, 4, 0, 6, -8, 2, -8, -2, 0, -6)
+
+[node name="CritFx" type="CPUParticles2D" parent="Visual"]
+visible = false
+emitting = false
+amount = 96
+lifetime = 0.48
+one_shot = true
+explosiveness = 0.94
+local_coords = true
+direction = Vector2(0, -1)
+spread = 80.0
+gravity = Vector2(0, 90)
+initial_velocity_min = 50.0
+initial_velocity_max = 160.0
+scale_amount_min = 2.0
+scale_amount_max = 9.0
+color = Color(1, 0.55, 0.08, 1)
+
+[node name="PoisonFx" type="CPUParticles2D" parent="Visual"]
+visible = false
+emitting = false
+amount = 18
+lifetime = 0.48
+one_shot = true
+explosiveness = 0.94
+local_coords = true
+direction = Vector2(0, -1)
+spread = 80.0
+gravity = Vector2(0, 40)
+initial_velocity_min = 50.0
+initial_velocity_max = 160.0
+scale_amount_min = 2.0
+scale_amount_max = 5.0
+color = Color(0.92, 0.12, 0.14, 1)
+
+[node name="ParalyzeFx" type="CPUParticles2D" parent="Visual"]
+visible = false
+emitting = false
+amount = 18
+lifetime = 0.48
+one_shot = true
+explosiveness = 0.94
+local_coords = true
+direction = Vector2(0, -1)
+spread = 80.0
+gravity = Vector2(0, 10)
+initial_velocity_min = 50.0
+initial_velocity_max = 160.0
+scale_amount_min = 2.0
+scale_amount_max = 5.0
+color = Color(1, 0.9, 0.12, 1)
+
+[node name="StunFx" type="Node2D" parent="Visual"]
+visible = false
+position = Vector2(0, -48)
+
+[node name="Star0" type="Polygon2D" parent="Visual/StunFx"]
+position = Vector2(16, 0)
+color = Color(1, 0.92, 0.25, 1)
+polygon = PackedVector2Array(0, -7, 2, -2, 7, 0, 2, 2, 0, 7, -2, 2, -7, 0, -2, -2)
+
+[node name="Star1" type="Polygon2D" parent="Visual/StunFx"]
+position = Vector2(-8, 13.8564)
+color = Color(1, 0.92, 0.25, 1)
+polygon = PackedVector2Array(0, -7, 2, -2, 7, 0, 2, 2, 0, 7, -2, 2, -7, 0, -2, -2)
+
+[node name="Star2" type="Polygon2D" parent="Visual/StunFx"]
+position = Vector2(-8, -13.8564)
+color = Color(1, 0.92, 0.25, 1)
+polygon = PackedVector2Array(0, -7, 2, -2, 7, 0, 2, 2, 0, 7, -2, 2, -7, 0, -2, -2)
+
+[node name="SkullFx" type="Node2D" parent="Visual"]
+visible = false
+z_index = 8
+
+[node name="Sprite" type="Sprite2D" parent="Visual/SkullFx"]
+texture_filter = 1
+texture = ExtResource("2_skull")
+scale = Vector2(2.5, 2.5)
+
+[node name="GuardFx" type="Node2D" parent="Visual"]
+visible = false
+z_index = 7
+
+[node name="Fill" type="Polygon2D" parent="Visual/GuardFx"]
+color = Color(0.45, 0.88, 1, 0.28)
+polygon = PackedVector2Array(78, -6, 76.0444, 18.0323, 70.2756, 40.8594, 60.9829, 61.3369, 48.6322, 78.4378, 33.8429, 91.3046, 17.3566, 99.2922, 0, 102, -17.3566, 99.2922, -33.8429, 91.3046, -48.6322, 78.4378, -60.9829, 61.3369, -70.2756, 40.8594, -76.0444, 18.0323, -78, -6, -76.0444, -30.0323, -70.2756, -52.8594, -60.9829, -73.3369, -48.6322, -90.4378, -33.8429, -103.305, -17.3566, -111.292, 0, -114, 17.3566, -111.292, 33.8429, -103.305, 48.6322, -90.4378, 60.9829, -73.3369, 70.2756, -52.8594, 76.0444, -30.0323)
+
+[node name="Rim" type="Line2D" parent="Visual/GuardFx"]
+points = PackedVector2Array(78, -6, 76.0444, 18.0323, 70.2756, 40.8594, 60.9829, 61.3369, 48.6322, 78.4378, 33.8429, 91.3046, 17.3566, 99.2922, 0, 102, -17.3566, 99.2922, -33.8429, 91.3046, -48.6322, 78.4378, -60.9829, 61.3369, -70.2756, 40.8594, -76.0444, 18.0323, -78, -6, -76.0444, -30.0323, -70.2756, -52.8594, -60.9829, -73.3369, -48.6322, -90.4378, -33.8429, -103.305, -17.3566, -111.292, 0, -114, 17.3566, -111.292, 33.8429, -103.305, 48.6322, -90.4378, 60.9829, -73.3369, 70.2756, -52.8594, 76.0444, -30.0323)
+width = 5.0
+default_color = Color(0.78, 0.96, 1, 0.95)
+joint_mode = 2
+closed = true
+
+[node name="Inner" type="Line2D" parent="Visual/GuardFx"]
+points = PackedVector2Array(62, -6, 59.8874, 17.2937, 53.6936, 39, 43.8406, 57.6396, 31, 71.9423, 16.0468, 80.9333, 0, 84, -16.0468, 80.9333, -31, 71.9423, -43.8406, 57.6396, -53.6936, 39, -59.8874, 17.2937, -62, -6, -59.8874, -29.2937, -53.6936, -51, -43.8406, -69.6396, -31, -83.9423, -16.0468, -92.9333, 0, -96, 16.0468, -92.9333, 31, -83.9423, 43.8406, -69.6396, 53.6936, -51, 59.8874, -29.2937)
+width = 2.0
+default_color = Color(1, 1, 1, 0.55)
+closed = true
+
+[node name="Gleam" type="Polygon2D" parent="Visual/GuardFx"]
+color = Color(1, 1, 1, 0.45)
+polygon = PackedVector2Array(-18, -92, 18, -92, 10, -78, -10, -78)
 
 [node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+libraries = {
+&"": SubResource("AnimationLibrary_fighter")
+}
 
 [node name="UI" type="Node2D" parent="."]
 position = Vector2(-190, -220)

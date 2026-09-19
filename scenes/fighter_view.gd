@@ -18,8 +18,21 @@ const ICON_GAP := 4
 ## 改前暴击粒子数，测试拿它对照“大爆炸”。
 const LEGACY_CRIT_AMOUNT := 28
 
+@onready var visual: Node2D = $Visual
 @onready var sprite: Sprite2D = $Visual/Sprite2D
+@onready var _afterimages: Node2D = $Visual/Afterimages
+@onready var _ghosts: Array[Sprite2D] = [
+	$Visual/Afterimages/Ghost0,
+	$Visual/Afterimages/Ghost1,
+]
+@onready var _crit_fx: CPUParticles2D = $Visual/CritFx
+@onready var _poison_fx: CPUParticles2D = $Visual/PoisonFx
+@onready var _paralyze_fx: CPUParticles2D = $Visual/ParalyzeFx
+@onready var _stun_fx: Node2D = $Visual/StunFx
+@onready var _skull_fx: Node2D = $Visual/SkullFx
+@onready var _guard_fx: Node2D = $Visual/GuardFx
 @onready var anim_player: AnimationPlayer = $AnimationPlayer
+@onready var ui: Node2D = $UI
 @onready var status_row: HBoxContainer = $UI/StatusRow
 @onready var name_label: Label = $UI/StatusRow/NameLabel
 @onready var hp_wrap: Control = $UI/StatusRow/HpWrap
@@ -30,78 +43,36 @@ const LEGACY_CRIT_AMOUNT := 28
 @onready var tip_panel: PanelContainer = $UI/TipPanel
 @onready var tip_label: Label = $UI/TipPanel/TipLabel
 @onready var slash: Polygon2D = $Visual/Slash
+@onready var _overlays: Array[Node2D] = [_stun_fx, _skull_fx, _guard_fx]
+@onready var _bursts: Array[CPUParticles2D] = [_crit_fx, _poison_fx, _paralyze_fx]
 
 ## 三种姿势的立绘，bind 时一次性生成好，播动画时直接换。
 var _idle_tex: Texture2D
 var _attack_tex: Texture2D
 var _hurt_tex: Texture2D
-## 节点一开始所在的位置，动画结束后要归位。
-var _home: Vector2 = Vector2.ZERO
-## 暴击的金色大爆炸粒子。
-var _crit_fx: CPUParticles2D
-## 中毒的红色粒子（和治疗绿粒子区分开）。
-var _poison_fx: CPUParticles2D
-## 麻痹的黄色粒子。
-var _paralyze_fx: CPUParticles2D
-## 混乱头顶眩晕。
-var _stun_fx: Node2D
-## 幻影刺杀盖在身上的红 X 骷髅。
-var _skull_fx: Node2D
-## 绝对防御罩子。
-var _guard_fx: Node2D
-## 闪避 / 凌波微步的重影容器，不含本体。
-var _afterimages: Node2D
+## 场景实例最初的变换。常驻复用时，reset_view 要连外层变换一起还原。
+var _home_transform := Transform2D.IDENTITY
 ## 各路特效正在跑的 Tween，按名字存一份。同名的新特效来了要先把旧的 kill 掉，
 ## 否则两个会抢着改同一个属性（染色最明显）；换人时 _hide_transient_fx 一把全停。
 var _tweens: Dictionary = {}
-## 盖在身上的覆盖特效（眩晕、骷髅、罩子）。换人时统一收起来，
-## 加一种覆盖特效只要建好挂进这个数组，不用再往 _hide_transient_fx 里补一行。
-var _overlays: Array[Node2D] = []
-## 一次性爆发粒子。换人时统一停喷。
-var _bursts: Array[CPUParticles2D] = []
+## 治疗粒子仍需按次数动态实例化；单独记住，reset_view 才能中途回收干净。
+var _heal_fx_instances: Array[CPUParticles2D] = []
 
 
 func _ready() -> void:
-	_home = position
-	_build_animations()
-	# 刀光平时藏着，出招动画里才亮一下。剑形砍向面朝方向（即对手）。
-	slash.visible = false
-	slash.polygon = PackedVector2Array([
-		Vector2(10, -4), Vector2(18, -14), Vector2(118, -38), Vector2(136, -8),
-		Vector2(118, 22), Vector2(18, 12), Vector2(10, 4), Vector2(0, 6),
-		Vector2(-8, 2), Vector2(-8, -2), Vector2(0, -6),
-	])
-	slash.color = CombatFx.SLASH_COLOR
-	# 粒子 / 重影 / 眩晕 / 骷髅只建一次，之后反复 restart。中毒和麻痹共用爆发构建。
-	_crit_fx = CombatFx.make_burst(CombatFx.CRIT_COLOR, CombatFx.CRIT_AMOUNT, Vector2(0, 90), 9.0)
-	_crit_fx.name = "CritFx"
-	_poison_fx = CombatFx.make_burst(CombatFx.POISON_COLOR, CombatFx.STATUS_AMOUNT, Vector2(0, 40))
-	_poison_fx.name = "PoisonFx"
-	_paralyze_fx = CombatFx.make_burst(CombatFx.PARALYZE_COLOR, CombatFx.STATUS_AMOUNT, Vector2(0, 10))
-	_paralyze_fx.name = "ParalyzeFx"
-	_afterimages = Node2D.new()
-	_afterimages.name = "Afterimages"
-	# 重影垫在立绘后面，终点不透明的本体盖在最上面。
-	_afterimages.z_index = -1
-	_stun_fx = CombatFx.make_stun("StunFx")
-	_skull_fx = CombatFx.make_skull("SkullFx")
-	_guard_fx = CombatFx.make_guard("GuardFx")
-	_bursts = [_crit_fx, _poison_fx, _paralyze_fx]
-	_overlays = [_stun_fx, _skull_fx, _guard_fx]
-	$Visual.add_child(_afterimages)
-	for fx in _bursts:
-		$Visual.add_child(fx)
-	for overlay in _overlays:
-		$Visual.add_child(overlay)
+	_home_transform = transform
 	# 这几个 Label 是场景里摆好的，得单独套上中文字体。
 	for label in [name_label, hp_label, tip_label]:
 		label.add_theme_font_override("font", ThemeHelper.UI_FONT)
 	tip_panel.visible = false
+	_hide_transient_fx()
 	_play(&"idle")
 
 
 ## 把一名角色绑到这个视图上。换人时重复调用，所有状态都要复位。
 func bind(fighter: Fighter, face_left: bool) -> void:
+	anim_player.stop()
+	_hide_transient_fx()
 	# 三种姿势的立绘现场生成，擂主那张自带王冠。
 	_idle_tex = SpriteFactory.make_texture(fighter.appearance_id, "idle", fighter.is_champion)
 	_attack_tex = SpriteFactory.make_texture(fighter.appearance_id, "attack", fighter.is_champion)
@@ -118,10 +89,10 @@ func bind(fighter: Fighter, face_left: bool) -> void:
 	# 体型差放在 Visual 上而不是 Sprite2D 上：受击动画会把 Sprite2D 的 scale 压扁再弹回
 	# 固定值，写在 Sprite2D 上会被它覆盖掉。翻转也合并到这里。
 	var body := CHAMPION_BODY_SCALE if fighter.is_champion else CHALLENGER_BODY_SCALE
-	$Visual.scale = Vector2(-body if face_left else body, body)
+	visual.scale = Vector2(-body if face_left else body, body)
 	# 立绘以原点为中心，放大后脚会陷进地里、缩小后浮在半空，按半身高补回来。
 	var half_height := float(SpriteFactory.SIZE) * BASE_SPRITE_SCALE * 0.5
-	$Visual.position = Vector2(0, -half_height * (body - 1.0))
+	visual.position = Vector2(0, -half_height * (body - 1.0))
 	name_label.text = fighter.username
 	hp_bar.max_value = fighter.max_hp
 	# step=0 让血条平滑变化，不按整数档跳。
@@ -133,10 +104,8 @@ func bind(fighter: Fighter, face_left: bool) -> void:
 	call_deferred("_align_icon_rows_to_hp")
 	# 上一位可能是死着退场的（死亡动画把 modulate 调暗、转了角度）。
 	modulate = Color.WHITE
-	rotation = 0.0
-	position = _home
+	transform = _home_transform
 	visible = true
-	_hide_transient_fx()
 	_play(&"idle")
 
 
@@ -267,7 +236,7 @@ func play_dodge() -> void:
 	_play(&"dodge")
 	_after(&"dodge", 0.36, func() -> void:
 		if is_instance_valid(_afterimages):
-			NodeUtil.clear_children(_afterimages)
+			_hide_afterimages()
 	)
 
 
@@ -316,13 +285,18 @@ func play_assassinate_fx() -> void:
 
 ## 回血特效：一次性粒子场景 + 立绘泛绿后回白。吸血和治疗共用。
 func play_heal_fx() -> void:
-	var fx := HEAL_FX.instantiate()
-	$Visual.add_child(fx)
+	var fx := HEAL_FX.instantiate() as CPUParticles2D
+	visual.add_child(fx)
+	_heal_fx_instances.append(fx)
 	fx.restart()
 	fx.emitting = true
 	# 粒子播完自己删掉，不然一场下来会攒一堆节点。
 	# 这条计时故意不具名：两次治疗挨得近时，新的一条不能把上一个 fx 的回收计时顶掉。
-	_after(&"", 0.7, fx.queue_free)
+	_after(&"", 0.7, func() -> void:
+		_heal_fx_instances.erase(fx)
+		if is_instance_valid(fx):
+			fx.queue_free()
+	)
 	_tint(CombatFx.HEAL_TINT, 0.35, false)
 
 
@@ -362,6 +336,45 @@ func _after(key: StringName, seconds: float, action: Callable) -> Tween:
 	return tween
 
 
+## 把常驻视图还原成“尚未绑定角色”的场景状态并隐藏。
+## battle 在下一轮直接复用同一实例，因此动态节点、动画写过的属性和特效都必须在这里收口。
+func reset_view() -> void:
+	anim_player.stop()
+	_hide_transient_fx()
+	for fx in _heal_fx_instances:
+		if is_instance_valid(fx):
+			fx.emitting = false
+			fx.visible = false
+			fx.queue_free()
+	_heal_fx_instances.clear()
+	NodeUtil.clear_children(buff_row)
+	NodeUtil.clear_children(skill_row)
+	_idle_tex = null
+	_attack_tex = null
+	_hurt_tex = null
+	transform = _home_transform
+	modulate = Color.WHITE
+	visual.transform = Transform2D.IDENTITY
+	visual.modulate = Color.WHITE
+	visual.visible = true
+	sprite.texture = null
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	sprite.flip_h = false
+	sprite.position = Vector2.ZERO
+	sprite.rotation = 0.0
+	sprite.scale = Vector2(BASE_SPRITE_SCALE, BASE_SPRITE_SCALE)
+	sprite.modulate = Color.WHITE
+	sprite.visible = true
+	ui.visible = true
+	name_label.text = "—"
+	hp_bar.max_value = 1.0
+	hp_bar.value = 0.0
+	hp_label.text = "0 / 0"
+	tip_label.text = ""
+	tip_panel.visible = false
+	visible = false
+
+
 ## 测试拿它核对五种动画都建出来了。直接问 AnimationPlayer 要，
 ## 而不是另抄一份名字——抄的那份可以在动画库其实是空的时候照样通过。
 func animation_names() -> PackedStringArray:
@@ -370,20 +383,23 @@ func animation_names() -> PackedStringArray:
 
 ## 当前显示身宽（像素），闪避位移按它的 1 倍算。
 func displayed_body_width() -> float:
-	return CombatFx.displayed_body_width($Visual.scale.x)
+	return CombatFx.displayed_body_width(visual.scale.x)
 
 
 ## 含本体在内的重影个数。闪避播放后应为 3。
 func dodge_ghost_count() -> int:
-	return 1 + _afterimages.get_child_count()
+	var visible_ghosts := 0
+	for ghost in _ghosts:
+		if ghost.visible:
+			visible_ghosts += 1
+	return 1 + visible_ghosts
 
 
 ## 换人前把所有还在跑的特效收干净：具名 Tween 全停，覆盖层全收起，粒子全停喷。
 func _hide_transient_fx() -> void:
 	for key in _tweens.keys():
 		_kill(key)
-	if _afterimages:
-		NodeUtil.clear_children(_afterimages)
+	_hide_afterimages()
 	for overlay in _overlays:
 		if is_instance_valid(overlay):
 			overlay.visible = false
@@ -393,7 +409,31 @@ func _hide_transient_fx() -> void:
 	for fx in _bursts:
 		if is_instance_valid(fx):
 			fx.emitting = false
+			fx.visible = false
+	slash.visible = false
+	slash.position = Vector2.ZERO
+	slash.rotation = 0.0
+	slash.scale = Vector2.ONE
+	slash.modulate = Color.WHITE
+	slash.color = CombatFx.SLASH_COLOR
 	sprite.modulate = Color.WHITE
+
+
+## 重影是场景内固定的两张 Sprite2D；收起时只清运行时贴图和变换，不删节点。
+func _hide_afterimages() -> void:
+	for i in _ghosts.size():
+		var ghost := _ghosts[i]
+		ghost.visible = false
+		ghost.texture = null
+		ghost.flip_h = false
+		ghost.position = Vector2.ZERO
+		ghost.rotation = 0.0
+		ghost.scale = Vector2.ONE
+		ghost.modulate = Color(1.0, 1.0, 1.0, lerpf(
+			CombatFx.DODGE_START_ALPHA,
+			CombatFx.DODGE_END_ALPHA,
+			float(i) / float(CombatFx.AFTERIMAGE_EXTRAS),
+		))
 
 
 func _hide_stun() -> void:
@@ -407,13 +447,5 @@ func _stop_burst_later(key: StringName, particles: CPUParticles2D) -> void:
 	_after(key, particles.lifetime, func() -> void:
 		if is_instance_valid(particles):
 			particles.emitting = false
+			particles.visible = false
 	)
-
-
-## 五种动画全部用代码建（关键帧在 FighterAnims 里），场景文件里不存动画数据。
-## 已经建过就直接返回（场景被复用时会重复调）。
-func _build_animations() -> void:
-	if anim_player.has_animation(&"idle"):
-		return
-	# 空字符串表示默认库，动画名前面就不用带库名前缀。
-	anim_player.add_animation_library(&"", FighterAnims.library(BASE_SPRITE_SCALE))

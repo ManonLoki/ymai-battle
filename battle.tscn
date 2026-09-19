@@ -1,9 +1,10 @@
-[gd_scene load_steps=6 format=3 uid="uid://pl4j5r38is58"]
+[gd_scene load_steps=7 format=3 uid="uid://pl4j5r38is58"]
 
 [ext_resource type="Script" path="res://battle.gd" id="1_battle"]
 [ext_resource type="Script" path="res://scripts/battle_parallax.gd" id="2_parallax"]
 [ext_resource type="Shader" path="res://shaders/battle_parallax.gdshader" id="3_shader"]
 [ext_resource type="Texture2D" path="res://assets/battle_backgrounds/ember_forge.png" id="4_preview"]
+[ext_resource type="PackedScene" path="res://scenes/fighter_view.tscn" id="5_fighter"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_battle_parallax"]
 shader = ExtResource("3_shader")
@@ -73,9 +74,17 @@ layer = 1
 unique_name_in_owner = true
 position = Vector2(320, 330)
 
+[node name="ChampionView" parent="Fighters/ChampionSlot" instance=ExtResource("5_fighter")]
+unique_name_in_owner = true
+visible = false
+
 [node name="OpponentSlot" type="Marker2D" parent="Fighters"]
 unique_name_in_owner = true
 position = Vector2(960, 330)
+
+[node name="OpponentView" parent="Fighters/OpponentSlot" instance=ExtResource("5_fighter")]
+unique_name_in_owner = true
+visible = false
 
 [node name="VsLabel" type="Label" parent="Fighters"]
 offset_left = 590.0
@@ -205,6 +214,13 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
+
+[node name="RecordEmptyLabel" type="Label" parent="HUD/Margin/VBox/BottomRow/RecordPanel/RecordMargin/RecordBox/RecordScroll/RecordList"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+theme_override_font_sizes/font_size = 15
+text = "还没有人打完一场"
 
 [node name="ResultPanel" type="PanelContainer" parent="HUD"]
 unique_name_in_owner = true

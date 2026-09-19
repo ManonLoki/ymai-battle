@@ -2,7 +2,8 @@ extends Control
 
 ## 设置页：窗口模式 + 榜单服务器地址。
 ##
-## 三个模式按钮是按 AppSettings.MODES 现生成的，加一种模式只要动那份清单。
+## 三个模式按钮和说明文字都预置在 settings.tscn，编辑器里能直接看到完整布局；
+## 脚本只把它们绑定到 AppSettings 的模式值，并用 AppSettings 的文案刷新显示。
 ## 选中的那个用实心主按钮样式，一眼能看出当前是哪种。
 ##
 ## 服务器地址那一栏只管收和存，格式怎么算合法、存到哪儿全在 AppSettings；
@@ -31,9 +32,9 @@ func _ready() -> void:
 	ThemeHelper.style_back_button(%BackButton)
 	%BackButton.pressed.connect(_on_back_pressed)
 	_mode = AppSettings.load_mode()
-	_build_mode_buttons()
+	_bind_mode_controls()
 	_refresh_highlight()
-	_build_server_section()
+	_bind_server_controls()
 	# 电视上没有鼠标，一进来就得有个控件拿着焦点；给当前选中的那个。
 	var focused: Button = _buttons.get(_mode)
 	if focused != null:
@@ -56,18 +57,31 @@ func _unhandled_input(event: InputEvent) -> void:
 		TvRemote.ensure_focus(%BackButton)
 
 
-## 按 AppSettings.MODES 的顺序摆一排按钮，每个下面跟一行说明。
-func _build_mode_buttons() -> void:
-	NodeUtil.clear_children(%ModeList)
-	_buttons.clear()
+## 把场景里的三个固定按钮及说明绑定到对应模式。文字仍以 AppSettings 为准，
+## 避免场景预览文案和真正运行时的模式定义各维护一套。
+func _bind_mode_controls() -> void:
+	_buttons = {
+		AppSettings.Mode.WINDOWED: %WindowedButton,
+		AppSettings.Mode.MAXIMIZED: %MaximizedButton,
+		AppSettings.Mode.FULLSCREEN: %FullscreenButton,
+	}
+	var descriptions := {
+		AppSettings.Mode.WINDOWED: %WindowedDescription,
+		AppSettings.Mode.MAXIMIZED: %MaximizedDescription,
+		AppSettings.Mode.FULLSCREEN: %FullscreenDescription,
+	}
 	for mode in AppSettings.MODES:
-		var button := Button.new()
+		var button := _buttons.get(mode) as Button
+		var description := descriptions.get(mode) as Label
+		if button == null or description == null:
+			push_warning("设置页缺少窗口模式控件：%s" % AppSettings.mode_display_name(mode))
+			continue
 		button.text = AppSettings.mode_display_name(mode)
+		description.text = AppSettings.mode_description(mode)
+		description.add_theme_color_override("font_color", ThemeHelper.MUTED)
+		description.add_theme_font_size_override("font_size", NOTE_FONT_PX)
 		# bind 把模式带进回调，三个按钮共用同一个处理函数。
 		button.pressed.connect(_on_mode_pressed.bind(mode))
-		%ModeList.add_child(button)
-		_buttons[mode] = button
-		%ModeList.add_child(ThemeHelper.make_label(AppSettings.mode_description(mode), ThemeHelper.MUTED, NOTE_FONT_PX))
 
 
 ## 选中的那个是实心主按钮，其余走描边。样式里带着最小尺寸，所以每次都要重套。
@@ -84,10 +98,10 @@ func _on_mode_pressed(mode: int) -> void:
 	_refresh_highlight()
 
 
-## 服务器那一栏：输入框 + 保存 + 还原默认 + 一行状态。
+## 绑定场景里的服务器输入框、保存、还原默认和状态行。
 ## 说明里的格式示例直接取 AppSettings.SERVER_PLACEHOLDER，
 ## 免得界面上写一套、校验按另一套。
-func _build_server_section() -> void:
+func _bind_server_controls() -> void:
 	%ServerTitle.add_theme_color_override("font_color", ThemeHelper.TEXT)
 	%ServerHint.add_theme_color_override("font_color", ThemeHelper.MUTED)
 	%ServerHint.add_theme_font_size_override("font_size", NOTE_FONT_PX)

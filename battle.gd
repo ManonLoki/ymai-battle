@@ -7,7 +7,6 @@ extends Node2D
 ## 每轮开打前都要重新取一次系统日期（见 _sync_record_to_today）。
 
 const MAIN_SCENE := "res://main.tscn"
-const FIGHTER_VIEW := preload("res://scenes/fighter_view.tscn")
 ## 一场打完之后隔多久自动开下一轮。拉名单失败时也按这个间隔重试。
 const NEXT_ROUND_DELAY := 60.0
 ## 人数不够时的说明，状态栏和结果面板用的是同一句。
@@ -24,8 +23,8 @@ var _rng: RollSource
 var _tally: DamageTally
 ## 当天的场次和榜一战绩，存在 user:// 里，退出重进接着算。
 var _record: RoundRecord
-var _champion_view: FighterView
-var _opponent_view: FighterView
+@onready var _champion_view: FighterView = %ChampionView
+@onready var _opponent_view: FighterView = %OpponentView
 ## 演出协程正在跑。测试靠它确认循环能自己收手。
 var _busy := false
 ## 玩家中途点“返回”时场景会立刻被释放，但 _run_loop / _play_event 还挂在 await 上。
@@ -33,6 +32,8 @@ var _busy := false
 var _leaving := false
 ## 测试用：设成 true 就不自动开打，由测试自己喂名单。
 var skip_autoload := false
+## 默认写正式战绩；测试会在节点进树前改到独立文件，避免污染真实 user:// 存档。
+var record_path := RoundRecord.SAVE_PATH
 
 
 func _ready() -> void:
@@ -63,9 +64,11 @@ func _ready() -> void:
 	log_box.content_margin_bottom = 10
 	%Log.add_theme_stylebox_override("normal", log_box)
 	%RecordTitle.add_theme_color_override("font_color", ThemeHelper.MUTED)
+	%RecordEmptyLabel.add_theme_color_override("font_color", ThemeHelper.MUTED)
 	# 透明底板会随背景明暗变化，2px 深色字边保证战报和榜单标题始终清楚。
 	ThemeHelper.style_readable_text(%Log)
 	ThemeHelper.style_readable_text(%RecordTitle)
+	ThemeHelper.style_readable_text(%RecordEmptyLabel)
 	# 先读一次当天战绩。_record 还是 null，所以这一句就是首次加载；
 	# 之后跨天再调它，换成新一天的。
 	_sync_record_to_today()
@@ -148,7 +151,7 @@ func _sync_record_to_today() -> void:
 	if _record != null and not DayClock.rolled_over(_record.date):
 		return
 	# load_for 读到的存档日期对不上就会返回一份空记录，正好是我们要的。
-	_record = RoundRecord.load_for(DayClock.today())
+	_record = RoundRecord.load_for(DayClock.today(), record_path)
 	_refresh_record_board()
 
 
@@ -182,12 +185,9 @@ func _reset_for_next_round() -> void:
 	%RemainingLabel.text = "右侧剩余 —"
 	# 上一轮可能因为报错把状态栏染红了，去掉覆盖回到默认色。
 	%Status.remove_theme_color_override("font_color")
-	# 两位角色的视图整个丢掉重建，省得逐项复位。
-	for slot in [%ChampionSlot, %OpponentSlot]:
-		# 立绘上可能还挂着没跑完的演出协程，延后释放才不会让它碰到空节点。
-		NodeUtil.clear_children(slot, true)
-	_champion_view = null
-	_opponent_view = null
+	# 两个固定视图留在场景树里；各自收掉动画、Tween 和本轮动态内容后隐藏。
+	_champion_view.reset_view()
+	_opponent_view.reset_view()
 	_war = null
 	_rng = null
 	_tally = null
@@ -230,11 +230,8 @@ func _start_war(ranked: Array[RankedUser]) -> void:
 	_tally = DamageTally.new()
 	_war = WheelWar.new()
 	_war.setup(ranked, _rng)
+	# 两个 FighterView 是场景内的固定实例；这里只绑定本轮动态角色数据。
 	# 擂主固定在左边，face_left=false 表示朝右看着对手。
-	_champion_view = FIGHTER_VIEW.instantiate()
-	%ChampionSlot.add_child(_champion_view)
-	_opponent_view = FIGHTER_VIEW.instantiate()
-	%OpponentSlot.add_child(_opponent_view)
 	_champion_view.bind(_war.champion, false)
 	_bind_current_opponent()
 	_update_hud()
@@ -429,7 +426,7 @@ func _await_oneshot(player: AnimationPlayer) -> void:
 ## 记一场并立刻落盘，中途关掉 app 也不丢，然后把右侧榜刷新到最新。
 func _commit_record(champion_won: bool) -> void:
 	_record.record_round(_war.champion.username, champion_won)
-	_record.save()
+	_record.save(record_path)
 	_refresh_record_board()
 
 

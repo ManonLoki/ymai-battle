@@ -19,10 +19,12 @@ extends SceneTree
 
 ## 失败的断言说明，跑完统一报。为的是一次运行能看到全部问题。
 var _failures: PackedStringArray = PackedStringArray()
+const TEST_BATTLE_RECORD_PATH := "user://test_battle_daily_rounds.json"
 
 
 ## SceneTree 的入口。延到下一帧再跑，让引擎先把 autoload 和 class_name 装好。
 func _initialize() -> void:
+	_remove_test_battle_record()
 	_run.call_deferred()
 
 
@@ -60,6 +62,7 @@ func _run() -> void:
 	_test_no_medals()
 	_test_icons_and_layout()
 	_export_character_pngs()
+	_remove_test_battle_record()
 	if _failures.is_empty():
 		print("ALL_ASSERTIONS_PASSED")
 		quit(0)
@@ -78,6 +81,12 @@ func _assert(cond: bool, msg: String) -> void:
 	else:
 		_failures.append(msg)
 		printerr("FAIL: ", msg)
+
+
+## 场景演出测试会真的走保存逻辑；统一清理隔离文件，绝不碰正式 daily_rounds.json。
+func _remove_test_battle_record() -> void:
+	if FileAccess.file_exists(TEST_BATTLE_RECORD_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_BATTLE_RECORD_PATH))
 
 
 ## 聚合器：同一个人在多台设备、多个渠道上的流水要并成一条，
@@ -1391,7 +1400,7 @@ func _test_settings() -> void:
 	_assert(AppSettings.window_mode_for(AppSettings.Mode.MAXIMIZED) == DisplayServer.WINDOW_MODE_MAXIMIZED, "maximized maps to WINDOW_MODE_MAXIMIZED")
 	_assert(AppSettings.window_mode_for(AppSettings.Mode.FULLSCREEN) == DisplayServer.WINDOW_MODE_FULLSCREEN, "fullscreen maps to WINDOW_MODE_FULLSCREEN")
 
-	# 场景本身：三个模式按钮是按 MODES 现生成的，加一种模式不用改界面。
+	# 场景本身：三个固定模式按钮都在设计器节点树里，运行时只绑定模式数据。
 	var packed := load("res://settings.tscn") as PackedScene
 	_assert(packed != null, "settings.tscn loads")
 	var scene: Node = packed.instantiate()
@@ -1405,6 +1414,11 @@ func _test_settings() -> void:
 		if child is Button:
 			buttons += 1
 	_assert(buttons == AppSettings.MODES.size(), "every window mode gets a button (%d)" % buttons)
+	_assert(scene.get_node_or_null("%WindowedButton") != null, "windowed mode button is scene-authored")
+	_assert(scene.get_node_or_null("%MaximizedButton") != null, "maximized mode button is scene-authored")
+	_assert(scene.get_node_or_null("%FullscreenButton") != null, "fullscreen mode button is scene-authored")
+	var settings_src := FileAccess.get_file_as_string("res://settings.gd")
+	_assert(settings_src.find("Button.new") < 0 and settings_src.find("%ModeList.add_child") < 0, "settings binds fixed mode controls without constructing them in code")
 	# 服务器那一栏：输入框 + 保存 + 还原默认 + 一行说明当前用的是哪台。
 	var input := scene.get_node_or_null("%ServerInput") as LineEdit
 	_assert(input != null, "Settings has a server address field")
@@ -1533,18 +1547,33 @@ func _test_main_parallax_and_quit() -> void:
 	_assert(backdrop != null, "main has a parallax backdrop")
 	_assert(backdrop.layers.size() >= 2, "backdrop has at least two image layers")
 	var images: Array[Image] = []
-	for layer in backdrop.layers:
+	for layer_index in backdrop.layers.size():
+		var layer := backdrop.layers[layer_index]
 		var sprite := _first_sprite(layer)
 		_assert(sprite != null and sprite.texture != null, "parallax layer loads a texture")
 		var img := sprite.texture.get_image()
 		_assert(img != null and _opaque_count(img) > 0, "parallax layer has opaque pixels")
 		images.append(img)
+		var layer_sprites: Array[Sprite2D] = []
+		for child in layer.get_children():
+			if child is Sprite2D:
+				layer_sprites.append(child as Sprite2D)
+		_assert(layer_sprites.size() == 2, "each parallax layer keeps exactly two scene-authored sprites")
+		if layer_sprites.size() == 2:
+			_assert(layer_sprites[0].texture == layer_sprites[1].texture and layer_sprites[0].texture != null, "both copies in a parallax layer share the designed texture")
+			var gap := layer_sprites[1].position.x - layer_sprites[0].position.x
+			_assert(is_equal_approx(gap, backdrop.wrap_widths[layer_index]), "the second parallax copy begins exactly one wrap width later")
 	_assert(images.size() >= 2 and _images_differ(images[0], images[1]), "two layer images are not pixel-identical")
 	var tscn := FileAccess.get_file_as_string("res://main.tscn")
 	var parallax_src := FileAccess.get_file_as_string("res://scripts/menu_parallax.gd")
 	_assert(tscn.find("ParallaxBackdrop") >= 0, "main scene references the parallax backdrop")
-	_assert(parallax_src.find("res://assets/backgrounds/far.png") >= 0, "far background image is referenced")
-	_assert(parallax_src.find("res://assets/backgrounds/mid.png") >= 0, "mid background image is referenced")
+	_assert(tscn.find("res://assets/backgrounds/far.png") >= 0, "far background image is scene-authored")
+	_assert(tscn.find("res://assets/backgrounds/mid.png") >= 0, "mid background image is scene-authored")
+	_assert(tscn.find("res://assets/backgrounds/near.png") >= 0, "near background image is scene-authored")
+	_assert(main.get_node_or_null("%FarLayer") != null and main.get_node("%FarLayer").get_child_count() == 2, "far parallax layer and both sprites are visible in the scene tree")
+	_assert(main.get_node_or_null("%MidLayer") != null and main.get_node("%MidLayer").get_child_count() == 2, "mid parallax layer and both sprites are visible in the scene tree")
+	_assert(main.get_node_or_null("%NearLayer") != null and main.get_node("%NearLayer").get_child_count() == 2, "near parallax layer and both sprites are visible in the scene tree")
+	_assert(parallax_src.find("Node2D.new") < 0 and parallax_src.find("Sprite2D.new") < 0 and parallax_src.find("add_child") < 0, "parallax script only lays out existing scene nodes")
 
 	var before: Array[Vector2] = []
 	for layer in backdrop.layers:
@@ -1633,6 +1662,7 @@ func _test_battle_and_ranking_backgrounds() -> void:
 
 	var battle := (load("res://battle.tscn") as PackedScene).instantiate()
 	battle.skip_autoload = true
+	battle.record_path = TEST_BATTLE_RECORD_PATH
 	root.add_child(battle)
 	await process_frame
 	var backdrop := battle.get_node_or_null("%BattleBackground") as BattleParallax
@@ -1697,7 +1727,7 @@ func _test_battle_and_ranking_backgrounds() -> void:
 		if row_label != null and row_label.get_theme_constant("outline_size") >= 2:
 			has_readable_record_row = true
 			break
-	_assert(has_readable_record_row, "dynamic round standings text gets the same readability outline")
+	_assert(has_readable_record_row, "round standings text gets the same readability outline")
 	battle.queue_free()
 	await process_frame
 
@@ -1706,6 +1736,21 @@ func _test_battle_and_ranking_backgrounds() -> void:
 	var ranking_scrim := ranking.get_node_or_null("%RankingScrim") as ColorRect
 	var content_panel := ranking.get_node_or_null("%ContentPanel") as Panel
 	var margin := ranking.get_node("Margin") as MarginContainer
+	var ranking_grid := ranking.get_node("%Grid") as GridContainer
+	_assert(ranking_grid.get_child_count() == 4, "ranking keeps its four fixed header labels in the scene tree")
+	_assert((ranking_grid.get_child(0) as Label).text == "#" and (ranking_grid.get_child(3) as Label).text == "Token / 战力", "ranking static headers keep their designed order")
+	var fixed_headers := ranking_grid.get_children()
+	var first_rows: Array[RankedUser] = [_ranked("静态表头甲", 20)]
+	ranking._render("2026-09-19", first_rows)
+	_assert(ranking_grid.get_child_count() == 8, "one ranking result appends four cells after the static header")
+	var headers_survive := true
+	for i in 4:
+		headers_survive = headers_survive and ranking_grid.get_child(i) == fixed_headers[i]
+	_assert(headers_survive, "rendering keeps the original four header nodes")
+	var second_rows: Array[RankedUser] = [_ranked("静态表头乙", 30), _ranked("静态表头丙", 10)]
+	ranking._render("2026-09-20", second_rows)
+	_assert(ranking_grid.get_child_count() == 12, "rerender replaces old data cells without duplicating the static header")
+	_assert((ranking_grid.get_child(0) as Label).text == "#" and (ranking_grid.get_child(3) as Label).text == "Token / 战力", "header order survives repeated renders")
 	_assert(ranking_backdrop != null and ranking_backdrop.texture != null, "ranking scene loads its illustrated hall")
 	if ranking_backdrop != null and ranking_backdrop.texture != null:
 		var hall := ranking_backdrop.texture.get_image()
@@ -1826,6 +1871,14 @@ func _test_fighter_anims() -> void:
 	_assert(view.anim_player.has_animation(&"hurt"), "hurt animation is playable")
 	_assert(view.anim_player.has_animation(&"dodge"), "dodge animation is playable")
 	_assert(view.has_method("play_crit_fx") and view.has_method("play_poison_fx") and view.has_method("play_heal_fx") and view.has_method("play_dodge"), "fighter view exposes crit/dodge/poison/heal fx")
+	var fighter_tscn := FileAccess.get_file_as_string("res://scenes/fighter_view.tscn")
+	var fighter_src := FileAccess.get_file_as_string("res://scenes/fighter_view.gd")
+	var combat_fx_src := FileAccess.get_file_as_string("res://scripts/combat_fx.gd")
+	_assert(fighter_tscn.find("AnimationLibrary") >= 0 and fighter_tscn.find("Animation_dodge") >= 0, "fighter animations are serialized in the scene")
+	_assert(view.get_node("Visual/Afterimages").get_child_count() == CombatFx.AFTERIMAGE_EXTRAS, "fixed afterimage sprites are visible in the scene tree")
+	_assert(view.get_node_or_null("Visual/CritFx") != null and view.get_node_or_null("Visual/GuardFx/Gleam") != null, "fixed combat FX are visible in the scene tree")
+	_assert(fighter_src.find("_build_animations") < 0 and combat_fx_src.find("CPUParticles2D.new") < 0 and combat_fx_src.find("Sprite2D.new") < 0, "fighter scripts reuse scene-authored animations and FX nodes")
+	_assert(not FileAccess.file_exists("res://scripts/fighter_anims.gd"), "obsolete runtime animation builder is removed")
 	_assert(SpriteFactory.COUNT >= 12, "appearance pool has at least 12 looks")
 	var user := _ranked("anim", 10, AgentChannels.CHANNEL_CODEX)
 	var fighter := Fighter.from_ranked(user, true)
@@ -1920,6 +1973,10 @@ func _test_fighter_anims() -> void:
 	_assert(is_equal_approx(view.sprite.modulate.a, CombatFx.DODGE_END_ALPHA) or view.sprite.modulate.a >= 0.99, "the body at the dodge end is opaque")
 	_assert(absf(absf(mid_ghost.position.x) - dodge_x * 0.5) <= 1.0, "mid afterimage sits halfway to the dodge end")
 	_assert(is_equal_approx(view.displayed_body_width(), CombatFx.displayed_body_width(view.get_node("Visual").scale.x)), "displayed body width matches the shared helper")
+	view.reset_view()
+	_assert(not view.visible and view.sprite.texture == null, "reset hides the persistent fighter view and clears its runtime portrait")
+	_assert(view.buff_row.get_child_count() == 0 and view.skill_row.get_child_count() == 0, "reset clears runtime buff and skill icons")
+	_assert(trail.get_child_count() == CombatFx.AFTERIMAGE_EXTRAS and view.dodge_ghost_count() == 1, "reset hides but preserves the two scene-authored afterimage nodes")
 	view.queue_free()
 	await process_frame
 
@@ -2368,9 +2425,11 @@ func _has_gold_crown(image: Image) -> bool:
 ## 整场演出跑通，战报正序排列；并且中途把场景摘走时，
 ## 挂在 await 上的播放协程能自己收手，不会去碰已经没了的场景树。
 func _test_battle_playback() -> void:
+	_remove_test_battle_record()
 	var packed := load("res://battle.tscn") as PackedScene
 	var battle: Node = packed.instantiate()
 	battle.skip_autoload = true
+	battle.record_path = TEST_BATTLE_RECORD_PATH
 	root.add_child(battle)
 	await process_frame
 	var ranked: Array[RankedUser] = [_ranked("champ", 400)]
@@ -2393,6 +2452,7 @@ func _test_battle_playback() -> void:
 	# 这里确认它能安全收手，而不是对着已经离开场景树的节点调 get_tree()。
 	var quitter: Node = packed.instantiate()
 	quitter.skip_autoload = true
+	quitter.record_path = TEST_BATTLE_RECORD_PATH
 	root.add_child(quitter)
 	await process_frame
 	var short_roster: Array[RankedUser] = [_ranked("champ", 400000000, AgentChannels.CHANNEL_CODEX)]
@@ -2423,9 +2483,11 @@ func _test_battle_playback() -> void:
 
 ## 结果面板的胜负文案和 MVP 评选，赢和输两种都要评。
 func _test_result_copy() -> void:
+	_remove_test_battle_record()
 	var packed := load("res://battle.tscn") as PackedScene
 	var battle: Node = packed.instantiate()
 	battle.skip_autoload = true
+	battle.record_path = TEST_BATTLE_RECORD_PATH
 	root.add_child(battle)
 	await process_frame
 	var win_ranked: Array[RankedUser] = [_ranked("甲", 50), _ranked("乙", 10)]
@@ -2624,9 +2686,11 @@ func _test_damage_tally() -> void:
 
 ## 一场打完 → 倒计时 → 清场，准备重新拉名单开下一轮。
 func _test_next_round_cycle() -> void:
+	_remove_test_battle_record()
 	var packed := load("res://battle.tscn") as PackedScene
 	var battle: Node = packed.instantiate()
 	battle.skip_autoload = true
+	battle.record_path = TEST_BATTLE_RECORD_PATH
 	root.add_child(battle)
 	await process_frame
 	_assert(battle.NEXT_ROUND_DELAY == 60.0, "打完一分钟后自动开下一轮")
@@ -2635,6 +2699,10 @@ func _test_next_round_cycle() -> void:
 	_assert(battle_src.find("await _load_and_run()") >= 0, "下一轮重新拉一次今日名单")
 	var ranked: Array[RankedUser] = [_ranked("甲", 5000), _ranked("乙", 300), _ranked("丙", 300)]
 	var round_backdrop := battle.get_node("%BattleBackground") as BattleParallax
+	var champion_view := battle.get_node("%ChampionView") as FighterView
+	var opponent_view := battle.get_node("%OpponentView") as FighterView
+	var champion_view_id := champion_view.get_instance_id()
+	var opponent_view_id := opponent_view.get_instance_id()
 	_assert(round_backdrop.current_index == -1, "尚未真正开战时背景还没有消耗一次 Round roll")
 	await battle._start_war(ranked)
 	_assert(round_backdrop.current_index >= 0, "每次真正进入 _start_war 都会 Roll 一张背景")
@@ -2650,8 +2718,15 @@ func _test_next_round_cycle() -> void:
 	battle._reset_for_next_round()
 	_assert(battle.get_node("%Log").get_parsed_text().is_empty(), "新一轮开始前战报清空")
 	_assert(not battle.get_node("%ResultPanel").visible, "新一轮开始前结果面板收起")
-	_assert(battle.get_node("%ChampionSlot").get_child_count() == 0, "上一场的角色被清掉")
+	_assert(battle.get_node("%ChampionSlot").get_child_count() == 1, "固定擂主视图留在场景树里")
+	_assert(not battle.get_node("%ChampionView").visible and not battle.get_node("%OpponentView").visible, "下一轮前两个固定角色视图已复位并隐藏")
 	_assert(battle._war == null and battle._tally == null, "上一场的状态被丢弃")
+	await battle._start_war(ranked)
+	_assert(champion_view.get_instance_id() == champion_view_id, "第二轮复用同一个擂主 FighterView")
+	_assert(opponent_view.get_instance_id() == opponent_view_id, "第二轮复用同一个挑战者 FighterView")
+	_assert(battle.get_node("%ChampionSlot").get_child_count() == 1, "第二轮不会向擂主 Slot 追加节点")
+	_assert(battle.get_node("%OpponentSlot").get_child_count() == 1, "第二轮不会向挑战者 Slot 追加节点")
+	_assert(champion_view.visible and champion_view.sprite.texture != null, "常驻擂主视图在第二轮重新绑定角色")
 	battle.queue_free()
 	await process_frame
 
@@ -2685,6 +2760,7 @@ func _test_round_record() -> void:
 func _test_record_board() -> void:
 	var battle: Node = (load("res://battle.tscn") as PackedScene).instantiate()
 	battle.skip_autoload = true
+	battle.record_path = TEST_BATTLE_RECORD_PATH
 	root.add_child(battle)
 	await process_frame
 	battle._record = RoundRecord.new()
@@ -2700,16 +2776,22 @@ func _test_record_board() -> void:
 	_assert(result_style != null and result_style.bg_color.a >= 1.0, "结果面板有不透明底色，不会糊在立绘上")
 	_assert(battle.get_node("%RecordTitle").text.find("共 5 场") >= 0, "战绩榜标题带当天总场次")
 	var list: Node = battle.get_node("%RecordList")
-	_assert(list.get_child_count() == 3, "三位上过榜一的玩家都列出来")
-	var first: Node = list.get_child(0)
+	var empty_label := battle.get_node("%RecordEmptyLabel") as Label
+	_assert(empty_label != null and not empty_label.visible, "有战绩时隐藏场景内预置的空榜提示")
+	var rows: Array[Node] = []
+	for child in list.get_children():
+		if child is HBoxContainer:
+			rows.append(child)
+	_assert(rows.size() == 3, "三位上过榜一的玩家都列出来")
+	var first: Node = rows[0]
 	_assert((first.get_child(1) as Label).text == "【甲】", "第一名是胜场最多的")
 	_assert((first.get_child(2) as Label).text == "3 场", "胜出的场次写在右边")
-	var third: Node = list.get_child(2)
+	var third: Node = rows[2]
 	_assert((third.get_child(1) as Label).text == "【丙】", "0 胜的也在榜上")
 	_assert((third.get_child(2) as Label).text == "0 场", "0 胜显示成 0 场")
 	var medals := [ThemeHelper.GOLD, ThemeHelper.SILVER, ThemeHelper.BRONZE]
 	for i in 3:
-		var badge: Panel = list.get_child(i).get_child(0) as Panel
+		var badge: Panel = rows[i].get_child(0) as Panel
 		var box: StyleBoxFlat = badge.get_theme_stylebox("panel") as StyleBoxFlat
 		_assert(box != null and box.bg_color == medals[i], "第 %d 名挂的是%s牌" % [i + 1, ["金", "银", "铜"][i]])
 	battle.queue_free()

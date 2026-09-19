@@ -16,11 +16,18 @@ const ROW_FONT_PX := 16
 ## 重建整块榜单。前三名挂金银铜牌，没赢过的也留在榜上（0 场），
 ## 因为他确实当过榜一。
 static func refresh(list: Node, record: RoundRecord) -> void:
-	NodeUtil.clear_children(list)
+	var empty_label := list.get_node_or_null("RecordEmptyLabel") as Label
+	# 空榜提示是固定 UI，留在场景树里；这里只清理上次按数据生成的行。
+	for child in list.get_children():
+		if child == empty_label:
+			continue
+		list.remove_child(child)
+		child.free()
 	var rows := record.standings()
-	# 当天第一场（或者刚跨天）时榜是空的，放一句占位。
+	# 当天第一场（或者刚跨天）时只显示场景里预置的占位。
+	if empty_label != null:
+		empty_label.visible = rows.is_empty()
 	if rows.is_empty():
-		list.add_child(_readable_label("还没有人打完一场", ThemeHelper.MUTED, 15))
 		return
 	for i in range(rows.size()):
 		list.add_child(_row(i + 1, rows[i]))

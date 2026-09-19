@@ -1,7 +1,10 @@
-[gd_scene format=3 uid="uid://c0f7qcyp3vfky"]
+[gd_scene load_steps=6 format=3 uid="uid://c0f7qcyp3vfky"]
 
 [ext_resource type="Script" uid="uid://lxwfe8fb6jj2" path="res://main.gd" id="1_main"]
 [ext_resource type="Script" uid="uid://ea2moir38p3" path="res://scripts/menu_parallax.gd" id="2_parallax"]
+[ext_resource type="Texture2D" uid="uid://c8unl3txf8jkw" path="res://assets/backgrounds/far.png" id="3_far"]
+[ext_resource type="Texture2D" uid="uid://cwmdjvcnlhrub" path="res://assets/backgrounds/mid.png" id="4_mid"]
+[ext_resource type="Texture2D" uid="uid://bjmmdhbwqggtk" path="res://assets/backgrounds/near.png" id="5_near"]
 
 [node name="Main" type="Control" unique_id=1121661043]
 layout_mode = 3
@@ -36,6 +39,54 @@ mouse_filter = 2
 [node name="ParallaxBackdrop" type="Node2D" parent="ParallaxClip" unique_id=985303028]
 unique_name_in_owner = true
 script = ExtResource("2_parallax")
+
+[node name="FarLayer" type="Node2D" parent="ParallaxClip/ParallaxBackdrop"]
+unique_name_in_owner = true
+
+[node name="FarA" type="Sprite2D" parent="ParallaxClip/ParallaxBackdrop/FarLayer"]
+texture_filter = 1
+texture = ExtResource("3_far")
+centered = false
+scale = Vector2(2, 2)
+
+[node name="FarB" type="Sprite2D" parent="ParallaxClip/ParallaxBackdrop/FarLayer"]
+texture_filter = 1
+texture = ExtResource("3_far")
+position = Vector2(1280, 0)
+centered = false
+scale = Vector2(2, 2)
+
+[node name="MidLayer" type="Node2D" parent="ParallaxClip/ParallaxBackdrop"]
+unique_name_in_owner = true
+
+[node name="MidA" type="Sprite2D" parent="ParallaxClip/ParallaxBackdrop/MidLayer"]
+texture_filter = 1
+texture = ExtResource("4_mid")
+centered = false
+scale = Vector2(2, 2)
+
+[node name="MidB" type="Sprite2D" parent="ParallaxClip/ParallaxBackdrop/MidLayer"]
+texture_filter = 1
+texture = ExtResource("4_mid")
+position = Vector2(1280, 0)
+centered = false
+scale = Vector2(2, 2)
+
+[node name="NearLayer" type="Node2D" parent="ParallaxClip/ParallaxBackdrop"]
+unique_name_in_owner = true
+
+[node name="NearA" type="Sprite2D" parent="ParallaxClip/ParallaxBackdrop/NearLayer"]
+texture_filter = 1
+texture = ExtResource("5_near")
+centered = false
+scale = Vector2(2, 2)
+
+[node name="NearB" type="Sprite2D" parent="ParallaxClip/ParallaxBackdrop/NearLayer"]
+texture_filter = 1
+texture = ExtResource("5_near")
+position = Vector2(1280, 0)
+centered = false
+scale = Vector2(2, 2)
 
 [node name="Center" type="CenterContainer" parent="." unique_id=948574787]
 layout_mode = 1

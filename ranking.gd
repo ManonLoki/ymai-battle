@@ -7,8 +7,8 @@ const MAIN_SCENE := "res://main.tscn"
 const SCROLL_STEP := 64
 ## 表头字号，比正文小一号；正文跟随场景主题。
 const HEADER_FONT_PX := 14
-## 表格的四列：标题就是表头文字，expand 的列会被拉伸撑开，
-## right 的列（战力）数字右对齐才好比较。加减列只要动这一张表。
+## 表格的四列：固定表头已经摆在 ranking.tscn 里；这张表只负责运行时数据行
+## 的伸展和对齐规则，顺序必须与场景里的四个 Header* 节点一致。
 const COLUMNS := [
 	{"title": "#"},
 	{"title": "用户", "expand": true},
@@ -34,6 +34,7 @@ func _ready() -> void:
 	%Title.add_theme_constant_override("shadow_offset_x", 2)
 	%Title.add_theme_constant_override("shadow_offset_y", 2)
 	%Status.add_theme_color_override("font_color", ThemeHelper.MUTED)
+	_style_static_header()
 	ThemeHelper.style_back_button(%BackButton)
 	%BackButton.pressed.connect(_on_back_pressed)
 	# 场上唯一可聚焦的控件，一进来就给它焦点。
@@ -78,7 +79,7 @@ func _on_back_pressed() -> void:
 ## 拉一次接口并渲染榜单。日期每次进场景时现取，所以跨天重进就是新一天的榜。
 func _load_ranking() -> void:
 	%Status.text = "正在拉取今日排行…"
-	NodeUtil.clear_children(%Grid)
+	_clear_rows()
 	var result: Dictionary = await TokenUsageApi.fetch_ranking(self)
 	# await 期间玩家可能已经按返回走了，节点没了就别再碰界面。
 	if not is_instance_valid(self):
@@ -97,17 +98,25 @@ func _render(date: String, ranked: Array[RankedUser]) -> void:
 	%Status.text = "%d 人上榜 · Token 即基础战力" % ranked.size()
 	# 上一次可能因为报错被染成红色，这里改回普通说明色。
 	%Status.add_theme_color_override("font_color", ThemeHelper.MUTED)
-	NodeUtil.clear_children(%Grid)
-	_add_header()
+	_clear_rows()
 	for user in ranked:
 		_add_row(user)
 
 
-func _add_header() -> void:
-	var titles := PackedStringArray()
-	for column in COLUMNS:
-		titles.append(str(column["title"]))
-	_add_cells(titles, ThemeHelper.MUTED, true)
+## 表头是固定 UI，留在场景树里才能在编辑器直接看到和调整。
+func _style_static_header() -> void:
+	for i in COLUMNS.size():
+		var label := %Grid.get_child(i) as Label
+		label.add_theme_color_override("font_color", ThemeHelper.MUTED)
+		label.add_theme_font_size_override("font_size", HEADER_FONT_PX)
+
+
+## 只清掉表头之后的数据单元格；前四个固定 Label 永远留在场景树里。
+func _clear_rows() -> void:
+	while %Grid.get_child_count() > COLUMNS.size():
+		var child := %Grid.get_child(%Grid.get_child_count() - 1)
+		%Grid.remove_child(child)
+		child.free()
 
 
 ## 一名玩家一行。
@@ -118,13 +127,13 @@ func _add_row(user: RankedUser) -> void:
 		agent_text = ", ".join(user.agents)
 	# 紧凑值方便扫一眼，括号里的精确值方便核对。
 	var tokens_text := "%s  (%s)" % [NumberFormat.compact(user.tokens), NumberFormat.with_commas(user.tokens)]
-	_add_cells([str(user.rank), user.username, agent_text, tokens_text], ThemeHelper.TEXT, false)
+	_add_cells([str(user.rank), user.username, agent_text, tokens_text], ThemeHelper.TEXT)
 
 
 ## 往 GridContainer 里塞一行单元格。列数由 %Grid 的 columns 决定。
-func _add_cells(texts: PackedStringArray, color: Color, header: bool) -> void:
+func _add_cells(texts: PackedStringArray, color: Color) -> void:
 	for i in range(texts.size()):
-		var label := ThemeHelper.make_label(texts[i], color, HEADER_FONT_PX if header else 0)
+		var label := ThemeHelper.make_label(texts[i], color)
 		# 表格不参与遥控器导航，翻页靠 _unhandled_input 直接推滚动条。
 		label.focus_mode = Control.FOCUS_NONE
 		var column: Dictionary = COLUMNS[i]

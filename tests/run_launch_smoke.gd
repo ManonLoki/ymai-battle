@@ -7,8 +7,11 @@ extends SceneTree
 ## 不碰网络、不打一场仗，所以几秒就跑完，适合做导出前的最后一道关。
 ## 任何一步不对就 printerr 一个大写标记并 quit(1)，CI 靠这个标记定位。
 
+const TEST_BATTLE_RECORD_PATH := "user://test_launch_smoke_daily_rounds.json"
+
 
 func _initialize() -> void:
+	_remove_test_record()
 	# 延到下一帧再跑，让引擎先把 autoload 和 class_name 装好。
 	_run.call_deferred()
 
@@ -63,9 +66,10 @@ func _run() -> void:
 	ranking.queue_free()
 	await process_frame
 
-	# 对战场景：返回按钮 + 擂主站位。没设 skip_autoload，
-	# 所以它会开始拉名单，但我们不等结果，查完控件就退。
+	# 对战场景：返回按钮 + 擂主站位。冒烟测试不碰网络，也不读正式战绩。
 	var battle: Node = packed_battle.instantiate()
+	battle.skip_autoload = true
+	battle.record_path = TEST_BATTLE_RECORD_PATH
 	root.add_child(battle)
 	await process_frame
 	if battle.get_node_or_null("%BackButton") == null or battle.get_node_or_null("%ChampionSlot") == null:
@@ -96,4 +100,10 @@ func _run() -> void:
 		return
 	print("SETTINGS_SCENE_OK")
 	print("LAUNCH_SMOKE_PASSED")
+	_remove_test_record()
 	quit(0)
+
+
+func _remove_test_record() -> void:
+	if FileAccess.file_exists(TEST_BATTLE_RECORD_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_BATTLE_RECORD_PATH))

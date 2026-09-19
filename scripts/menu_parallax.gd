@@ -4,15 +4,13 @@ extends Node2D
 ## 主菜单的像素风滚动背景：远、中、近三层各自以不同速度向左滚，形成视差。
 ##
 ## 每层都放两张首尾相接的同图，滚过一整张宽度就把位置绕回去，
-## 于是永远看不到接缝，也不需要额外的图。
+## 于是永远看不到接缝，也不需要额外的图。三层和六张图都预置在 main.tscn，
+## 这个脚本只绑定、排版和滚动它们，编辑器里可以直接检查完整节点树。
 
-## 三层贴图，由远及近。preload 保证它们跟着脚本一起进包。
-const LAYER_TEXTURES: Array[Texture2D] = [
-	preload("res://assets/backgrounds/far.png"),
-	preload("res://assets/backgrounds/mid.png"),
-	preload("res://assets/backgrounds/near.png"),
-]
-## 三层容器节点的名字，方便在远程场景树里认出来。
+## main.tscn 给三层配置的贴图依次是：
+## res://assets/backgrounds/far.png、res://assets/backgrounds/mid.png、
+## res://assets/backgrounds/near.png。
+## 三层容器节点的名字，也是从场景树绑定它们的唯一清单。
 const LAYER_NAMES: Array[String] = ["FarLayer", "MidLayer", "NearLayer"]
 ## 三层的滚动速度（像素/秒）。越近越快，视差就是这么来的。
 const LAYER_SPEEDS: Array[float] = [22.0, 58.0, 128.0]
@@ -26,7 +24,11 @@ var speeds: Array[float] = []
 
 
 func _ready() -> void:
-	_build_layers()
+	_bind_layers()
+	_layout_layers()
+	var viewport := get_viewport()
+	if viewport != null and not viewport.size_changed.is_connected(_layout_layers):
+		viewport.size_changed.connect(_layout_layers)
 
 
 func _process(delta: float) -> void:
@@ -48,8 +50,23 @@ func advance_parallax(delta: float) -> void:
 		node.position.x = x - width if x > 0.0 else x
 
 
-## 建三层容器，每层两张首尾相接的贴图，按视口高度等比缩放。
-func _build_layers() -> void:
+## 从场景树绑定预置的三层。缺节点时保留其余层可用，并给编辑器清楚的告警。
+func _bind_layers() -> void:
+	layers.clear()
+	wrap_widths.clear()
+	speeds.clear()
+	for i in LAYER_NAMES.size():
+		var holder := get_node_or_null(NodePath(LAYER_NAMES[i])) as Node2D
+		if holder == null:
+			push_warning("主菜单视差层缺少节点：%s" % LAYER_NAMES[i])
+			continue
+		layers.append(holder)
+		wrap_widths.append(0.0)
+		speeds.append(LAYER_SPEEDS[i])
+
+
+## 按视口高度等比缩放场景里的六张图，并让每层两张图首尾相接。
+func _layout_layers() -> void:
 	# 拿不到视口时（比如纯逻辑测试里）按设计分辨率的高度算。
 	var view_h := 720.0
 	var viewport := get_viewport()
@@ -57,28 +74,35 @@ func _build_layers() -> void:
 		var visible := viewport.get_visible_rect().size
 		if visible.y > 1.0:
 			view_h = visible.y
-	for i in LAYER_TEXTURES.size():
-		var tex: Texture2D = LAYER_TEXTURES[i]
-		if tex == null:
-			continue
-		var holder := Node2D.new()
-		holder.name = LAYER_NAMES[i]
-		# 等比缩放到刚好铺满视口高度，宽度跟着一起放大。
-		var tex_h := float(tex.get_height())
-		var scale_f := view_h / tex_h if tex_h > 0.0 else 1.0
-		var wrap := float(tex.get_width()) * scale_f
-		# 两张：一张在屏内，一张顶在它右边，滚出去的那张绕回来时正好接上。
-		for copy in 2:
-			var sprite := Sprite2D.new()
-			sprite.texture = tex
-			# 左上角对齐，position 直接就是贴图左边缘，接缝计算才简单。
-			sprite.centered = false
-			# 像素画必须用最近邻，否则放大后糊成一片。
-			sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-			sprite.scale = Vector2(scale_f, scale_f)
-			sprite.position = Vector2(float(copy) * wrap, 0.0)
-			holder.add_child(sprite)
-		add_child(holder)
-		layers.append(holder)
-		wrap_widths.append(wrap)
-		speeds.append(LAYER_SPEEDS[i])
+	for i in layers.size():
+		wrap_widths[i] = _layout_layer(layers[i], view_h)
+
+
+## 返回这一层缩放后的单图宽度；只有场景里已有的 Sprite2D 才参与排版。
+func _layout_layer(holder: Node2D, view_h: float) -> float:
+	var sprites: Array[Sprite2D] = []
+	for child in holder.get_children():
+		if child is Sprite2D:
+			sprites.append(child as Sprite2D)
+	if sprites.size() < 2:
+		push_warning("主菜单视差层 %s 需要两张带贴图的 Sprite2D" % holder.name)
+		return 0.0
+	for sprite in sprites:
+		if sprite.texture == null:
+			push_warning("主菜单视差层 %s 的每张 Sprite2D 都必须带贴图" % holder.name)
+			return 0.0
+	var texture := sprites[0].texture
+	var tex_h := float(texture.get_height())
+	var scale_f := view_h / tex_h if tex_h > 0.0 else 1.0
+	var wrap := float(texture.get_width()) * scale_f
+	for copy in sprites.size():
+		var sprite := sprites[copy]
+		# 左上角对齐，position 直接就是贴图左边缘，接缝计算才简单。
+		sprite.centered = false
+		# 像素画必须用最近邻，否则放大后糊成一片。
+		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		sprite.scale = Vector2(scale_f, scale_f)
+		sprite.position = Vector2(float(copy) * wrap, 0.0)
+	if wrap > 0.0:
+		holder.position.x = fmod(holder.position.x, wrap)
+	return wrap

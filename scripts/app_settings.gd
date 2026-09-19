@@ -34,7 +34,7 @@ enum Mode { WINDOWED, MAXIMIZED, FULLSCREEN }
 ## 默认跟 project.godot 里的初始配置一致：最大化 + 无边框。
 const DEFAULT_MODE := Mode.MAXIMIZED
 
-## 界面上的呈现顺序，也是唯一一份模式清单——加一种模式只要往这里补一行。
+## 界面上的呈现顺序。新增模式时还要在 settings.tscn 摆控件，并在 settings.gd 绑定。
 const MODES := [Mode.WINDOWED, Mode.MAXIMIZED, Mode.FULLSCREEN]
 
 ## 每种模式的名字和一句说明。

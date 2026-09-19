@@ -141,8 +141,8 @@ static func style_readable_text(control: Control) -> void:
 	control.add_theme_constant_override("outline_size", 2)
 
 
-## 运行时现造的 Label。四个场景都要按“文字 + 颜色 + 字号”造一堆，
-## 主题覆盖的键名只在这里写一次。font_size 传 0 表示跟随父级主题。
+## 动态数据行专用的 Label 工厂：排行榜和战绩榜的行数只有请求完成后才知道。
+## 场景里的固定文字都已改为 .tscn 节点。font_size 传 0 表示跟随父级主题。
 static func make_label(text: String, color: Color, font_size: int = 0) -> Label:
 	var label := Label.new()
 	label.text = text
