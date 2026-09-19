@@ -21,6 +21,15 @@ static func read_dict(path: String) -> Dictionary:
 	return parsed if typeof(parsed) == TYPE_DICTIONARY else {}
 
 
+## 往一份存档里合并几个字段，其余字段原样保留，然后整份写回。
+## settings.json 现在同时装着窗口模式和服务器地址，谁存自己那一项
+## 都不该把别人的抹掉——所以存设置一律走这里，别再直接 write_dict。
+static func patch_dict(path: String, patch: Dictionary) -> bool:
+	var data := read_dict(path)
+	data.merge(patch, true)
+	return write_dict(path, data)
+
+
 ## 写一份字典。返回是否写成功；写不进去（磁盘满、只读目录）不该打断游戏，
 ## 所以只回报结果，要不要 push_warning 由调用方按数据的重要程度决定。
 static func write_dict(path: String, data: Dictionary) -> bool:

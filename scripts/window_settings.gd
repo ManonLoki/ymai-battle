@@ -57,10 +57,10 @@ static func load_mode(path: String = SAVE_PATH) -> int:
 	return sanitize(int(JsonStore.read_dict(path).get(MODE_KEY, DEFAULT_MODE)))
 
 
-## 写下选择。整份设置一起重写，目前也就这一项。
-## 存不下就算了（磁盘满、只读目录），不值得为此打断游戏。
+## 写下选择。只改自己这一项：同一份存档里还有服务器地址（见 ServerSettings），
+## 整份重写会把它抹掉。存不下就算了（磁盘满、只读目录），不值得为此打断游戏。
 static func save_mode(mode: int, path: String = SAVE_PATH) -> void:
-	JsonStore.write_dict(path, {MODE_KEY: sanitize(mode)})
+	JsonStore.patch_dict(path, {MODE_KEY: sanitize(mode)})
 
 
 ## 把模式应用到当前窗口。先定模式再定边框：

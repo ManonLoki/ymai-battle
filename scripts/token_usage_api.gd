@@ -7,7 +7,17 @@ extends Node
 ##
 ## 做成 Node 是因为 HTTPRequest 必须挂在场景树里；调用方负责 add_child + queue_free。
 
-const USAGE_URL := "https://codex-tracker.yunmai365.com/api/v1/token-usage"
+## 接口路径。换服务器只换基址，路径跟着代码走。
+const USAGE_PATH := "/api/v1/token-usage"
+## 没在设置里填服务器地址时用的线上地址。
+const DEFAULT_USAGE_URL := "https://codex-tracker.yunmai365.com/api/v1/token-usage"
+
+
+## 这一次该请求哪个地址。设置里填过服务器就用那台，否则回落到默认地址。
+## 默认参数每次调用都现读存档，所以设置页改完不用重启，下一场取榜单就生效；
+## 显式传 base 则是「就按这个基址算」，设置页预览和测试都走这条。
+static func usage_url(base: String = ServerSettings.load_base_url()) -> String:
+	return DEFAULT_USAGE_URL if base.is_empty() else base + USAGE_PATH
 
 
 ## 拉一次接口。失败时不抛异常，统一用 ok=false + error 文案回报。
@@ -17,7 +27,7 @@ func fetch_usage() -> Dictionary:
 	add_child(http)
 	# 电视上网络可能很慢，给足 45 秒。
 	http.timeout = 45.0
-	var err := http.request(USAGE_URL, PackedStringArray(["Accept: application/json"]), HTTPClient.METHOD_GET)
+	var err := http.request(usage_url(), PackedStringArray(["Accept: application/json"]), HTTPClient.METHOD_GET)
 	if err != OK:
 		http.queue_free()
 		return _fail("无法发起请求（错误码 %d）" % err)

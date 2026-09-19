@@ -79,6 +79,11 @@ func _run() -> void:
 		printerr("SETTINGS_CONTROLS_MISSING")
 		quit(1)
 		return
+	# 服务器地址那一栏：输入框和两个按钮都得在，不然换服务器就没入口了。
+	if settings.get_node_or_null("%ServerInput") == null or settings.get_node_or_null("%ServerSave") == null or settings.get_node_or_null("%ServerReset") == null:
+		printerr("SETTINGS_SERVER_CONTROLS_MISSING")
+		quit(1)
+		return
 	print("SETTINGS_SCENE_OK")
 	print("LAUNCH_SMOKE_PASSED")
 	quit(0)

@@ -114,6 +114,18 @@ static func style_button(button: Button, filled: bool = true) -> void:
 		button.add_theme_color_override("font_color", TEXT)
 
 
+## 统一的输入框样式。电视上同样靠方向键选中，所以焦点框和按钮共用一套，
+## 不然焦点跳进输入框就看不出来了。
+static func style_line_edit(edit: LineEdit) -> void:
+	edit.custom_minimum_size = Vector2(0, BUTTON_MIN_SIZE.y)
+	edit.focus_mode = Control.FOCUS_ALL
+	edit.add_theme_stylebox_override("normal", make_flat(CARD, 10))
+	edit.add_theme_stylebox_override("focus", make_focus(10))
+	edit.add_theme_color_override("font_color", TEXT)
+	edit.add_theme_color_override("font_placeholder_color", MUTED)
+	edit.add_theme_color_override("caret_color", ACCENT)
+
+
 ## 次级“返回”按钮。style_button 会盖上主按钮的最小尺寸，所以必须紧跟着改回来——
 ## 把这两步绑在一起，新加的页面就不会只抄走前半句。
 static func style_back_button(button: Button) -> void:

@@ -41,6 +41,7 @@ func _run() -> void:
 	_test_win_rate_regression()
 	await _test_main_menu()
 	await _test_settings()
+	_test_server_settings()
 	await _test_tv_remote()
 	await _test_main_parallax_and_quit()
 	await _test_app_icon_and_cursors()
@@ -1251,8 +1252,64 @@ func _test_settings() -> void:
 		if child is Button:
 			buttons += 1
 	_assert(buttons == WindowSettings.MODES.size(), "every window mode gets a button (%d)" % buttons)
+	# 服务器那一栏：输入框 + 保存 + 还原默认 + 一行说明当前用的是哪台。
+	var input := scene.get_node_or_null("%ServerInput") as LineEdit
+	_assert(input != null, "Settings has a server address field")
+	_assert(input.placeholder_text == ServerSettings.PLACEHOLDER, "the field shows the expected protocol://host:port/ form")
+	_assert(scene.get_node_or_null("%ServerSave") != null, "Settings has a save button for the server address")
+	_assert(scene.get_node_or_null("%ServerReset") != null, "Settings can restore the default server")
+	var status := scene.get_node_or_null("%ServerStatus") as Label
+	_assert(status != null and status.text.find(TokenUsageApi.usage_url()) >= 0, "the status line names the endpoint actually in use")
 	scene.queue_free()
 	await process_frame
+
+
+## 榜单服务器地址：什么样的写法算合法、怎么存怎么读、还原之后回到默认地址，
+## 以及它最终怎么换掉真正请求的那个 URL。
+func _test_server_settings() -> void:
+	# 合法写法：带端口 / 不带端口 / 结尾斜杠 / 大写协议 / IPv6 / 首尾空白。
+	for text in ["http://192.168.1.10:8080/", "https://example.com", "HTTP://Example.com:80/",
+			"http://[::1]:9000", "  https://localhost:3000/  ", "http://box-1.lan:8000"]:
+		_assert(ServerSettings.is_valid(text), "%s is a usable base url" % text)
+	# 不合法：空、缺协议、别的协议、带路径或查询串、端口越界、缺主机。
+	for text in ["", "   ", "example.com:8080", "ftp://example.com", "http://example.com/api/v1",
+			"http://example.com?x=1", "http://example.com:70000", "http://example.com:0", "http://:8080"]:
+		_assert(not ServerSettings.is_valid(text), "%s is rejected" % text)
+	# 规范化：去首尾空白、去结尾斜杠、协议小写，主机原样留着。
+	_assert(ServerSettings.normalize("  HTTPS://Example.com:8443/ ") == "https://Example.com:8443", "normalize trims, lowercases the scheme and drops the trailing slash")
+	_assert(ServerSettings.normalize("http://10.0.0.2:8080") == "http://10.0.0.2:8080", "an already normal base url survives unchanged")
+	_assert(ServerSettings.normalize("nonsense") == "", "an unusable base url normalizes to the empty string")
+
+	var path := "user://test_server.json"
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	_assert(ServerSettings.load_base_url(path) == "", "no save file means no override")
+	_assert(not ServerSettings.has_override(path), "and the default server is in use")
+	ServerSettings.save_base_url("http://10.0.0.2:8000/", path)
+	_assert(ServerSettings.load_base_url(path) == "http://10.0.0.2:8000", "a saved base url comes back normalized")
+	_assert(ServerSettings.has_override(path), "a saved base url counts as an override")
+	# 还原：清掉之后又回到默认。
+	ServerSettings.clear(path)
+	_assert(ServerSettings.load_base_url(path) == "" and not ServerSettings.has_override(path), "clearing restores the default server")
+	# 存个不合法的进去等于清掉，绝不会把坏地址留在存档里。
+	ServerSettings.save_base_url("http://10.0.0.2:8000", path)
+	ServerSettings.save_base_url("garbage", path)
+	_assert(ServerSettings.load_base_url(path) == "", "saving an unusable base url clears the override")
+	# 手工写脏数据进存档，读出来也当没设过。
+	JsonStore.write_dict(path, {ServerSettings.BASE_URL_KEY: "://oops"})
+	_assert(ServerSettings.load_base_url(path) == "", "a corrupt saved value falls back to the default server")
+	# 两项设置共用一份存档，谁都不许把对方冲掉。
+	WindowSettings.save_mode(WindowSettings.Mode.FULLSCREEN, path)
+	ServerSettings.save_base_url("https://box.lan:9443", path)
+	_assert(WindowSettings.load_mode(path) == WindowSettings.Mode.FULLSCREEN, "saving the server address keeps the window mode")
+	WindowSettings.save_mode(WindowSettings.Mode.WINDOWED, path)
+	_assert(ServerSettings.load_base_url(path) == "https://box.lan:9443", "saving the window mode keeps the server address")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+	# 最后一环：基址怎么变成真正请求的地址。
+	_assert(TokenUsageApi.usage_url("") == TokenUsageApi.DEFAULT_USAGE_URL, "no override means the built-in endpoint")
+	_assert(TokenUsageApi.usage_url("http://10.0.0.2:8000") == "http://10.0.0.2:8000" + TokenUsageApi.USAGE_PATH, "an override keeps the endpoint path")
+	_assert(TokenUsageApi.DEFAULT_USAGE_URL.ends_with(TokenUsageApi.USAGE_PATH), "both servers are asked for the same path")
+	_assert(ServerSettings.SAVE_PATH == WindowSettings.SAVE_PATH, "both settings live in one save file")
 
 
 ## 主菜单：三个按钮都在，且能切到对应场景。
