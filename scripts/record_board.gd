@@ -17,12 +17,8 @@ const ROW_FONT_PX := 16
 ## 因为他确实当过榜一。
 static func refresh(list: Node, record: RoundRecord) -> void:
 	var empty_label := list.get_node_or_null("RecordEmptyLabel") as Label
-	# 空榜提示是固定 UI，留在场景树里；这里只清理上次按数据生成的行。
-	for child in list.get_children():
-		if child == empty_label:
-			continue
-		list.remove_child(child)
-		child.free()
+	# 空榜提示是场景里的第一个固定子节点，跳过它，只清理上次按数据生成的行。
+	NodeUtil.clear_children(list, 1)
 	var rows := record.standings()
 	# 当天第一场（或者刚跨天）时只显示场景里预置的占位。
 	if empty_label != null:

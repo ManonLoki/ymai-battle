@@ -5,15 +5,13 @@ extends Control
 const MAIN_SCENE := "res://main.tscn"
 ## 遥控器上下键一次滚多少像素：榜单本身不吃焦点，只能手动推 ScrollContainer。
 const SCROLL_STEP := 64
-## 表头字号，比正文小一号；正文跟随场景主题。
-const HEADER_FONT_PX := 14
-## 表格的四列：固定表头已经摆在 ranking.tscn 里；这张表只负责运行时数据行
-## 的伸展和对齐规则，顺序必须与场景里的四个 Header* 节点一致。
+## 表格的四列：表头文字和字号都摆在 ranking.tscn 的四个 Header* 节点里；
+## 这张表只负责运行时数据行的伸展和对齐规则，顺序必须与那四个节点一致。
 const COLUMNS := [
-	{"title": "#"},
-	{"title": "用户", "expand": true},
-	{"title": "Agent"},
-	{"title": "Token / 战力", "expand": true, "right": true},
+	{},
+	{"expand": true},
+	{},
+	{"expand": true, "right": true},
 ]
 
 ## 已经在切回主菜单的路上，避免连按两次返回触发两次切场景。
@@ -103,20 +101,16 @@ func _render(date: String, ranked: Array[RankedUser]) -> void:
 		_add_row(user)
 
 
-## 表头是固定 UI，留在场景树里才能在编辑器直接看到和调整。
+## 表头是固定 UI，文字和字号都在场景里；只有配色跟着主题走，得在运行时套。
 func _style_static_header() -> void:
 	for i in COLUMNS.size():
 		var label := %Grid.get_child(i) as Label
 		label.add_theme_color_override("font_color", ThemeHelper.MUTED)
-		label.add_theme_font_size_override("font_size", HEADER_FONT_PX)
 
 
 ## 只清掉表头之后的数据单元格；前四个固定 Label 永远留在场景树里。
 func _clear_rows() -> void:
-	while %Grid.get_child_count() > COLUMNS.size():
-		var child := %Grid.get_child(%Grid.get_child_count() - 1)
-		%Grid.remove_child(child)
-		child.free()
+	NodeUtil.clear_children(%Grid, COLUMNS.size())
 
 
 ## 一名玩家一行。

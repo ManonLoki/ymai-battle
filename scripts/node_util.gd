@@ -5,16 +5,16 @@ extends RefCounted
 ## 各自手写一遍容易在 free / queue_free 上写岔。
 
 
-## 清空一个容器的所有子节点。
+## 清空一个容器里运行时生成的子节点。
 ##
-## 默认走 free()：调用方下一句通常就要往里填新内容，必须立刻腾空，
+## 走 free() 而不是 queue_free()：调用方下一句通常就要往里填新内容，必须立刻腾空，
 ## 用 queue_free 的话旧节点要等到帧末才消失，中间会和新节点挤在一起。
-## 正在演出的子树（比如带着 await 的立绘）得传 deferred=true，
-## 立刻释放会让还挂在等待点上的协程碰到已经没了的节点。
-static func clear_children(parent: Node, deferred: bool = false) -> void:
-	for child in parent.get_children():
+##
+## keep_first 是场景里预置的固定子节点个数（表头、空榜提示这类），
+## 它们永远排在最前面，不参与清理。
+static func clear_children(parent: Node, keep_first: int = 0) -> void:
+	var children := parent.get_children()
+	for i in range(keep_first, children.size()):
+		var child := children[i]
 		parent.remove_child(child)
-		if deferred:
-			child.queue_free()
-		else:
-			child.free()
+		child.free()

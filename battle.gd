@@ -269,9 +269,8 @@ func _update_hud() -> void:
 		%Status.text = "%s  VS  %s" % [_war.champion.username, _war.current_opponent.username]
 	else:
 		%Status.text = "战斗结束"
-	if _champion_view:
-		_champion_view.set_hp(_war.champion.hp, _war.champion.max_hp)
-	if _opponent_view and _war.current_opponent:
+	_champion_view.set_hp(_war.champion.hp, _war.champion.max_hp)
+	if _war.current_opponent:
 		_opponent_view.set_hp(_war.current_opponent.hp, _war.current_opponent.max_hp)
 
 

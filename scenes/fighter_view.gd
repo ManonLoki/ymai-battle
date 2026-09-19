@@ -179,7 +179,6 @@ func _show_instant_tip(host: Control, skill: SkillDef) -> void:
 	# 先显示再 reset_size，才能拿到文字撑出来的真实尺寸。
 	tip_panel.reset_size()
 	# 图标的全局坐标换算成 UI 层的局部坐标。
-	var ui := $UI as Node2D
 	var local := host.global_position - ui.global_position
 	tip_panel.position = Vector2(local.x, local.y + host.size.y + 4.0)
 
@@ -429,11 +428,7 @@ func _hide_afterimages() -> void:
 		ghost.position = Vector2.ZERO
 		ghost.rotation = 0.0
 		ghost.scale = Vector2.ONE
-		ghost.modulate = Color(1.0, 1.0, 1.0, lerpf(
-			CombatFx.DODGE_START_ALPHA,
-			CombatFx.DODGE_END_ALPHA,
-			float(i) / float(CombatFx.AFTERIMAGE_EXTRAS),
-		))
+		ghost.modulate = Color(1.0, 1.0, 1.0, CombatFx.ghost_alpha(i))
 
 
 func _hide_stun() -> void:

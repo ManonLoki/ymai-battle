@@ -4,17 +4,8 @@ extends RefCounted
 ## 战斗表现层共用的特效播放参数。固定节点和形状都在 fighter_view.tscn 里，
 ## 这里只负责复用已有节点，不在运行时拼场景树。
 
-const POISON_COLOR := Color(0.92, 0.12, 0.14, 1.0)
-const PARALYZE_COLOR := Color(1.0, 0.9, 0.12, 1.0)
-const HEAL_COLOR := Color(0.45, 1.0, 0.62, 1.0)
-const CRIT_COLOR := Color(1.0, 0.55, 0.08, 1.0)
-const SKULL_COLOR := Color(0.92, 0.08, 0.1, 1.0)
-const STUN_COLOR := Color(1.0, 0.92, 0.25, 1.0)
-const GUARD_FILL := Color(0.45, 0.88, 1.0, 0.28)
-const GUARD_RIM := Color(0.78, 0.96, 1.0, 0.95)
-
-## 立绘闪一下的染色，和上面的粒子色是同一族但更淡——直接拿粒子色去染立绘会糊成一坨。
-## 和粒子色放在一起，是为了“中毒是什么颜色”只有一个答案。
+## 立绘闪一下的染色。粒子色本身已经写进 fighter_view.tscn 的各个 *Fx 节点，
+## 这里只留染立绘用的那一份——直接拿粒子色去染立绘会糊成一坨。
 const CRIT_TINT := Color(1.0, 0.92, 0.35)
 const POISON_TINT := Color(1.0, 0.35, 0.32)
 const PARALYZE_TINT := Color(1.0, 0.95, 0.35)
@@ -24,9 +15,6 @@ const HEAL_TINT := Color(0.55, 1.0, 0.7)
 const SLASH_COLOR := Color(0.95, 0.95, 1.0, 0.95)
 const CRIT_SLASH_COLOR := Color(1.0, 0.85, 0.2, 0.95)
 
-## 暴击粒子数，明显大于改前的 28。
-const CRIT_AMOUNT := 96
-const STATUS_AMOUNT := 18
 ## 从原位到终点一共 3 个形象：两张重影 + 终点的本体。
 const AFTERIMAGE_EXTRAS := 2
 const GHOST_TOTAL := AFTERIMAGE_EXTRAS + 1
@@ -34,6 +22,12 @@ const GHOST_TOTAL := AFTERIMAGE_EXTRAS + 1
 const DODGE_BODY_LENGTHS := 1.0
 const DODGE_START_ALPHA := 0.5
 const DODGE_END_ALPHA := 1.0
+
+
+## 第 i 张重影的透明度：i=0 在原位最淡，越靠近终点越实。
+## 播放和收起两边都要按这条曲线摆，所以只在这里算一次。
+static func ghost_alpha(i: int) -> float:
+	return lerpf(DODGE_START_ALPHA, DODGE_END_ALPHA, float(i) / float(AFTERIMAGE_EXTRAS))
 
 
 ## 盖在身上闪一下的覆盖层（绝对防御的罩子、幻影刺杀的骷髅）：
@@ -98,7 +92,6 @@ static func spawn_afterimages(source: Sprite2D, parent: Node2D, offset: Vector2)
 		ghost.flip_h = source.flip_h
 		ghost.scale = source.scale
 		# i=0 原位，i=1 中点；终点留给正在后撤的本体。
-		var t := float(i) / float(AFTERIMAGE_EXTRAS)
-		ghost.position = source.position + offset * t
-		ghost.modulate = Color(1.0, 1.0, 1.0, lerpf(DODGE_START_ALPHA, DODGE_END_ALPHA, t))
+		ghost.position = source.position + offset * (float(i) / float(AFTERIMAGE_EXTRAS))
+		ghost.modulate = Color(1.0, 1.0, 1.0, ghost_alpha(i))
 		ghost.visible = true

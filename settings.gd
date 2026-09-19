@@ -10,8 +10,6 @@ extends Control
 ## 填错了只在状态行报一句，绝不落盘——存进去的地址一定是能用的。
 
 const MAIN_SCENE := "res://main.tscn"
-## 页面上所有小字（模式说明、服务器那一栏的说明和状态行）的字号。
-const NOTE_FONT_PX := 14
 ## “保存 / 还原默认”这两个按钮的尺寸，比主按钮窄，腾地方给输入框。
 const SERVER_BUTTON_MIN_SIZE := Vector2(140, 48)
 
@@ -79,7 +77,6 @@ func _bind_mode_controls() -> void:
 		button.text = AppSettings.mode_display_name(mode)
 		description.text = AppSettings.mode_description(mode)
 		description.add_theme_color_override("font_color", ThemeHelper.MUTED)
-		description.add_theme_font_size_override("font_size", NOTE_FONT_PX)
 		# bind 把模式带进回调，三个按钮共用同一个处理函数。
 		button.pressed.connect(_on_mode_pressed.bind(mode))
 
@@ -104,9 +101,7 @@ func _on_mode_pressed(mode: int) -> void:
 func _bind_server_controls() -> void:
 	%ServerTitle.add_theme_color_override("font_color", ThemeHelper.TEXT)
 	%ServerHint.add_theme_color_override("font_color", ThemeHelper.MUTED)
-	%ServerHint.add_theme_font_size_override("font_size", NOTE_FONT_PX)
 	%ServerHint.text = "填 %s 就改从这台服务器取榜单（接口路径不变）；留空保存或按“还原默认”，就用内置地址。" % AppSettings.SERVER_PLACEHOLDER
-	%ServerStatus.add_theme_font_size_override("font_size", NOTE_FONT_PX)
 	ThemeHelper.style_line_edit(%ServerInput)
 	%ServerInput.placeholder_text = AppSettings.SERVER_PLACEHOLDER
 	# 电视遥控器按 OK 收完键盘会发 text_submitted，等同于按一下保存。
