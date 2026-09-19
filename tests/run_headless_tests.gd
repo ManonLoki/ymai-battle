@@ -351,7 +351,59 @@ func _disarm(fighter: Fighter) -> void:
 	fighter.poison_turns = 0
 	fighter.paralyze_turns = 0
 	fighter.confuse_turns = 0
+	fighter.heal_guard = false
 	fighter.hp = fighter.max_hp
+
+
+## 和 SkillCatalog._percent 同一口径：tooltip 里写的就是这份百分数。
+func _pct_label(value: float) -> String:
+	return "%d%%" % roundi(value * 100.0)
+
+
+## 目录字段、tooltip 百分数、结算常量必须是同一套活数字。
+func _assert_live_combat_numbers() -> void:
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_crit").crit_chance, SkillCatalog.SELF_BUFF_CHANCE), "crit self-buff is the live self-buff rate")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_hit").accuracy_bonus, SkillCatalog.SELF_BUFF_CHANCE), "hit self-buff is the live self-buff rate")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_dmg").damage_bonus, SkillCatalog.SELF_BUFF_CHANCE), "damage self-buff is the live self-buff rate")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_dodge").dodge_bonus, SkillCatalog.SELF_BUFF_CHANCE), "dodge bonus is the live self-buff rate")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_dr").damage_reduction, SkillCatalog.SELF_BUFF_CHANCE), "damage reduction is the live self-buff rate")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_guard").guard_chance, SkillCatalog.SELF_BUFF_CHANCE), "guard is the live self-buff rate")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_poison").poison_chance, SkillCatalog.STATUS_CHANCE), "poison is the live status rate")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_paralyze").paralyze_chance, SkillCatalog.STATUS_CHANCE), "paralyze is the live status rate")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_confuse").confuse_chance, SkillCatalog.STATUS_CHANCE), "confuse is the live status rate")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_double").double_chance, SkillCatalog.DOUBLE_CHANCE), "double strike is the live combo rate")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_triple").triple_chance, SkillCatalog.TRIPLE_CHANCE), "triple strike is the live combo rate")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_counter").counter_chance, SkillCatalog.COUNTER_CHANCE), "counter is the live counter rate")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_lingbo").lingbo_chance, SkillCatalog.LINGBO_CHANCE), "lingbo is the live lingbo rate")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_heal").heal_chance, CombatResolver.HEAL_CHANCE_CHAMPION), "heal catalog flag matches the live heal chance")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_awaken").awaken_chance, CombatResolver.AWAKEN_CHANCE), "awaken catalog chance matches resolver")
+	_assert(is_equal_approx(SkillCatalog.by_id("skill_assassinate").assassinate_chance, CombatResolver.ASSASSINATE_CHANCE_CHAMPION), "assassinate catalog flag matches the champion roll")
+	var heal_tip := SkillCatalog.by_id("skill_heal").description
+	_assert(heal_tip.find(_pct_label(CombatResolver.HEAL_CHANCE_CHAMPION)) >= 0, "heal tooltip names champion trigger chance")
+	_assert(heal_tip.find(_pct_label(CombatResolver.HEAL_CHANCE_CHALLENGER)) >= 0, "heal tooltip names challenger trigger chance")
+	_assert(heal_tip.find(_pct_label(CombatResolver.HEAL_SHARE_CHAMPION)) >= 0, "heal tooltip names champion heal share")
+	_assert(heal_tip.find(_pct_label(CombatResolver.HEAL_SHARE_CHALLENGER)) >= 0, "heal tooltip names challenger heal share")
+	_assert(heal_tip.find(_pct_label(CombatResolver.HEAL_GUARD_DODGE)) >= 0, "heal tooltip names the live full-dodge")
+	var steal_tip := SkillCatalog.by_id("skill_lifesteal").description
+	_assert(steal_tip.find(_pct_label(CombatResolver.LIFESTEAL_RATIO_CHAMPION)) >= 0, "lifesteal tooltip names champion ratio")
+	_assert(steal_tip.find(_pct_label(CombatResolver.LIFESTEAL_RATIO_CHALLENGER)) >= 0, "lifesteal tooltip names challenger ratio")
+	var ass_tip := SkillCatalog.by_id("skill_assassinate").description
+	_assert(ass_tip.find(_pct_label(CombatResolver.ASSASSINATE_CHANCE_CHAMPION)) >= 0, "assassinate tooltip names champion chance")
+	_assert(ass_tip.find(_pct_label(CombatResolver.ASSASSINATE_CHANCE_CHALLENGER)) >= 0, "assassinate tooltip names challenger chance")
+	_assert(ass_tip.find(_pct_label(CombatResolver.ASSASSINATE_SHARE_CHALLENGER)) >= 0, "assassinate tooltip names challenger share")
+	var confuse_tip := SkillCatalog.by_id("skill_confuse").description
+	_assert(confuse_tip.find(_pct_label(CombatResolver.CONFUSE_SELF_HIT_CHANCE)) >= 0, "confuse tooltip names the live self-hit chance")
+	var awaken_tip := SkillCatalog.by_id("skill_awaken").description
+	_assert(awaken_tip.find(_pct_label(CombatResolver.AWAKEN_CHANCE)) >= 0, "awaken tooltip names the live trigger chance")
+	_assert(awaken_tip.find(_pct_label(CombatResolver.AWAKEN_HP_SHARE)) >= 0, "awaken tooltip names the live HP share")
+	_assert(awaken_tip.find(_pct_label(CombatResolver.AWAKEN_HIT_BONUS)) >= 0, "awaken tooltip names the live hit bonus")
+	var lingbo_tip := SkillCatalog.by_id("skill_lingbo").description
+	_assert(lingbo_tip.find(_pct_label(SkillCatalog.LINGBO_CHANCE)) >= 0, "lingbo tooltip names the live chance")
+	var crit_tip := SkillCatalog.by_id("skill_crit").description
+	_assert(crit_tip.find(_pct_label(SkillCatalog.SELF_BUFF_CHANCE)) >= 0, "self-buff tooltip names the live rate")
+	var poison_tip := SkillCatalog.by_id("skill_poison").description
+	_assert(poison_tip.find(_pct_label(SkillCatalog.STATUS_CHANCE)) >= 0, "status tooltip names the live rate")
+	_assert(poison_tip.find(str(CombatResolver.STATUS_TURNS)) >= 0, "status tooltip names the live duration")
 
 
 ## 技能与 buff 的全部规则：数值区间、叠加、连击、状态、反击、
@@ -361,20 +413,20 @@ func _test_skills() -> void:
 	rng_lo.push([0.0])
 	var buff_lo := SkillGrant.roll_agent_buff(AgentChannels.CHANNEL_CODEX, rng_lo)
 	_assert(buff_lo.id == "buff_codex", "CODEX buff type is crit")
-	_assert(is_equal_approx(buff_lo.crit_chance, 0.05), "agent buff floor is 5%")
+	_assert(is_equal_approx(buff_lo.crit_chance, SkillCatalog.AGENT_BUFF_MIN), "agent buff floor is the live min")
 	var rng_hi := RollSource.new(1)
 	rng_hi.push([1.0])
 	var buff_hi := SkillGrant.roll_agent_buff(AgentChannels.CHANNEL_CODEX, rng_hi)
-	_assert(is_equal_approx(buff_hi.crit_chance, 0.10), "agent buff ceiling is 10%")
+	_assert(is_equal_approx(buff_hi.crit_chance, SkillCatalog.AGENT_BUFF_MAX), "agent buff ceiling is the live max")
 	var rng_c := RollSource.new(1)
 	rng_c.push([0.0])
-	_assert(is_equal_approx(SkillGrant.roll_agent_buff(AgentChannels.CHANNEL_CLAUDE, rng_c).accuracy_bonus, 0.05), "CLAUDE buff is accuracy")
+	_assert(is_equal_approx(SkillGrant.roll_agent_buff(AgentChannels.CHANNEL_CLAUDE, rng_c).accuracy_bonus, SkillCatalog.AGENT_BUFF_MIN), "CLAUDE buff is accuracy")
 	var rng_g := RollSource.new(1)
 	rng_g.push([0.0])
-	_assert(is_equal_approx(SkillGrant.roll_agent_buff(AgentChannels.CHANNEL_GROK, rng_g).dodge_bonus, 0.05), "GROK buff is dodge")
+	_assert(is_equal_approx(SkillGrant.roll_agent_buff(AgentChannels.CHANNEL_GROK, rng_g).dodge_bonus, SkillCatalog.AGENT_BUFF_MIN), "GROK buff is dodge")
 	var rng_w := RollSource.new(1)
 	rng_w.push([0.0])
-	_assert(is_equal_approx(SkillGrant.roll_agent_buff(AgentChannels.CHANNEL_WORKBUDDY, rng_w).damage_reduction, 0.05), "WORKBUDDY buff is damage reduction")
+	_assert(is_equal_approx(SkillGrant.roll_agent_buff(AgentChannels.CHANNEL_WORKBUDDY, rng_w).damage_reduction, SkillCatalog.AGENT_BUFF_MIN), "WORKBUDDY buff is damage reduction")
 
 	var champ_skills: Array[SkillDef] = SkillGrant.pick_skills(SkillCatalog.CHAMPION_SKILL_CAP, RollSource.new(3))
 	var chal_skills: Array[SkillDef] = SkillGrant.pick_skills(SkillCatalog.CHALLENGER_SKILL_CAP, RollSource.new(4))
@@ -395,31 +447,45 @@ func _test_skills() -> void:
 	for skill in chal_skills:
 		_assert(not seen.has(skill.id), "challenger skills are unique: %s" % skill.id)
 		seen[skill.id] = true
-	_assert(SkillCatalog.pool().size() == 17, "skill pool dropped 定身; 麻痹 covers skip-turns")
+	_assert(SkillCatalog.pool().size() == 18, "skill pool has 潜能激发; 定身 stays out")
 	var pool_ids: PackedStringArray = PackedStringArray()
 	for skill in SkillCatalog.pool():
 		pool_ids.append(skill.id)
 	_assert(pool_ids.find("skill_root") < 0, "定身 is no longer in the pool")
 	_assert(pool_ids.find("skill_paralyze") >= 0, "麻痹 stays as the 3-turn skip")
-	_assert(is_equal_approx(SkillCatalog.by_id("skill_crit").crit_chance, 0.10), "crit self-buff is 10%")
-	_assert(is_equal_approx(SkillCatalog.by_id("skill_hit").accuracy_bonus, 0.10), "hit self-buff is 10%")
-	_assert(is_equal_approx(SkillCatalog.by_id("skill_dmg").damage_bonus, 0.10), "damage self-buff is 10%")
-	_assert(is_equal_approx(SkillCatalog.by_id("skill_dodge").dodge_bonus, 0.10), "dodge bonus is 10%")
-	_assert(is_equal_approx(SkillCatalog.by_id("skill_dr").damage_reduction, 0.10), "damage reduction is 10%")
-	_assert(is_equal_approx(SkillCatalog.by_id("skill_guard").guard_chance, 0.10), "guard is 10%")
-	_assert(is_equal_approx(SkillCatalog.by_id("skill_poison").poison_chance, 0.20), "poison is 20%")
-	_assert(is_equal_approx(SkillCatalog.by_id("skill_paralyze").paralyze_chance, 0.20), "paralyze is 20%")
-	_assert(is_equal_approx(SkillCatalog.by_id("skill_confuse").confuse_chance, 0.20), "confuse is 20%")
-	_assert(is_equal_approx(SkillCatalog.by_id("skill_double").double_chance, 0.20), "double strike is 20%")
-	_assert(is_equal_approx(SkillCatalog.by_id("skill_triple").triple_chance, 0.10), "triple strike is 10%")
-	_assert(is_equal_approx(SkillCatalog.by_id("skill_counter").counter_chance, 0.20), "counter is 20%")
-	_assert(is_equal_approx(CombatResolver.CONFUSE_SELF_HIT_CHANCE, 0.50), "confused actions are 50% self-hit")
-	_assert(is_equal_approx(CombatResolver.ASSASSINATE_CHANCE_CHAMPION, 0.01), "champion assassinate is 1%")
-	_assert(is_equal_approx(CombatResolver.ASSASSINATE_CHANCE_CHALLENGER, 0.02), "challenger assassinate is 2%")
-	_assert(is_equal_approx(CombatResolver.ASSASSINATE_SHARE_CHALLENGER, 0.50), "challenger assassinate deals 50% max HP")
-	_assert(is_equal_approx(SkillCatalog.by_id("skill_lingbo").lingbo_chance, 0.05), "lingbo is 5%")
+	_assert(pool_ids.find("skill_awaken") >= 0, "潜能激发 is in the pool")
+	_assert_live_combat_numbers()
 	_assert(SkillCatalog.by_id("skill_assassinate").display_name == "幻影刺杀", "assassinate display name")
 	_assert(SkillCatalog.by_id("skill_lingbo").display_name == "凌波微步", "lingbo display name")
+	_assert(SkillCatalog.by_id("skill_awaken").display_name == "潜能激发", "awaken display name")
+	_assert(SkillCatalog.icon_family("skill_awaken") == SkillCatalog.FAMILY_TECHNIQUE, "awaken is a high-tier technique")
+	_assert(SkillCatalog.display_group("skill_crit") == SkillCatalog.DISPLAY_GROUP_BUFF, "crit is 增强")
+	_assert(SkillCatalog.display_group("skill_dodge") == SkillCatalog.DISPLAY_GROUP_BUFF, "dodge is 增强")
+	_assert(SkillCatalog.display_group("skill_poison") == SkillCatalog.DISPLAY_GROUP_STATUS, "poison is 附加")
+	_assert(SkillCatalog.display_group("skill_heal") == SkillCatalog.DISPLAY_GROUP_RECOVER, "heal is 治疗")
+	_assert(SkillCatalog.display_group("skill_awaken") == SkillCatalog.DISPLAY_GROUP_TECHNIQUE, "awaken is 高级")
+	var mixed: Array[SkillDef] = [
+		SkillCatalog.by_id("skill_assassinate"),
+		SkillCatalog.by_id("skill_heal"),
+		SkillCatalog.by_id("skill_poison"),
+		SkillCatalog.by_id("skill_crit"),
+		SkillCatalog.by_id("skill_lifesteal"),
+		SkillCatalog.by_id("skill_guard"),
+	]
+	var shown: Array[SkillDef] = SkillCatalog.sort_for_display(mixed)
+	var shown_ids: PackedStringArray = PackedStringArray()
+	for skill in shown:
+		shown_ids.append(skill.id)
+	_assert(shown_ids == PackedStringArray(["skill_crit", "skill_guard", "skill_poison", "skill_lifesteal", "skill_heal", "skill_assassinate"]), "display order is 增强 → 附加 → 治疗 → 高级")
+	for i in range(1, shown.size()):
+		_assert(SkillCatalog.display_group_rank(shown[i].icon_id) >= SkillCatalog.display_group_rank(shown[i - 1].icon_id), "display ranks never go backwards")
+	var heal_tip := SkillCatalog.by_id("skill_heal").description
+	_assert(heal_tip.find("不进攻") >= 0 and heal_tip.find("闪避") >= 0, "heal tooltip says skip attack and full dodge")
+	_assert(heal_tip.find("幻影刺杀") >= 0, "heal tooltip names the assassinate exception")
+	var awaken_tip := SkillCatalog.by_id("skill_awaken").description
+	_assert(awaken_tip.find(_pct_label(CombatResolver.AWAKEN_HP_SHARE)) >= 0, "awaken tooltip names the live HP cost")
+	_assert(awaken_tip.find(_pct_label(CombatResolver.AWAKEN_HIT_BONUS)) >= 0, "awaken tooltip names the live bonuses")
+	_assert(awaken_tip.find("不足") >= 0, "awaken tooltip says it needs enough HP")
 
 	var win := 0.5
 	var attacker := _make_fighter("A", 100, "", true)
@@ -543,7 +609,7 @@ func _test_skills() -> void:
 	_assert(guard_clean[0].guarded, "guard still triggers when the attacker holds on-hit statuses")
 	_assert(not guard_clean[0].poisoned and not guard_clean[0].paralyzed and not guard_clean[0].confused, "guarded hits apply no extra effects")
 	_assert(defender.poison_turns == 0 and defender.paralyze_turns == 0 and defender.confuse_turns == 0, "guarded target is not statused")
-	_assert(SkillCatalog.by_id("skill_confuse").description.find("50%") >= 0, "混乱 tooltip names the 50% self-hit")
+	_assert(SkillCatalog.by_id("skill_confuse").description.find(_pct_label(CombatResolver.CONFUSE_SELF_HIT_CHANCE)) >= 0, "混乱 tooltip names the live self-hit chance")
 
 	_disarm(attacker)
 	_disarm(defender)
@@ -600,34 +666,138 @@ func _test_skills() -> void:
 	var short_bar := _make_fighter("short", 1000, "", false)
 	var long_bar := _make_fighter("long", 1000, "", true)
 	long_bar.hits_to_down = CombatResolver.HITS_PER_DUEL * 10
-	_assert(CombatResolver.heal_amount(long_bar) == 50, "擂主一次治疗回 5% 最大生命")
-	_assert(CombatResolver.heal_amount(short_bar) == 100, "挑战者一次治疗回 10% 最大生命")
-	_assert(is_equal_approx(CombatResolver.heal_chance(long_bar), 0.20), "擂主治疗触发率 20%")
-	_assert(is_equal_approx(CombatResolver.heal_chance(short_bar), 0.20), "挑战者治疗触发率 20%")
-	_assert(is_equal_approx(CombatResolver.lifesteal_ratio(long_bar), 0.25), "擂主吸血 25%")
-	_assert(is_equal_approx(CombatResolver.lifesteal_ratio(short_bar), 0.50), "挑战者吸血 50%")
+	_assert(is_equal_approx(float(CombatResolver.heal_amount(long_bar)) / float(long_bar.max_hp), CombatResolver.HEAL_SHARE_CHAMPION), "擂主一次治疗回的是身份分额")
+	_assert(is_equal_approx(float(CombatResolver.heal_amount(short_bar)) / float(short_bar.max_hp), CombatResolver.HEAL_SHARE_CHALLENGER), "挑战者一次治疗回的是身份分额")
+	_assert(is_equal_approx(CombatResolver.heal_chance(long_bar), CombatResolver.HEAL_CHANCE_CHAMPION), "擂主治疗触发率走身份常量")
+	_assert(is_equal_approx(CombatResolver.heal_chance(short_bar), CombatResolver.HEAL_CHANCE_CHALLENGER), "挑战者治疗触发率走身份常量")
+	_assert(is_equal_approx(CombatResolver.lifesteal_ratio(long_bar), CombatResolver.LIFESTEAL_RATIO_CHAMPION), "擂主吸血走身份常量")
+	_assert(is_equal_approx(CombatResolver.lifesteal_ratio(short_bar), CombatResolver.LIFESTEAL_RATIO_CHALLENGER), "挑战者吸血走身份常量")
 	_assert(CombatResolver.heal_amount(long_bar) != CombatResolver.strike_damage(long_bar), "治疗不再跟单次命中挂钩，改看最大生命")
 	_assert(float(CombatResolver.heal_amount(short_bar)) / float(short_bar.max_hp) < 0.5, "one heal is never half a health bar")
 	_disarm(attacker)
 	_disarm(defender)
 	attacker.skills = [SkillCatalog.by_id("skill_heal")]
 	attacker.hp = 10
+	var defender_hp_before := defender.hp
 	var rng_heal := RollSource.new(1)
-	rng_heal.push([0.0, 0.99, 0.0])
-	var heal_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_heal)
-	var last_heal: StrikeResult = heal_events[heal_events.size() - 1]
-	_assert(last_heal.treated, "heal skill can proc after an attack")
+	rng_heal.push([0.0])
+	var heal_events: Array[StrikeResult] = CombatResolver.resolve_action(attacker, defender, win, rng_heal)
+	_assert(heal_events.size() == 1, "heal replaces the whole action with one skip event")
+	var last_heal: StrikeResult = heal_events[0]
+	_assert(last_heal.skip_reason == StrikeResult.SKIP_HEAL and last_heal.treated, "heal skill procs instead of attacking")
+	_assert(not last_heal.hit, "heal turn does not attack")
 	var expected_heal := CombatResolver.heal_amount(attacker)
 	_assert(last_heal.heal_amount == expected_heal, "heal amount matches the shipped formula")
 	_assert(attacker.hp == 10 + expected_heal, "heal restores HP")
+	_assert(defender.hp == defender_hp_before, "heal turn deals no damage")
+	_assert(attacker.heal_guard, "heal turn raises 100% dodge until the next action")
+	var rng_heal_dodge := RollSource.new(1)
+	rng_heal_dodge.push([0.0, 0.99])
+	var against_heal: Array[StrikeResult] = CombatResolver.resolve_strikes(defender, attacker, win, rng_heal_dodge)
+	_assert(against_heal[0].dodged and not against_heal[0].hit, "heal-guard dodges a roll that would otherwise hit")
+	_assert(not against_heal[0].lingbo, "heal-guard is a plain dodge, not 凌波微步")
+	_assert(attacker.hp == 10 + expected_heal, "heal-guard prevents incoming damage")
+	_disarm(defender)
+	defender.skills = [SkillCatalog.by_id("skill_assassinate")]
+	var rng_heal_ass := RollSource.new(1)
+	rng_heal_ass.push([0.99, 0.0])
+	var pierce_heal: Array[StrikeResult] = CombatResolver.resolve_strikes(defender, attacker, win, rng_heal_ass)
+	_assert(pierce_heal[0].hit and pierce_heal[0].assassinated, "幻影刺杀 still pierces heal-guard")
 	_disarm(attacker)
 	_disarm(defender)
 	attacker.hp = 10
 	var rng_noheal := RollSource.new(1)
-	rng_noheal.push([0.0, 0.99, 0.99])
-	var noheal: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_noheal)
+	rng_noheal.push([0.0, 0.99])
+	var noheal: Array[StrikeResult] = CombatResolver.resolve_action(attacker, defender, win, rng_noheal)
 	_assert(not noheal[noheal.size() - 1].treated, "same rolls do not heal without the skill")
+	_assert(attacker.hp < 10 or noheal[0].hit or noheal[0].dodged, "without heal the action is a strike")
 	_assert(attacker.hp == 10, "HP unchanged without heal skill")
+	_assert(not attacker.heal_guard, "heal-guard is not set without the skill")
+	# 下一手行动开始时卸掉治疗闪避。
+	attacker.skills = [SkillCatalog.by_id("skill_heal")]
+	attacker.heal_guard = true
+	var rng_clear := RollSource.new(1)
+	rng_clear.push([0.99, 0.0, 0.99])
+	CombatResolver.resolve_action(attacker, defender, win, rng_clear)
+	_assert(not attacker.heal_guard, "the next action clears leftover heal-guard")
+
+	# 目录字段就算改成 100%，真正掷骰仍走结算器的身份治疗率。
+	_disarm(attacker)
+	_disarm(defender)
+	var stuffed_heal := SkillCatalog.by_id("skill_heal")
+	stuffed_heal.heal_chance = 1.0
+	attacker.skills = [stuffed_heal]
+	var rng_stuffed_heal := RollSource.new(1)
+	rng_stuffed_heal.push([0.99, 0.0, 0.99])
+	var stuffed_heal_events: Array[StrikeResult] = CombatResolver.resolve_action(attacker, defender, win, rng_stuffed_heal)
+	_assert(not stuffed_heal_events[0].treated and stuffed_heal_events[0].skip_reason == "", "heal settlement rolls the resolver chance, not the stuffed catalog field")
+
+	# 潜能激发：扣费、本次攻击加成；生命不够不掷。结算率走 AWAKEN_CHANCE。
+	_disarm(attacker)
+	_disarm(defender)
+	attacker.skills = [SkillCatalog.by_id("skill_awaken")]
+	var awaken_cost := CombatResolver.awaken_cost(attacker)
+	_assert(is_equal_approx(float(awaken_cost) / float(attacker.max_hp), CombatResolver.AWAKEN_HP_SHARE), "awaken cost is the live max-HP share")
+	_assert(CombatResolver.can_awaken(attacker), "full HP can pay for awaken")
+	var rng_awaken := RollSource.new(1)
+	rng_awaken.push([0.0, 0.0, 0.99])
+	var awaken_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_awaken)
+	_assert(awaken_events[0].awakened, "awaken flags the opening strike")
+	_assert(awaken_events[0].awaken_cost == awaken_cost, "awaken cost is 10% max HP")
+	_assert(awaken_events[0].hit, "awaken strike still has to land")
+	var expected_awaken_dmg := maxi(1, int(round(float(CombatResolver.strike_damage(defender)) * (1.0 + CombatResolver.AWAKEN_DAMAGE_BONUS) * (1.0 - defender.stacked_damage_reduction()))))
+	_assert(awaken_events[0].damage == expected_awaken_dmg, "awaken adds 50% extra damage through the shipped formula")
+	_assert(attacker.hp == attacker.max_hp - awaken_cost, "awaken spends 10% max HP")
+	var awaken_hit := CombatResolver.hit_chance(attacker, defender, win, CombatResolver.AWAKEN_HIT_BONUS)
+	var plain_hit := CombatResolver.hit_chance(attacker, defender, win)
+	_assert(awaken_hit > plain_hit, "awaken raises this-attack hit chance")
+	_disarm(attacker)
+	_disarm(defender)
+	attacker.skills = [SkillCatalog.by_id("skill_awaken")]
+	# 0.4 在挑战者 15% 闪避下通常打不中（擂主 50%-15%=35%），激发后 +50% 必中。
+	var rng_awaken_hit := RollSource.new(1)
+	rng_awaken_hit.push([0.0, 0.4, 0.99])
+	var awaken_mid: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_awaken_hit)
+	_assert(awaken_mid[0].awakened and awaken_mid[0].hit, "awaken +50% hit turns a 0.4 roll into a hit")
+	_disarm(attacker)
+	_disarm(defender)
+	var rng_no_awaken_hit := RollSource.new(1)
+	rng_no_awaken_hit.push([0.4])
+	var no_awaken_mid: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_no_awaken_hit)
+	_assert(no_awaken_mid[0].dodged, "the same 0.4 roll dodges without awaken")
+	_disarm(attacker)
+	_disarm(defender)
+	attacker.skills = [SkillCatalog.by_id("skill_awaken")]
+	attacker.hp = awaken_cost
+	_assert(not CombatResolver.can_awaken(attacker), "HP equal to the cost is not enough")
+	var hp_before_poor := attacker.hp
+	var rng_poor := RollSource.new(1)
+	rng_poor.push([0.0, 0.99])
+	var poor_awaken: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_poor)
+	_assert(not poor_awaken[0].awakened, "awaken does not trigger when HP cannot pay")
+	_assert(attacker.hp == hp_before_poor or poor_awaken[0].hit, "insufficient HP skips the awaken roll")
+	_assert(attacker.hp == hp_before_poor, "awaken does not spend HP when it cannot trigger")
+	_disarm(attacker)
+	_disarm(defender)
+	attacker.skills = [SkillCatalog.by_id("skill_awaken")]
+	defender.skills = [SkillCatalog.by_id("skill_counter")]
+	var rng_awaken_counter := RollSource.new(1)
+	rng_awaken_counter.push([0.0, 0.0, 0.99, 0.0, 0.0, 0.99])
+	var awaken_counter_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_awaken_counter)
+	var counter_awoke := false
+	for ev in awaken_counter_events:
+		if ev.countered and ev.awakened:
+			counter_awoke = true
+	_assert(not counter_awoke, "counter bursts do not roll 潜能激发")
+	_disarm(attacker)
+	_disarm(defender)
+	var stuffed_awaken := SkillCatalog.by_id("skill_awaken")
+	stuffed_awaken.awaken_chance = 1.0
+	attacker.skills = [stuffed_awaken]
+	var rng_stuffed_awaken := RollSource.new(1)
+	rng_stuffed_awaken.push([0.50, 0.0, 0.99])
+	var stuffed_awaken_events: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_stuffed_awaken)
+	_assert(not stuffed_awaken_events[0].awakened, "awaken settlement rolls AWAKEN_CHANCE, not the stuffed catalog field")
 
 	# 没有任何“必中”或“必闪”：最悬殊的战力差下，两边的命中率都还在 5%~95% 之间，
 	# 掷到极端点数时结果照样翻转。
@@ -722,8 +892,8 @@ func _test_skills() -> void:
 	_give_buffs(boss_target, [dodge_for_kill])
 	boss_target.hits_to_down = 20
 	boss_target.hp = boss_target.max_hp
-	_assert(is_equal_approx(CombatResolver.assassinate_chance(chal_killer), 0.02), "challenger rolls 2% assassinate")
-	_assert(is_equal_approx(CombatResolver.assassinate_chance(attacker), 0.01), "champion rolls 1% assassinate")
+	_assert(is_equal_approx(CombatResolver.assassinate_chance(chal_killer), CombatResolver.ASSASSINATE_CHANCE_CHALLENGER), "challenger rolls the live assassinate chance")
+	_assert(is_equal_approx(CombatResolver.assassinate_chance(attacker), CombatResolver.ASSASSINATE_CHANCE_CHAMPION), "champion rolls the live assassinate chance")
 	var expected_cut := CombatResolver.assassinate_damage(chal_killer, boss_target)
 	var rng_chal_ass := RollSource.new(1)
 	rng_chal_ass.push([0.4, 0.0])
@@ -1261,14 +1431,19 @@ func _test_fighter_anims() -> void:
 	_assert(fighter.skills.size() == 8, "champion bind uses 8 skills")
 	for child in view.buff_row.get_children():
 		_assert_icon_tooltip(child, fighter.agent_buffs[0])
-	for i in fighter.skills.size():
-		_assert_icon_tooltip(view.skill_row.get_child(i), fighter.skills[i])
+	var shown_skills: Array[SkillDef] = SkillCatalog.sort_for_display(fighter.skills)
+	for i in shown_skills.size():
+		_assert_icon_tooltip(view.skill_row.get_child(i), shown_skills[i])
+	for i in range(1, view.skill_row.get_child_count()):
+		var prev_skill: SkillDef = shown_skills[i - 1]
+		var cur_skill: SkillDef = shown_skills[i]
+		_assert(SkillCatalog.display_group_rank(cur_skill.icon_id) >= SkillCatalog.display_group_rank(prev_skill.icon_id), "bound skill row is grouped 增强→附加→治疗→高级")
 	await process_frame
 	_assert_icons_align_to_hp_bar(view)
 	view.play_attack()
 	_assert(view.anim_player.current_animation == "attack", "playing attack selects the attack animation")
 	_assert(view.slash.visible, "attack shows the sword slash")
-	_assert(view.has_method("play_paralyze_fx") and view.has_method("play_confuse_fx") and view.has_method("play_assassinate_fx"), "fighter view exposes paralyze/confuse/assassinate fx")
+	_assert(view.has_method("play_paralyze_fx") and view.has_method("play_confuse_fx") and view.has_method("play_assassinate_fx") and view.has_method("play_guard_fx"), "fighter view exposes paralyze/confuse/assassinate/guard fx")
 
 	var poison_fx: CPUParticles2D = view.get_node("Visual/PoisonFx")
 	var paralyze_fx: CPUParticles2D = view.get_node("Visual/ParalyzeFx")
@@ -1286,12 +1461,24 @@ func _test_fighter_anims() -> void:
 	view.play_confuse_fx()
 	_assert(stun_fx.visible, "confuse shows a stun node above the head")
 	_assert(stun_fx.get_child_count() >= 3, "stun fx has circling stars")
+	view.bind(fighter, false)
+	_assert(not stun_fx.visible, "confuse stun is hidden when the view recycles")
+	_assert(not poison_fx.emitting, "poison burst stops when the view recycles")
+	_assert(not paralyze_fx.emitting, "paralyze burst stops when the view recycles")
+	_assert(view.sprite.modulate == Color.WHITE, "status tint returns to white when recycled")
 	view.play_crit_fx()
 	_assert(crit_fx.amount > FighterView.LEGACY_CRIT_AMOUNT, "crit explosion uses more particles than the old small burst")
 	_assert(crit_fx.emitting, "crit burst is emitting")
 	view.play_assassinate_fx()
 	_assert(skull_fx.visible, "assassinate shows a skull overlay")
 	_assert(_skull_is_red_x(skull_fx), "assassinate skull is a red X overlay")
+	view.play_guard_fx()
+	var guard_fx: Node2D = view.get_node("Visual/GuardFx")
+	_assert(guard_fx.visible, "absolute guard shows a shield bubble")
+	_assert(guard_fx.get_node("Fill") is Polygon2D, "guard bubble has a filled dome")
+	_assert(guard_fx.get_node("Rim") is Line2D, "guard bubble has a rim")
+	var fill := guard_fx.get_node("Fill") as Polygon2D
+	_assert(fill.color.b > fill.color.r and fill.color.a < 0.5, "guard bubble is a translucent cyan dome")
 	view.play_dodge()
 	_assert(view.dodge_ghost_count() == CombatFx.GHOST_TOTAL, "dodge has 3 figures including the body")
 	var trail := view.get_node("Visual/Afterimages")
@@ -1459,6 +1646,25 @@ func _test_combat_log() -> void:
 
 	_disarm(attacker)
 	_disarm(defender)
+	attacker.skills = [SkillCatalog.by_id("skill_heal")]
+	attacker.hp = 10
+	var rng_heal_log := RollSource.new(1)
+	rng_heal_log.push([0.0])
+	var heal_log := _joined_log(CombatResolver.resolve_action(attacker, defender, win, rng_heal_log))
+	_assert(heal_log.find("甲发动【治疗】") >= 0, "heal log names 治疗")
+	_assert(heal_log.find("本回合不进攻") >= 0, "heal log says the turn skips the attack")
+
+	_disarm(attacker)
+	_disarm(defender)
+	attacker.skills = [SkillCatalog.by_id("skill_awaken")]
+	var rng_awaken_log := RollSource.new(1)
+	rng_awaken_log.push([0.0, 0.0, 0.99])
+	var awaken_log := _joined_log(CombatResolver.resolve_strikes(attacker, defender, win, rng_awaken_log))
+	_assert(awaken_log.find("甲发动【潜能激发】") >= 0, "awaken log names 潜能激发")
+	_assert(awaken_log.find("损失") >= 0, "awaken log mentions the HP cost")
+
+	_disarm(attacker)
+	_disarm(defender)
 	attacker.skills = [SkillCatalog.by_id("skill_poison")]
 	var rng_poison := RollSource.new(1)
 	rng_poison.push([0.0, 0.99, 0.0])
@@ -1548,7 +1754,7 @@ func _assert_icon_family_borders() -> void:
 			_assert(not ink.is_equal_approx(other), "family %s border differs from other families" % family)
 		seen.append(ink)
 	var pool: Array[SkillDef] = SkillCatalog.pool()
-	_assert(pool.size() >= 17, "skill pool still has every remaining skill icon")
+	_assert(pool.size() >= 18, "skill pool still has every remaining skill icon")
 	var masks: Array[PackedByteArray] = []
 	var ids: PackedStringArray = PackedStringArray()
 	for skill in pool:
@@ -1628,6 +1834,7 @@ func _test_icons_and_layout() -> void:
 	var view_src := FileAccess.get_file_as_string("res://scenes/fighter_view.gd")
 	_assert(view_src.find("SkillCatalog.load_icon") >= 0, "fighter view loads skill/buff icons")
 	_assert(view_src.find("buff_row") >= 0 and view_src.find("skill_row") >= 0, "fighter view has separate buff and skill rows")
+	_assert(view_src.find("sort_for_display") >= 0, "fighter view lays out skills by display group")
 	var battle_tscn := FileAccess.get_file_as_string("res://battle.tscn")
 	_assert(battle_tscn.find("Vector2(320, 330)") >= 0, "champion slot moved up from y=480")
 	_assert(battle_tscn.find("Vector2(960, 330)") >= 0, "opponent slot moved up from y=480")
@@ -1639,15 +1846,23 @@ func _test_icons_and_layout() -> void:
 	var battle_gd := FileAccess.get_file_as_string("res://battle.gd")
 	_assert(battle_gd.find("play_crit_fx") >= 0, "Battle plays crit FX on crit strikes")
 	_assert(battle_gd.find("play_dodge") >= 0, "Battle plays dodge retreat on dodges")
-	_assert(battle_gd.find("play_poison_fx") >= 0, "Battle plays poison FX on poison")
+	_assert(battle_gd.find("play_poison_fx") >= 0 and battle_gd.find("poison_tick") >= 0, "Battle plays poison FX on poison ticks")
+	_assert(battle_gd.find("event.poisoned") < 0, "poison FX is not played when the status is applied")
 	_assert(battle_gd.find("play_heal_fx") >= 0, "Battle plays shared heal FX on lifesteal/heal")
-	_assert(battle_gd.find("play_paralyze_fx") >= 0 and battle_gd.find("event.paralyzed") >= 0, "Battle plays paralyze FX on paralyzed strikes")
-	_assert(battle_gd.find("play_confuse_fx") >= 0 and battle_gd.find("event.confused") >= 0, "Battle plays confuse stun on confused strikes")
+	_assert(battle_gd.find("SKIP_HEAL") >= 0, "Battle plays the heal skip without an attack animation")
+	_assert(battle_gd.find("event.awakened") >= 0, "Battle updates attacker HP when 潜能激发 spends health")
+	_assert(battle_gd.find("play_paralyze_fx") >= 0 and battle_gd.find("SKIP_PARALYZE") >= 0, "Battle plays paralyze FX when the action is skipped")
+	_assert(battle_gd.find("event.paralyzed") < 0, "paralyze FX is not played when the status is applied")
+	_assert(battle_gd.find("play_confuse_fx") >= 0 and battle_gd.find("self_hit") >= 0, "Battle plays confuse FX on a confused self-hit")
+	_assert(battle_gd.find("event.confused") < 0, "confuse FX is not played when the status is applied")
 	_assert(battle_gd.find("play_assassinate_fx") >= 0 and battle_gd.find("event.assassinated") >= 0, "Battle plays skull FX on assassinate")
+	_assert(battle_gd.find("play_guard_fx") >= 0 and battle_gd.find("event.guarded") >= 0, "Battle plays the shield bubble on absolute guard")
 	_assert(battle_gd.find("play_dodge") >= 0 and battle_gd.find("凌波") >= 0, "Battle reuses dodge FX for lingbo")
 	var fv_src := FileAccess.get_file_as_string("res://scenes/fighter_view.gd")
 	_assert(fv_src.find("HEAL_FX") >= 0 and fv_src.find("play_heal_fx") >= 0, "lifesteal and heal share HEAL_FX")
 	_assert(fv_src.find("CombatFx") >= 0, "fighter view reuses CombatFx for bursts/afterimages/skull")
+	_assert(fv_src.find("set_loops") < 0, "status FX do not loop after they expire")
+	_assert(fv_src.find("_stop_burst_later") >= 0 and fv_src.find("_hide_stun") >= 0, "status bursts and stun stars are recycled")
 	_assert(FileAccess.file_exists("res://scenes/heal_fx.tscn"), "shared heal FX scene exists")
 	_assert(FileAccess.file_exists("res://assets/fx/skull_x.png"), "red X skull texture exists")
 	_assert_icon_family_borders()
@@ -2100,13 +2315,13 @@ func _test_size_traits() -> void:
 	var challenger := _make_fighter("foe", 1000, "", false)
 	_disarm(boss)
 	_disarm(challenger)
-	_assert(is_equal_approx(boss.stacked_dodge(), 0.05), "擂主 10% 基础闪避再吃体型 -5%，合计 5%")
-	_assert(is_equal_approx(challenger.stacked_dodge(), 0.15), "挑战者 10% 基础闪避再加体型 +5%，合计 15%")
-	_assert(is_equal_approx(boss.stacked_crit(), 0.10), "擂主无技能也有 10% 基础暴击")
-	_assert(is_equal_approx(challenger.stacked_crit(), 0.10), "挑战者无技能也有 10% 基础暴击")
+	_assert(is_equal_approx(boss.stacked_dodge(), Fighter.BASE_DODGE + Fighter.CHAMPION_INNATE_DODGE), "擂主基础闪避叠体型修正")
+	_assert(is_equal_approx(challenger.stacked_dodge(), Fighter.BASE_DODGE + Fighter.CHALLENGER_INNATE_DODGE), "挑战者基础闪避叠体型修正")
+	_assert(is_equal_approx(boss.stacked_crit(), Fighter.BASE_CRIT), "擂主无技能也有基础暴击")
+	_assert(is_equal_approx(challenger.stacked_crit(), Fighter.BASE_CRIT), "挑战者无技能也有基础暴击")
 	_assert(is_equal_approx(boss.stacked_counter(), 0.0), "反击没有全员基础")
 	_assert(is_equal_approx(challenger.stacked_counter(), 0.0), "挑战者反击仍为 0")
-	_assert(is_equal_approx(boss.stacked_damage_reduction(), 0.05), "擂主先天 +5% 减伤，没有全员基础减伤")
+	_assert(is_equal_approx(boss.stacked_damage_reduction(), Fighter.CHAMPION_INNATE_DAMAGE_REDUCTION), "擂主先天减伤，没有全员基础减伤")
 	_assert(is_equal_approx(challenger.stacked_damage_reduction(), 0.0), "挑战者没有先天减伤")
 
 	# 无闪避技能时，落在闪避段的点数仍记闪避（挑战者 15% → 命中线 0.35）。
@@ -2130,13 +2345,13 @@ func _test_size_traits() -> void:
 	# 先天闪避直接反映在命中率上：同样 50% 底子，打擂主更容易命中。
 	var on_boss := CombatResolver.hit_chance(challenger, boss, 0.5)
 	var on_challenger := CombatResolver.hit_chance(boss, challenger, 0.5)
-	_assert(is_equal_approx(on_boss - on_challenger, 0.10), "先天闪避差把双方命中率拉开 10 个点")
+	_assert(is_equal_approx(on_boss - on_challenger, Fighter.CHALLENGER_INNATE_DODGE - Fighter.CHAMPION_INNATE_DODGE), "先天闪避差把双方命中率拉开")
 
 	# 技能叠在先天之上，不是二选一。
 	challenger.skills = [SkillCatalog.by_id("skill_dodge")]
-	_assert(is_equal_approx(challenger.stacked_dodge(), 0.25), "闪避技能叠在 10% 基础和体型修正之上")
+	_assert(is_equal_approx(challenger.stacked_dodge(), Fighter.BASE_DODGE + Fighter.CHALLENGER_INNATE_DODGE + SkillCatalog.SELF_BUFF_CHANCE), "闪避技能叠在基础和体型修正之上")
 	boss.skills = [SkillCatalog.by_id("skill_dr")]
-	_assert(is_equal_approx(boss.stacked_damage_reduction(), 0.15), "减伤技能叠在先天减伤之上")
+	_assert(is_equal_approx(boss.stacked_damage_reduction(), Fighter.CHAMPION_INNATE_DAMAGE_REDUCTION + SkillCatalog.SELF_BUFF_CHANCE), "减伤技能叠在先天减伤之上")
 
 	# 没打中只有闪避，打空擂主也记成闪避，不会写成失手。
 	_disarm(boss)
@@ -2160,15 +2375,15 @@ func _test_size_traits() -> void:
 	var on_plain_hit: Array[StrikeResult] = CombatResolver.resolve_strikes(challenger, plain, 0.9, rng_dmg2)
 	_assert(on_boss_hit[0].damage < on_plain_hit[0].damage, "同样一击，打在擂主身上被先天减伤削掉一截")
 
-	# 状态技统一提到 20%。
+	# 状态技共用同一份活概率。
 	for skill_id in ["skill_poison", "skill_paralyze", "skill_confuse"]:
 		var skill := SkillCatalog.by_id(skill_id)
 		var chance := skill.poison_chance + skill.paralyze_chance + skill.confuse_chance + skill.root_chance
-		_assert(is_equal_approx(chance, 0.20), "%s 触发概率提到 20%%" % skill_id)
+		_assert(is_equal_approx(chance, SkillCatalog.STATUS_CHANCE), "%s 触发概率是活的状态技概率" % skill_id)
 
 	# 人越多，擂主那份按最大生命回血的续航越值钱，命中率上要按人头折价。
-	_assert(is_equal_approx(CombatResolver.champion_endurance_edge(2), 0.0), "两人单挑不额外折价")
-	_assert(CombatResolver.champion_endurance_edge(5) > 0.0, "人多了才开始折价")
+	_assert(is_equal_approx(CombatResolver.champion_endurance_edge(CombatResolver.CHAMPION_ENDURANCE_EDGE_BASE), 0.0), "续航折价起点之内不额外扣命中")
+	_assert(CombatResolver.champion_endurance_edge(CombatResolver.CHAMPION_ENDURANCE_EDGE_BASE + 1) > 0.0, "超过折价起点才开始扣命中")
 	_assert(CombatResolver.champion_endurance_edge(14) <= CombatResolver.CHAMPION_ENDURANCE_EDGE_CAP + 0.0001, "大榜单的续航折价有封顶")
 	_assert(CombatResolver.calibrated_hit_chance(0.5, 0.0, 0.0, 14) < CombatResolver.calibrated_hit_chance(0.5, 0.0, 0.0, 2), "同样目标胜率，人越多擂主的命中率给得越少")
 	# 技能张数差改成按张计价：多摸一张就多让一点命中率，不再用平均张数硬编。

@@ -57,6 +57,12 @@ static func _body(event: StrikeResult) -> String:
 	# 行动被跳过。
 	if event.skip_reason == StrikeResult.SKIP_PARALYZE:
 		return "%s 麻痹，无法行动" % event.attacker_name
+	if event.skip_reason == StrikeResult.SKIP_HEAL:
+		var heal_line := "%s发动【治疗】" % event.attacker_name
+		if event.heal_amount > 0:
+			heal_line += "，回复 %s" % NumberFormat.compact(event.heal_amount)
+		heal_line += "，本回合不进攻"
+		return heal_line
 	# 混乱下打自己。
 	if event.self_hit:
 		# 混乱下的自伤同样要过命中和绝对防御判定，不是必定见血。
@@ -75,11 +81,13 @@ static func _body(event: StrikeResult) -> String:
 		return self_line
 	# 没打中只有凌波微步和闪避，没有失手。
 	if event.lingbo:
-		return "%s以【凌波微步】闪避了%s的伤害" % [event.defender_name, event.attacker_name]
+		return _awaken_prefix(event) + "%s以【凌波微步】闪避了%s的伤害" % [event.defender_name, event.attacker_name]
 	if event.dodged or not event.hit:
-		return "%s【闪避】了%s的伤害" % [event.defender_name, event.attacker_name]
+		return _awaken_prefix(event) + "%s【闪避】了%s的伤害" % [event.defender_name, event.attacker_name]
 	# 打中了。幻影刺杀单独一句；暴击和上状态各写一句，能同时出现。
 	var chunks: PackedStringArray = PackedStringArray()
+	if event.awakened:
+		chunks.append(_awaken_line(event).rstrip("\n"))
 	if event.assassinated:
 		chunks.append("%s对%s发动【幻影刺杀】" % [event.attacker_name, event.defender_name])
 	if event.crit:
@@ -113,6 +121,20 @@ static func _body(event: StrikeResult) -> String:
 	elif event.defender_died:
 		line += "，击倒！"
 	return line
+
+
+## 闪避类文案前面补一句潜能激发（命中走 chunks，不会走到这里）。
+static func _awaken_prefix(event: StrikeResult) -> String:
+	if not event.awakened:
+		return ""
+	return _awaken_line(event)
+
+
+static func _awaken_line(event: StrikeResult) -> String:
+	var line := "%s发动【潜能激发】" % event.attacker_name
+	if event.awaken_cost > 0:
+		line += "，损失 %s 生命" % NumberFormat.compact(event.awaken_cost)
+	return line + "\n"
 
 
 ## 结果面板和战报共用的 MVP 那句话。best 是 DamageTally.best() 的结果。

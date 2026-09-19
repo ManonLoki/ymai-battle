@@ -21,7 +21,7 @@ var channels: PackedStringArray = PackedStringArray()
 ## 每个用过的 agent 各自换来一个独立 buff：用了 3 个 agent 就带 3 个 buff。
 ## 和 skills 分开存，是因为战报和头像上要单独标出它们。
 var agent_buffs: Array[SkillDef] = []
-## 本场随机抽到的技能，擂主 8 个、挑战者 4 个。
+## 本场随机抽到的技能，擂主 6~8 张、挑战者 2~4 张。
 var skills: Array[SkillDef] = []
 ## 是不是这一场的擂主（榜首）。体型、技能位、先天加成都看它。
 var is_champion: bool = false
@@ -53,6 +53,8 @@ var paralyze_turns: int = 0
 var confuse_turns: int = 0
 ## 是否还留着一次“浴火重生”。
 var rebirth_available: bool = false
+## 上一手治疗触发后，直到自己下一次行动开始前 100% 闪避（幻影刺杀除外）。
+var heal_guard: bool = false
 
 
 ## 从排行榜条目建一名上场角色。技能和 buff 由 SkillGrant 另行发放。
@@ -171,6 +173,10 @@ func stacked_guard() -> float:
 
 func stacked_counter() -> float:
 	return stacked("counter_chance")
+
+
+func stacked_awaken() -> float:
+	return stacked("awaken_chance")
 
 
 ## 战报里“某某（XX 暴击 · N 技能）”那一段的 buff 文案。

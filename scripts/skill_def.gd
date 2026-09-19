@@ -46,8 +46,10 @@ extends Resource
 @export var guard_chance: float = 0.0
 ## 被命中后立刻反击一次的概率。
 @export var counter_chance: float = 0.0
-## 出手之后触发一次自我治疗的概率（实际概率按身份在 CombatResolver 里定）。
+## 出手时触发治疗的概率（实际概率按身份在 CombatResolver 里定）；触发则不进攻。
 @export var heal_chance: float = 0.0
+## 主动出手时触发潜能激发的概率；当前生命不够付费时不掷。
+@export var awaken_chance: float = 0.0
 ## 死亡时满血复活一次，仅此一次。
 @export var rebirth: bool = false
 ## 命中后按伤害比例回血。

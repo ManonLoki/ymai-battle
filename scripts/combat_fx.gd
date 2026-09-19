@@ -10,6 +10,8 @@ const HEAL_COLOR := Color(0.45, 1.0, 0.62, 1.0)
 const CRIT_COLOR := Color(1.0, 0.55, 0.08, 1.0)
 const SKULL_COLOR := Color(0.92, 0.08, 0.1, 1.0)
 const STUN_COLOR := Color(1.0, 0.92, 0.25, 1.0)
+const GUARD_FILL := Color(0.45, 0.88, 1.0, 0.28)
+const GUARD_RIM := Color(0.78, 0.96, 1.0, 0.95)
 
 ## 暴击粒子数，明显大于改前的 28。
 const CRIT_AMOUNT := 96
@@ -92,6 +94,53 @@ static func make_stun(name: String = "StunFx") -> Node2D:
 		star.position = Vector2(cos(angle), sin(angle)) * 16.0
 		root.add_child(star)
 	return root
+
+
+## 绝对防御罩子：半透明椭圆罩，表示这一下百毒不侵。
+static func make_guard(name: String = "GuardFx") -> Node2D:
+	var root := Node2D.new()
+	root.name = name
+	root.visible = false
+	root.z_index = 7
+	var fill := Polygon2D.new()
+	fill.name = "Fill"
+	fill.color = GUARD_FILL
+	fill.polygon = _ellipse_points(0.0, -6.0, 78.0, 108.0, 28)
+	root.add_child(fill)
+	var rim := Line2D.new()
+	rim.name = "Rim"
+	rim.width = 5.0
+	rim.default_color = GUARD_RIM
+	rim.closed = true
+	rim.joint_mode = Line2D.LINE_JOINT_ROUND
+	for point in fill.polygon:
+		rim.add_point(point)
+	root.add_child(rim)
+	var inner := Line2D.new()
+	inner.name = "Inner"
+	inner.width = 2.0
+	inner.default_color = Color(1.0, 1.0, 1.0, 0.55)
+	inner.closed = true
+	for point in _ellipse_points(0.0, -6.0, 62.0, 90.0, 24):
+		inner.add_point(point)
+	root.add_child(inner)
+	# 顶部一点高光，读起来像罩子而不是色块。
+	var gleam := Polygon2D.new()
+	gleam.name = "Gleam"
+	gleam.color = Color(1.0, 1.0, 1.0, 0.45)
+	gleam.polygon = PackedVector2Array([
+		Vector2(-18, -92), Vector2(18, -92), Vector2(10, -78), Vector2(-10, -78),
+	])
+	root.add_child(gleam)
+	return root
+
+
+static func _ellipse_points(cx: float, cy: float, rx: float, ry: float, n: int) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i in n:
+		var angle := TAU * float(i) / float(n)
+		pts.append(Vector2(cx + cos(angle) * rx, cy + sin(angle) * ry))
+	return pts
 
 
 ## 红色画了 X 的骷髅。优先贴图，没有贴图就用多边形兜底，测试都能看到红 X。

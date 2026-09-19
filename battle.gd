@@ -371,12 +371,16 @@ func _play_event(event: StrikeResult, champion: Fighter, opponent: Fighter) -> v
 		defender_view = attacker_view
 		defender = attacker
 	# 中毒掉血和被跳过的行动没有攻击动作，单独走一条短路径。
+	# 状态粒子只在真正结算到身上时播：中毒掉血、麻痹无法行动、混乱打自己。
 	if event.poison_tick or event.skip_reason != "":
 		if event.poison_tick:
 			attacker_view.play_poison_fx()
 			attacker_view.set_hp(event.defender_hp_after, attacker.max_hp)
 		elif event.skip_reason == StrikeResult.SKIP_PARALYZE:
 			attacker_view.play_paralyze_fx()
+		elif event.skip_reason == StrikeResult.SKIP_HEAL:
+			attacker_view.play_heal_fx()
+			attacker_view.set_hp(event.attacker_hp_after, attacker.max_hp)
 		_append_log(_event_text(event))
 		if event.revived:
 			attacker_view.play_idle()
@@ -384,6 +388,8 @@ func _play_event(event: StrikeResult, champion: Fighter, opponent: Fighter) -> v
 		elif event.defender_died:
 			attacker_view.play_death()
 		return
+	if event.self_hit:
+		attacker_view.play_confuse_fx()
 	attacker_view.play_attack()
 	# 等挥击动画挥到一半再结算挨打方，看起来才像打中了。
 	if not await _wait(HIT_IMPACT_DELAY):
@@ -394,12 +400,6 @@ func _play_event(event: StrikeResult, champion: Fighter, opponent: Fighter) -> v
 			defender_view.play_assassinate_fx()
 		if event.crit:
 			defender_view.play_crit_fx()
-		if event.poisoned:
-			defender_view.play_poison_fx()
-		if event.paralyzed:
-			defender_view.play_paralyze_fx()
-		if event.confused:
-			defender_view.play_confuse_fx()
 		# 复活 / 倒下 / 挡下 / 普通挨打，四种反应互斥。
 		if event.revived:
 			defender_view.play_hurt()
@@ -407,6 +407,7 @@ func _play_event(event: StrikeResult, champion: Fighter, opponent: Fighter) -> v
 		elif event.defender_died:
 			defender_view.play_death()
 		elif event.guarded:
+			defender_view.play_guard_fx()
 			defender_view.play_idle()
 		else:
 			defender_view.play_hurt()
@@ -415,10 +416,11 @@ func _play_event(event: StrikeResult, champion: Fighter, opponent: Fighter) -> v
 		defender_view.play_dodge()
 	else:
 		defender_view.play_idle()
-	# 吸血和治疗都会回血，攻击方这边也要更新血条。
+	# 潜能激发先扣自己的血；吸血和治疗再回。攻击方血条都要跟着动。
+	if event.awakened or event.heal_amount > 0:
+		attacker_view.set_hp(event.attacker_hp_after, attacker.max_hp)
 	if event.heal_amount > 0:
 		attacker_view.play_heal_fx()
-		attacker_view.set_hp(event.attacker_hp_after, attacker.max_hp)
 	_append_log(_event_text(event))
 	if is_instance_valid(attacker_view):
 		await _await_oneshot(attacker_view.anim_player)

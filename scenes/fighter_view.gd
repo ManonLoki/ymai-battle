@@ -47,12 +47,17 @@ var _paralyze_fx: CPUParticles2D
 var _stun_fx: Node2D
 ## 幻影刺杀盖在身上的红 X 骷髅。
 var _skull_fx: Node2D
+## 绝对防御罩子。
+var _guard_fx: Node2D
 ## 闪避 / 凌波微步的重影容器，不含本体。
 var _afterimages: Node2D
 ## 当前正在跑的染色 Tween。新特效来了要先把旧的 kill 掉，否则颜色会打架。
 var _fx_tween: Tween
 var _stun_tween: Tween
 var _skull_tween: Tween
+var _guard_tween: Tween
+var _poison_stop: Tween
+var _paralyze_stop: Tween
 
 
 func _ready() -> void:
@@ -79,12 +84,14 @@ func _ready() -> void:
 	_afterimages.z_index = -1
 	_stun_fx = CombatFx.make_stun("StunFx")
 	_skull_fx = CombatFx.make_skull("SkullFx")
+	_guard_fx = CombatFx.make_guard("GuardFx")
 	$Visual.add_child(_crit_fx)
 	$Visual.add_child(_poison_fx)
 	$Visual.add_child(_paralyze_fx)
 	$Visual.add_child(_afterimages)
 	$Visual.add_child(_stun_fx)
 	$Visual.add_child(_skull_fx)
+	$Visual.add_child(_guard_fx)
 	# 这几个 Label 是场景里摆好的，得单独套上中文字体。
 	for label in [name_label, hp_label, tip_label]:
 		label.add_theme_font_override("font", ThemeHelper.UI_FONT)
@@ -143,7 +150,7 @@ func _fill_icons(fighter: Fighter) -> void:
 		if buff.icon_id.is_empty():
 			continue
 		buff_row.add_child(_icon_rect(buff))
-	for skill in fighter.skills:
+	for skill in SkillCatalog.sort_for_display(fighter.skills):
 		if skill.icon_id.is_empty():
 			continue
 		skill_row.add_child(_icon_rect(skill))
@@ -274,27 +281,50 @@ func play_crit_fx() -> void:
 	_fx_tween = _restart_tint(Color(1.0, 0.92, 0.35), Color.WHITE, 0.28, true)
 
 
-## 中毒特效：红色粒子 + 立绘泛红，和治疗绿粒子区分开。
+## 中毒特效：红色粒子 + 立绘泛红后回白。粒子一轮结束后关掉。
 func play_poison_fx() -> void:
 	CombatFx.burst(_poison_fx)
-	_fx_tween = _restart_tint(Color(1.0, 0.35, 0.32), Color(1.0, 0.7, 0.68), 0.35, false)
+	_poison_stop = _stop_burst_later(_poison_fx, _poison_stop)
+	_fx_tween = _restart_tint(Color(1.0, 0.35, 0.32), Color.WHITE, 0.35, false)
 
 
-## 麻痹特效：黄色粒子 + 立绘泛黄。
+## 麻痹特效：黄色粒子 + 立绘泛黄后回白。粒子一轮结束后关掉。
 func play_paralyze_fx() -> void:
 	CombatFx.burst(_paralyze_fx)
-	_fx_tween = _restart_tint(Color(1.0, 0.95, 0.35), Color(1.0, 0.92, 0.55), 0.35, false)
+	_paralyze_stop = _stop_burst_later(_paralyze_fx, _paralyze_stop)
+	_fx_tween = _restart_tint(Color(1.0, 0.95, 0.35), Color.WHITE, 0.35, false)
 
 
-## 混乱特效：头顶眩晕星旋转。
+## 混乱特效：头顶眩晕星转一圈就收掉，不在过期后还挂着。
 func play_confuse_fx() -> void:
 	_stun_fx.visible = true
 	_stun_fx.rotation = 0.0
 	if _stun_tween:
 		_stun_tween.kill()
 	_stun_tween = create_tween()
-	_stun_tween.set_loops()
 	_stun_tween.tween_property(_stun_fx, "rotation", TAU, 0.8)
+	_stun_tween.tween_callback(_hide_stun)
+
+
+## 绝对防御：身上罩一层罩子，表示这一下百毒不侵。
+func play_guard_fx() -> void:
+	_guard_fx.visible = true
+	_guard_fx.modulate = Color(1, 1, 1, 1)
+	_guard_fx.scale = Vector2(0.55, 0.55)
+	if _guard_tween:
+		_guard_tween.kill()
+	_guard_tween = create_tween()
+	_guard_tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_guard_tween.tween_property(_guard_fx, "scale", Vector2(1.08, 1.08), 0.16)
+	_guard_tween.tween_property(_guard_fx, "scale", Vector2.ONE, 0.1)
+	_guard_tween.tween_interval(0.28)
+	_guard_tween.tween_property(_guard_fx, "modulate:a", 0.0, 0.22)
+	_guard_tween.tween_callback(func() -> void:
+		if is_instance_valid(_guard_fx):
+			_guard_fx.visible = false
+			_guard_fx.modulate = Color.WHITE
+	)
+	_fx_tween = _restart_tint(Color(0.7, 0.95, 1.0), Color.WHITE, 0.32, true)
 
 
 ## 幻影刺杀：在对方身上盖红色画了 X 的骷髅。
@@ -360,16 +390,50 @@ func dodge_ghost_count() -> int:
 func _hide_transient_fx() -> void:
 	if _afterimages:
 		NodeUtil.clear_children(_afterimages)
-	if _stun_fx:
-		_stun_fx.visible = false
-		_stun_fx.rotation = 0.0
+	_hide_stun()
 	if _skull_fx:
 		_skull_fx.visible = false
 		_skull_fx.modulate = Color.WHITE
+	if _guard_fx:
+		_guard_fx.visible = false
+		_guard_fx.modulate = Color.WHITE
+		_guard_fx.scale = Vector2.ONE
 	if _stun_tween:
 		_stun_tween.kill()
 	if _skull_tween:
 		_skull_tween.kill()
+	if _guard_tween:
+		_guard_tween.kill()
+	if _poison_stop:
+		_poison_stop.kill()
+	if _paralyze_stop:
+		_paralyze_stop.kill()
+	if _poison_fx:
+		_poison_fx.emitting = false
+	if _paralyze_fx:
+		_paralyze_fx.emitting = false
+	if _crit_fx:
+		_crit_fx.emitting = false
+	sprite.modulate = Color.WHITE
+
+
+func _hide_stun() -> void:
+	if is_instance_valid(_stun_fx):
+		_stun_fx.visible = false
+		_stun_fx.rotation = 0.0
+
+
+## 一次性爆发播完就停喷，下一轮再 restart。
+func _stop_burst_later(particles: CPUParticles2D, previous: Tween) -> Tween:
+	if previous:
+		previous.kill()
+	var life := create_tween()
+	life.tween_interval(particles.lifetime)
+	life.tween_callback(func() -> void:
+		if is_instance_valid(particles):
+			particles.emitting = false
+	)
+	return life
 
 
 ## 五种动画全部用代码建，场景文件里不存动画数据。

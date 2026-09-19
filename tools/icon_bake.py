@@ -391,6 +391,26 @@ def bake() -> None:
     ring(img, 19, 14, 7, (120, 160, 255, 255))
     icons["skill_lingbo"] = img
 
+    # 潜能激发：小人两侧上升的能量柱，和暴击的八向星芒分开。
+    img = family_tile("technique", (48, 16, 8))
+    body = (255, 220, 120, 255)
+    low = (255, 70, 40, 255)
+    mid = (255, 160, 50, 255)
+    high = (255, 230, 80, 255)
+    disc(img, 16, 10, 3, body)
+    fill(img, 14, 13, 4, 8, body)
+    fill(img, 12, 14, 2, 5, body)
+    fill(img, 18, 14, 2, 5, body)
+    fill(img, 13, 21, 2, 5, body)
+    fill(img, 17, 21, 2, 5, body)
+    fill(img, 7, 20, 3, 6, low)
+    fill(img, 7, 14, 3, 6, mid)
+    fill(img, 7, 8, 3, 6, high)
+    fill(img, 22, 20, 3, 6, low)
+    fill(img, 22, 14, 3, 6, mid)
+    fill(img, 22, 8, 3, 6, high)
+    icons["skill_awaken"] = img
+
     os.makedirs(OUT, exist_ok=True)
     for name, image in icons.items():
         path = os.path.join(OUT, f"{name}.png")

@@ -10,6 +10,7 @@ extends RefCounted
 ## skip_reason 的两个取值。写和读都走常量，免得两头各拼一次字符串。
 const SKIP_PARALYZE := "paralyze"
 const SKIP_ROOT := "root"
+const SKIP_HEAL := "heal"
 
 var attacker_name: String = ""
 ## 挨打方的名字；自伤（混乱）时会被改写成出手方自己。
@@ -60,6 +61,10 @@ var heal_amount: int = 0
 var lifesteal: bool = false
 ## heal_amount 来自治疗技能。
 var treated: bool = false
+## 这一串主动出手触发了潜能激发（只标在首击上）。
+var awakened: bool = false
+## 潜能激发扣掉的生命，0 表示没触发。
+var awaken_cost: int = 0
 ## 出手方结算后的剩余血量，回血时血条要跟着动。
 var attacker_hp_after: int = 0
 ## 这一连串出手一共打了几下，由 CombatLog.annotate 回填到首击上。
