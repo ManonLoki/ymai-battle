@@ -111,15 +111,15 @@ horizontal_alignment = 1
 custom_minimum_size = Vector2(0, 12)
 layout_mode = 2
 
-[node name="RankingButton" type="Button" parent="Center/Menu" unique_id=2088668834]
-unique_name_in_owner = true
-layout_mode = 2
-text = "查看排行"
-
 [node name="BattleButton" type="Button" parent="Center/Menu" unique_id=584564083]
 unique_name_in_owner = true
 layout_mode = 2
 text = "进入对战"
+
+[node name="RankingButton" type="Button" parent="Center/Menu" unique_id=2088668834]
+unique_name_in_owner = true
+layout_mode = 2
+text = "查看排行"
 
 [node name="SettingsButton" type="Button" parent="Center/Menu" unique_id=771203344]
 unique_name_in_owner = true

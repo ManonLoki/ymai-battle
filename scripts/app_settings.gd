@@ -99,12 +99,15 @@ static func window_mode_for(mode: int) -> DisplayServer.WindowMode:
 #
 # 默认走 TokenUsageApi 里写死的那个线上地址；在设置页填一个
 # `协议://主机:端口/` 之后，取榜单就改走这台服务器（接口路径不变）。
-# 填空 = 还原默认，所以「还原」不需要单独的存档字段。
+# 用户可以保存多个基址，另外用一个字段记住当前选中哪个。
+# 选中空值 = 还原默认；空值是界面上的虚拟选项，不放进候选列表。
 #
 # 只存**基址**，不存整条 URL：接口路径是代码的事，换服务器的人不该也不必知道。
 
-## 存档里的字段名。
+## 存档里的当前选择。沿用旧字段名，旧版存档不需要改写就能继续用。
 const BASE_URL_KEY := "server_base_url"
+## 本地维护的候选基址列表。Web 启动参数是运行时数据源，不写入这里。
+const BASE_URLS_KEY := "server_base_urls"
 
 ## 输入框里的灰字示例，同时也是这一项的格式说明，测试照着它对。
 const SERVER_PLACEHOLDER := "https://host:port/"
@@ -143,15 +146,92 @@ static func normalize_base_url(text: String) -> String:
 	return base if port.is_empty() else "%s:%d" % [base, int(port)]
 
 
+## 整理一份候选列表：过滤非法项和空值，规范化，再按首次出现的顺序去重。
+## 参数故意收 Variant：JSON 读回来是普通 Array，界面则更适合传 PackedStringArray。
+static func normalize_base_urls(urls: Variant) -> PackedStringArray:
+	var normalized := PackedStringArray()
+	if typeof(urls) != TYPE_ARRAY and typeof(urls) != TYPE_PACKED_STRING_ARRAY:
+		return normalized
+	for raw: Variant in urls:
+		var base := normalize_base_url(str(raw))
+		if not base.is_empty() and not normalized.has(base):
+			normalized.append(base)
+	return normalized
+
+
 ## 读出已保存的基址，没设过或存档坏了都给空串（= 用默认地址）。
 static func load_base_url(path: String = SAVE_PATH) -> String:
 	return normalize_base_url(str(JsonStore.read_dict(path).get(BASE_URL_KEY, "")))
+
+
+## 读出本地候选列表。旧存档只有 server_base_url 时，把它视为唯一候选；
+## 但只要新字段存在（即使是空数组），它就是权威数据，不再用旧值补回去。
+static func load_base_urls(path: String = SAVE_PATH) -> PackedStringArray:
+	var data := JsonStore.read_dict(path)
+	if data.has(BASE_URLS_KEY):
+		return normalize_base_urls(data.get(BASE_URLS_KEY, []))
+	var urls := PackedStringArray()
+	var legacy := normalize_base_url(str(data.get(BASE_URL_KEY, "")))
+	if not legacy.is_empty():
+		urls.append(legacy)
+	return urls
 
 
 ## 存下基址。传空串或不合规的写法都会**清掉**这一项，也就是还原成默认地址。
 ## 校验在这里再做一遍：设置页之外的调用方（比如以后的命令行参数）也该走同一把尺子。
 static func save_base_url(text: String, path: String = SAVE_PATH) -> bool:
 	return JsonStore.patch_dict(path, {BASE_URL_KEY: normalize_base_url(text)})
+
+
+## 一次存下候选列表和当前选择，避免只写成其中一项的中间状态。
+## 选择不在整理后的列表里时自动回到默认；Web 注入列表的选择只应调 save_base_url。
+static func save_base_urls(urls: Variant, selected: String = "", path: String = SAVE_PATH) -> bool:
+	var normalized := normalize_base_urls(urls)
+	var normalized_selected := normalize_base_url(selected)
+	if not normalized_selected.is_empty() and not normalized.has(normalized_selected):
+		normalized_selected = ""
+	# JSON 存普通数组，不把 PackedStringArray 这个运行时容器泄漏到存档格式。
+	var stored_urls: Array = []
+	for base in normalized:
+		stored_urls.append(base)
+	return JsonStore.patch_dict(path, {
+		BASE_URLS_KEY: stored_urls,
+		BASE_URL_KEY: normalized_selected,
+	})
+
+
+## 把一个合法基址加入本地列表并立即选中；重复添加只会选中既有项。
+## 列表和选择同一次落盘，不会破坏共用 settings.json 里的窗口模式。
+static func add_and_select_base_url(text: String, path: String = SAVE_PATH) -> bool:
+	var base := normalize_base_url(text)
+	if base.is_empty():
+		return false
+	var urls := load_base_urls(path)
+	if not urls.has(base):
+		urls.append(base)
+	return save_base_urls(urls, base, path)
+
+
+## 界面层的简写别名：“添加”的产品语义就是添加并选中。
+static func add_base_url(text: String, path: String = SAVE_PATH) -> bool:
+	return add_and_select_base_url(text, path)
+
+
+## 从本地列表删除指定基址。删的是当前选择才回到默认；删除其他候选时保留选择。
+## 不存在的地址视为幂等成功，也不会意外清空当前选择。
+static func remove_base_url(text: String, path: String = SAVE_PATH) -> bool:
+	var base := normalize_base_url(text)
+	if base.is_empty():
+		return false
+	var urls := load_base_urls(path)
+	var index := urls.find(base)
+	if index < 0:
+		return true
+	urls.remove_at(index)
+	var selected := load_base_url(path)
+	if selected == base:
+		selected = ""
+	return save_base_urls(urls, selected, path)
 
 
 ## 还原默认：把自定义地址清掉，之后取榜单又走 TokenUsageApi 里的默认地址。

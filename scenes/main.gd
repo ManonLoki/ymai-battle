@@ -7,6 +7,11 @@ const RANKING_SCENE := "res://scenes/ranking.tscn"
 const BATTLE_SCENE := "res://scenes/battle.tscn"
 const SETTINGS_SCENE := "res://scenes/settings.tscn"
 
+## Web 启动参数只负责隐藏入口，不删除节点。固定顺序同时
+## 也是电视遥控器的焦点和主次颜色顺序；对战始终排第一、拿默认焦点和实心主色。
+var _menu_buttons: Array[Button] = []
+var _focus_fallback: Button = null
+
 
 func _ready() -> void:
 	# 光标由 CursorController autoload 全局接管（装贴图 + 每个事件切换），
@@ -16,15 +21,17 @@ func _ready() -> void:
 	# 主菜单是唯一的启动入口，所以上次选的窗口模式在这里应用一次就够了，
 	# 从设置页返回时顺带再确认一遍，代价只是一次幂等的 DisplayServer 调用。
 	AppSettings.apply_mode(AppSettings.load_mode())
+	_menu_buttons = [%BattleButton, %RankingButton, %SettingsButton, %QuitButton]
+	_apply_web_menu_visibility()
 	_style()
 	%RankingButton.pressed.connect(_on_ranking_pressed)
 	%BattleButton.pressed.connect(_on_battle_pressed)
 	%SettingsButton.pressed.connect(_on_settings_pressed)
 	%QuitButton.pressed.connect(_on_quit_pressed)
-	# 电视上没有鼠标，一进来就得有个控件拿着焦点。
-	%RankingButton.grab_focus()
-
-
+	# 电视上没有鼠标，一进来就得有个可见控件拿着焦点。
+	_focus_fallback = first_visible_menu_button()
+	if _focus_fallback != null:
+		_focus_fallback.grab_focus()
 ## 电视遥控器的 BACK 键：引擎会把它变成这个通知（前提是
 ## project.godot 里 quit_on_go_back=false，否则引擎自己就退了）。
 func _notification(what: int) -> void:
@@ -38,7 +45,24 @@ func _unhandled_input(event: InputEvent) -> void:
 		_on_quit_pressed()
 	elif TvRemote.is_navigation(event):
 		# 焦点万一掉了，方向键会全哑，这里补回去。
-		TvRemote.ensure_focus(%RankingButton)
+		TvRemote.ensure_focus(_focus_fallback)
+
+
+## Web 参数中的 CloseMenu 只影响主菜单入口。Battle 故意不在可关闭清单里，
+## 保证即使三个可选入口全隐藏，页面仍有一个能进入且能拿焦点的操作。
+func _apply_web_menu_visibility() -> void:
+	%RankingButton.visible = not WebLaunchConfig.is_menu_closed(&"ranking")
+	%SettingsButton.visible = not WebLaunchConfig.is_menu_closed(&"settings")
+	%QuitButton.visible = not WebLaunchConfig.is_menu_closed(&"quit")
+
+
+## 当前场景顺序中的第一个可见、可用菜单。启动聚焦和丢焦恢复共用这一条，
+## 避免两处各自写死排行榜。
+func first_visible_menu_button() -> Button:
+	for button in _menu_buttons:
+		if button.visible and not button.disabled:
+			return button
+	return null
 
 
 ## 上色和按钮样式。布局本身在 main.tscn 里。
@@ -47,11 +71,10 @@ func _style() -> void:
 	%Title.add_theme_color_override("font_color", ThemeHelper.TEXT)
 	%VersionLabel.text = "v%s" % project_version()
 	%VersionLabel.add_theme_color_override("font_color", ThemeHelper.MUTED)
-	# 只有“排行榜”是实心主按钮，其余都走描边样式。
-	ThemeHelper.style_button(%RankingButton, true)
-	ThemeHelper.style_button(%BattleButton, false)
-	ThemeHelper.style_button(%SettingsButton, false)
-	ThemeHelper.style_button(%QuitButton, false)
+	# 当前第一个可见入口是实心主按钮；Battle 不可隐藏，所以它始终是主按钮。
+	var primary := first_visible_menu_button()
+	for button in _menu_buttons:
+		ThemeHelper.style_button(button, button == primary)
 
 
 ## project.godot 里配置的版本号，没配则回落到 0.0.0。

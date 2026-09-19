@@ -11,7 +11,7 @@ import sys
 PATH = sys.argv[1] if len(sys.argv) > 1 else "export_presets.cfg"
 
 WANTED = {
-    "include_filter": '"*.png;*.woff2"',
+    "include_filter": '"*.png,*.woff2"',
     "exclude_filter": '"Release/*"',
     "architectures/armeabi-v7a": "true",
     "architectures/arm64-v8a": "true",

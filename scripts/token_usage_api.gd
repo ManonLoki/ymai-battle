@@ -13,10 +13,11 @@ const USAGE_PATH := "/api/v1/token-usage"
 const DEFAULT_USAGE_URL := "https://codex-tracker.yunmai365.com/api/v1/token-usage"
 
 
-## 这一次该请求哪个地址。设置里填过服务器就用那台，否则回落到默认地址。
-## 默认参数每次调用都现读存档，所以设置页改完不用重启，下一场取榜单就生效；
+## 这一次该请求哪个地址。候选服务器可能来自 Web 参数，也可能来自本地存档；
+## 只有当前选择仍属于活动候选列表时才生效，否则回落到默认地址。
+## 默认参数每次调用都现读选择，所以设置页改完不用重启，下一场取榜单就生效；
 ## 显式传 base 则是「就按这个基址算」，设置页预览和测试都走这条。
-static func usage_url(base: String = AppSettings.load_base_url()) -> String:
+static func usage_url(base: String = WebLaunchConfig.effective_base_url()) -> String:
 	return DEFAULT_USAGE_URL if base.is_empty() else base + USAGE_PATH
 
 

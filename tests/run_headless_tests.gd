@@ -45,6 +45,9 @@ func _run() -> void:
 	await _test_main_menu()
 	await _test_settings()
 	_test_server_settings()
+	_test_web_launch_config()
+	await _test_server_settings_ui()
+	await _test_web_main_menu()
 	await _test_tv_remote()
 	await _test_main_parallax_and_quit()
 	await _test_battle_and_ranking_backgrounds()
@@ -1403,7 +1406,9 @@ func _test_settings() -> void:
 	# 场景本身：三个固定模式按钮都在设计器节点树里，运行时只绑定模式数据。
 	var packed := load("res://scenes/settings.tscn") as PackedScene
 	_assert(packed != null, "settings.tscn loads")
+	WebLaunchConfig.reset()
 	var scene: Node = packed.instantiate()
+	scene.settings_path = path
 	root.add_child(scene)
 	await process_frame
 	_assert(scene.get_node_or_null("%BackButton") != null, "Settings has a Back button")
@@ -1419,16 +1424,19 @@ func _test_settings() -> void:
 	_assert(scene.get_node_or_null("%FullscreenButton") != null, "fullscreen mode button is scene-authored")
 	var settings_src := FileAccess.get_file_as_string("res://scenes/settings.gd")
 	_assert(settings_src.find("Button.new") < 0 and settings_src.find("%ModeList.add_child") < 0, "settings binds fixed mode controls without constructing them in code")
-	# 服务器那一栏：输入框 + 保存 + 还原默认 + 一行说明当前用的是哪台。
-	var input := scene.get_node_or_null("%ServerInput") as LineEdit
-	_assert(input != null, "Settings has a server address field")
-	_assert(input.placeholder_text == AppSettings.SERVER_PLACEHOLDER, "the field shows the expected protocol://host:port/ form")
-	_assert(scene.get_node_or_null("%ServerSave") != null, "Settings has a save button for the server address")
-	_assert(scene.get_node_or_null("%ServerReset") != null, "Settings can restore the default server")
+	# 服务器那一栏：下拉选择 + 增加输入 + 增删操作 + 一行当前 endpoint。
+	var select := scene.get_node_or_null("%ServerSelect") as OptionButton
+	var input := scene.get_node_or_null("%ServerAddInput") as LineEdit
+	_assert(select != null, "Settings has a server selector")
+	_assert(input != null, "Settings has a server add field")
+	_assert(input.placeholder_text == AppSettings.SERVER_PLACEHOLDER, "the add field shows the expected protocol://host:port/ form")
+	_assert(scene.get_node_or_null("%ServerAdd") != null, "Settings can add a local server")
+	_assert(scene.get_node_or_null("%ServerDelete") != null, "Settings can delete the selected local server")
 	var status := scene.get_node_or_null("%ServerStatus") as Label
 	_assert(status != null and status.text.find(TokenUsageApi.usage_url()) >= 0, "the status line names the endpoint actually in use")
 	scene.queue_free()
 	await process_frame
+	WebLaunchConfig.reset()
 
 
 ## 榜单服务器地址：什么样的写法算合法、怎么存怎么读、还原之后回到默认地址，
@@ -1446,6 +1454,11 @@ func _test_server_settings() -> void:
 	_assert(AppSettings.normalize_base_url("  HTTPS://Example.com:8443/ ") == "https://Example.com:8443", "normalize trims, lowercases the scheme and drops the trailing slash")
 	_assert(AppSettings.normalize_base_url("http://10.0.0.2:8080") == "http://10.0.0.2:8080", "an already normal base url survives unchanged")
 	_assert(AppSettings.normalize_base_url("nonsense") == "", "an unusable base url normalizes to the empty string")
+	var normalized_urls := AppSettings.normalize_base_urls([
+		" https://one.example/ ", "garbage", "https://one.example", "http://two.example:8080/", "",
+	])
+	_assert(normalized_urls == PackedStringArray(["https://one.example", "http://two.example:8080"]), "a base-url list filters invalid entries, normalizes, deduplicates and keeps first-seen order")
+	_assert(AppSettings.normalize_base_urls("https://not-an-array.example").is_empty(), "a non-array base-url source is rejected")
 
 	var path := "user://test_server.json"
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
@@ -1470,6 +1483,45 @@ func _test_server_settings() -> void:
 	_assert(AppSettings.load_mode(path) == AppSettings.Mode.FULLSCREEN, "saving the server address keeps the window mode")
 	AppSettings.save_mode(AppSettings.Mode.WINDOWED, path)
 	_assert(AppSettings.load_base_url(path) == "https://box.lan:9443", "saving the window mode keeps the server address")
+
+	# 旧存档没有列表字段时，已选服务器就是唯一候选；新字段即使为空也是权威数据。
+	JsonStore.write_dict(path, {
+		AppSettings.MODE_KEY: AppSettings.Mode.FULLSCREEN,
+		AppSettings.BASE_URL_KEY: "https://legacy.example/",
+		"sentinel": "keep-me",
+	})
+	_assert(AppSettings.load_base_urls(path) == PackedStringArray(["https://legacy.example"]), "a legacy selected server migrates in memory as the sole candidate")
+	JsonStore.write_dict(path, {
+		AppSettings.BASE_URL_KEY: "https://legacy.example",
+		AppSettings.BASE_URLS_KEY: [],
+	})
+	_assert(AppSettings.load_base_urls(path).is_empty(), "an explicitly saved empty candidate list does not resurrect the legacy selection")
+
+	# 列表和选中项一次写入，不要冲掉同一 settings.json 里的其他字段。
+	JsonStore.write_dict(path, {
+		AppSettings.MODE_KEY: AppSettings.Mode.FULLSCREEN,
+		"sentinel": "keep-me",
+	})
+	_assert(AppSettings.save_base_urls([
+		"https://one.example/", "broken", "https://one.example", "http://two.example:8080/",
+	], "http://two.example:8080/", path), "a normalized server list and selection save atomically")
+	_assert(AppSettings.load_base_urls(path) == PackedStringArray(["https://one.example", "http://two.example:8080"]), "the stored candidate list is normalized and deduplicated")
+	_assert(AppSettings.load_base_url(path) == "http://two.example:8080", "the selected candidate is stored normalized")
+	var stored := JsonStore.read_dict(path)
+	_assert(int(stored.get(AppSettings.MODE_KEY, -1)) == AppSettings.Mode.FULLSCREEN and str(stored.get("sentinel", "")) == "keep-me", "saving server candidates preserves every unrelated settings field")
+	_assert(AppSettings.add_base_url("https://three.example/", path), "a valid local server can be added")
+	_assert(AppSettings.load_base_urls(path) == PackedStringArray(["https://one.example", "http://two.example:8080", "https://three.example"]), "adding appends one normalized candidate")
+	_assert(AppSettings.load_base_url(path) == "https://three.example", "adding a server selects it immediately")
+	_assert(AppSettings.add_base_url(" https://three.example ", path), "adding an existing normalized server succeeds by selecting it")
+	_assert(AppSettings.load_base_urls(path).size() == 3, "adding a duplicate does not create another option")
+	_assert(AppSettings.remove_base_url("https://one.example", path), "an unselected local server can be removed")
+	_assert(not AppSettings.load_base_urls(path).has("https://one.example"), "removing drops the requested candidate")
+	_assert(AppSettings.load_base_url(path) == "https://three.example", "removing a different candidate keeps the current selection")
+	_assert(AppSettings.remove_base_url("https://three.example", path), "the selected local server can be removed")
+	_assert(AppSettings.load_base_url(path).is_empty(), "removing the selected server returns to the default")
+	_assert(int(JsonStore.read_dict(path).get(AppSettings.MODE_KEY, -1)) == AppSettings.Mode.FULLSCREEN, "adding and removing servers preserves the window mode")
+	AppSettings.save_base_urls(["https://one.example"], "https://missing.example", path)
+	_assert(AppSettings.load_base_url(path).is_empty(), "a selection outside the saved candidate list falls back to default")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 	# 最后一环：基址怎么变成真正请求的地址。
@@ -1478,10 +1530,159 @@ func _test_server_settings() -> void:
 	_assert(TokenUsageApi.DEFAULT_USAGE_URL.ends_with(TokenUsageApi.USAGE_PATH), "both servers are asked for the same path")
 
 
-## 主菜单：三个按钮都在，且能切到对应场景。
+## Web 启动配置：BaseURL 的“未提供”和“显式空列表”是两种语义，
+## 注入列表替代本地列表，CloseMenu 只能关掉三个非核心入口。
+func _test_web_launch_config() -> void:
+	var path := "user://test_web_launch_config.json"
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	AppSettings.save_base_urls(["https://local-a.example", "https://local-b.example"], "https://local-b.example", path)
+	WebLaunchConfig.reset()
+	_assert(not WebLaunchConfig.has_base_urls_override(), "without a Web BaseURL field there is no override")
+	_assert(WebLaunchConfig.active_base_urls(path) == ["https://local-a.example", "https://local-b.example"], "an absent Web BaseURL field falls back to the local candidate list")
+	_assert(WebLaunchConfig.effective_base_url(path) == "https://local-b.example", "a saved selection is effective when it belongs to the active local list")
+
+	WebLaunchConfig.configure(true, [], [])
+	_assert(WebLaunchConfig.has_base_urls_override(), "an explicitly empty Web BaseURL array still counts as an override")
+	_assert(WebLaunchConfig.active_base_urls(path).is_empty(), "an explicitly empty Web BaseURL array does not fall back to local candidates")
+	_assert(WebLaunchConfig.effective_base_url(path).is_empty(), "no active candidate means the built-in server is effective")
+
+	var normalized := WebLaunchConfig.normalize_base_urls([
+		" https://web-a.example/ ", "bad", "https://web-a.example", 42,
+		"http://web-b.example:8080/", "https://web-c.example/path",
+	])
+	_assert(normalized == ["https://web-a.example", "http://web-b.example:8080"], "Web BaseURL normalization filters invalid and non-string values, deduplicates and preserves order")
+	WebLaunchConfig.configure(true, [
+		"https://web-a.example/", "invalid", "http://web-b.example:8080/", "https://web-a.example",
+	], [])
+	_assert(WebLaunchConfig.active_base_urls(path) == ["https://web-a.example", "http://web-b.example:8080"], "a provided Web list replaces rather than merges with local candidates")
+	AppSettings.save_base_url("http://web-b.example:8080", path)
+	_assert(WebLaunchConfig.effective_base_url(path) == "http://web-b.example:8080", "a saved selection is effective when it belongs to the injected list")
+	AppSettings.save_base_url("https://local-a.example", path)
+	_assert(WebLaunchConfig.effective_base_url(path).is_empty(), "a saved selection outside the injected list falls back to the built-in server")
+	WebLaunchConfig.reset()
+	_assert(WebLaunchConfig.active_base_urls(path) == ["https://local-a.example", "https://local-b.example"], "resetting the Web override restores the untouched local source")
+	_assert(WebLaunchConfig.effective_base_url(path) == "https://local-a.example", "the local selection becomes effective again after the injected source is gone")
+
+	var close_menus := WebLaunchConfig.normalize_close_menus([
+		" Ranking ", "battle", "SETTINGS", "quit", "unknown", "ranking", 7,
+	])
+	_assert(close_menus == ["ranking", "settings", "quit"], "CloseMenu accepts only ranking/settings/quit, normalizes case and keeps first-seen order")
+	WebLaunchConfig.configure(false, [], ["ranking", "settings", "quit", "battle"])
+	_assert(WebLaunchConfig.is_menu_closed("ranking"), "CloseMenu can close ranking")
+	_assert(WebLaunchConfig.is_menu_closed("settings"), "CloseMenu can close settings")
+	_assert(WebLaunchConfig.is_menu_closed("quit"), "CloseMenu can close quit")
+	_assert(not WebLaunchConfig.is_menu_closed("battle"), "CloseMenu can never close battle")
+	_assert(not WebLaunchConfig.is_menu_closed("unknown"), "unknown menu ids are ignored")
+	WebLaunchConfig.reset()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+## 设置页在本地数据源下可增删并立即切换；Web 注入数据源下只能选择，不能改列表。
+func _test_server_settings_ui() -> void:
+	var path := "user://test_server_settings_ui.json"
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	WebLaunchConfig.reset()
+	AppSettings.save_base_urls(["https://local-a.example", "https://local-b.example"], "https://local-b.example", path)
+	var packed := load("res://scenes/settings.tscn") as PackedScene
+	var local_scene: Node = packed.instantiate()
+	local_scene.settings_path = path
+	root.add_child(local_scene)
+	await process_frame
+	var local_select := local_scene.get_node("%ServerSelect") as OptionButton
+	var local_input := local_scene.get_node("%ServerAddInput") as LineEdit
+	var local_add := local_scene.get_node("%ServerAdd") as Button
+	var local_delete := local_scene.get_node("%ServerDelete") as Button
+	_assert(local_select.item_count == 3, "the local selector contains the virtual default plus every saved candidate")
+	_assert(str(local_select.get_item_metadata(local_select.selected)) == "https://local-b.example", "the selector highlights the saved effective server")
+	_assert(local_scene.get_node("%ServerAddRow").visible and local_input.editable and not local_add.disabled and local_delete.visible, "local-source controls allow list management")
+	_assert(not local_delete.disabled, "a selected local candidate can be deleted")
+	local_input.text = "https://local-c.example/"
+	local_scene.call("_on_server_add_pressed")
+	await process_frame
+	_assert(AppSettings.load_base_urls(path).has("https://local-c.example"), "the Settings add action persists a normalized local candidate")
+	_assert(AppSettings.load_base_url(path) == "https://local-c.example", "the Settings add action immediately selects the new candidate")
+	_assert(str(local_select.get_item_metadata(local_select.selected)) == "https://local-c.example", "the selector refreshes to the newly added candidate")
+	local_scene.call("_on_server_delete_pressed")
+	await process_frame
+	_assert(not AppSettings.load_base_urls(path).has("https://local-c.example"), "the Settings delete action removes the selected local candidate")
+	_assert(AppSettings.load_base_url(path).is_empty() and local_select.selected == 0, "deleting the selected candidate switches the UI and saved choice to default")
+	local_scene.queue_free()
+	await process_frame
+
+	# 同一份本地存档在 Web 注入模式下不应被合并或改写列表。
+	var local_before := AppSettings.load_base_urls(path)
+	WebLaunchConfig.configure(true, ["https://web-a.example/", "https://web-b.example"], [])
+	var injected_scene: Node = packed.instantiate()
+	injected_scene.settings_path = path
+	root.add_child(injected_scene)
+	await process_frame
+	var injected_select := injected_scene.get_node("%ServerSelect") as OptionButton
+	var injected_input := injected_scene.get_node("%ServerAddInput") as LineEdit
+	var injected_add := injected_scene.get_node("%ServerAdd") as Button
+	var injected_delete := injected_scene.get_node("%ServerDelete") as Button
+	_assert(injected_select.item_count == 3, "the injected selector contains the virtual default plus only Web candidates")
+	_assert(not injected_scene.get_node("%ServerAddRow").visible and not injected_input.editable and injected_add.disabled, "injected-source add controls are hidden and disabled")
+	_assert(not injected_delete.visible and injected_delete.disabled, "injected-source delete is hidden and disabled")
+	_assert((injected_scene.get_node("%ServerHint") as Label).text.find("网页启动参数") >= 0, "the read-only source is explained in the Settings hint")
+	injected_scene.call("_on_server_selected", 1)
+	await process_frame
+	_assert(AppSettings.load_base_url(path) == "https://web-a.example", "an injected candidate can still be selected and persisted")
+	_assert(WebLaunchConfig.effective_base_url(path) == "https://web-a.example", "the selected injected candidate takes effect immediately")
+	injected_input.text = "https://must-not-save.example"
+	injected_scene.call("_on_server_add_pressed")
+	injected_scene.call("_on_server_delete_pressed")
+	_assert(AppSettings.load_base_urls(path) == local_before, "manual calls cannot mutate the local list while the injected source is active")
+	injected_scene.queue_free()
+	await process_frame
+	WebLaunchConfig.reset()
+	_assert(WebLaunchConfig.effective_base_url(path).is_empty(), "an injected-only saved selection is inactive after returning to the local source")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+## 主菜单不删节点，只隐藏 Web 指定的入口；排行被隐藏时对战承担首焦点。
+func _test_web_main_menu() -> void:
+	var packed := load("res://scenes/main.tscn") as PackedScene
+	WebLaunchConfig.configure(false, [], ["ranking"])
+	var partial: Node = packed.instantiate()
+	root.add_child(partial)
+	await process_frame
+	var partial_ranking := partial.get_node("%RankingButton") as Button
+	var partial_battle := partial.get_node("%BattleButton") as Button
+	var partial_settings := partial.get_node("%SettingsButton") as Button
+	var partial_quit := partial.get_node("%QuitButton") as Button
+	_assert(not partial_ranking.visible and partial_battle.visible and partial_settings.visible and partial_quit.visible, "a partial CloseMenu combination hides only the named entry")
+	_assert(partial_battle.has_focus(), "when ranking is hidden battle receives initial focus")
+	_assert(partial.call("first_visible_menu_button") == partial_battle, "the first visible menu helper returns battle when ranking is hidden")
+	await _press_key(KEY_DOWN)
+	_assert(partial_settings.has_focus(), "D-pad navigation skips hidden ranking and continues from battle to settings")
+	partial_settings.release_focus()
+	await process_frame
+	await _press_key(KEY_DOWN)
+	_assert(partial_battle.has_focus(), "lost focus is restored to the first visible Web menu entry")
+	partial.queue_free()
+	await process_frame
+
+	WebLaunchConfig.configure(false, [], ["ranking", "settings", "quit", "battle", "unknown"])
+	var closed: Node = packed.instantiate()
+	root.add_child(closed)
+	await process_frame
+	var closed_ranking := closed.get_node("%RankingButton") as Button
+	var closed_battle := closed.get_node("%BattleButton") as Button
+	var closed_settings := closed.get_node("%SettingsButton") as Button
+	var closed_quit := closed.get_node("%QuitButton") as Button
+	_assert(not closed_ranking.visible and not closed_settings.visible and not closed_quit.visible, "all three closeable menu entries can be hidden together")
+	_assert(closed_battle.visible and closed_battle.has_focus(), "battle remains visible and focused even when every closeable entry is hidden")
+	closed.queue_free()
+	await process_frame
+	WebLaunchConfig.reset()
+
+
+## 主菜单：四个按钮都在，三个场景入口都能切到对应场景。
 func _test_main_menu() -> void:
 	var packed := load("res://scenes/main.tscn") as PackedScene
 	_assert(packed != null, "main.tscn loads")
+	# 普通主菜单用例不继承上一个 Web 用例的参数快照。
+	WebLaunchConfig.reset()
 	var main: Node = packed.instantiate()
 	root.add_child(main)
 	await process_frame
@@ -1498,7 +1699,14 @@ func _test_main_menu() -> void:
 	var quit_btn := main.get_node_or_null("%QuitButton") as Button
 	_assert(settings_btn != null, "Main has Settings button")
 	_assert(settings_btn != null and settings_btn.text.find("设置") >= 0, "Settings button is labeled for settings")
+	_assert(battle_btn != null and ranking_btn != null and battle_btn.get_index() < ranking_btn.get_index(), "Battle is the first menu entry and Ranking is second")
+	_assert(ranking_btn != null and settings_btn != null and ranking_btn.get_index() < settings_btn.get_index(), "Ranking sits above Settings")
 	_assert(settings_btn != null and quit_btn != null and settings_btn.get_index() < quit_btn.get_index(), "Settings sits above Quit")
+	_assert(battle_btn != null and battle_btn.has_focus(), "Battle owns the default menu focus")
+	var battle_style := battle_btn.get_theme_stylebox("normal") as StyleBoxFlat
+	var ranking_style := ranking_btn.get_theme_stylebox("normal") as StyleBoxFlat
+	_assert(battle_style != null and battle_style.bg_color == ThemeHelper.ACCENT, "Battle uses the filled primary color")
+	_assert(ranking_style != null and ranking_style.bg_color == ThemeHelper.CARD, "Ranking uses the secondary outlined color")
 	var ranking_script := FileAccess.get_file_as_string("res://scenes/main.gd")
 	_assert(ranking_script.find("ranking.tscn") >= 0, "Main can switch to Ranking")
 	_assert(ranking_script.find("battle.tscn") >= 0, "Main can switch to Battle")
@@ -1508,6 +1716,12 @@ func _test_main_menu() -> void:
 	# 主场景角落显示版本号，取自 project.godot，不写死在界面里。
 	var configured := str(ProjectSettings.get_setting("application/config/version", ""))
 	_assert(not configured.is_empty(), "project.godot declares a version")
+	var android_version_code := -1
+	for line in FileAccess.get_file_as_string("res://export_presets.cfg").split("\n"):
+		if line.strip_edges().begins_with("version/code="):
+			android_version_code = int(line.strip_edges().trim_prefix("version/code="))
+			break
+	_assert(android_version_code == int(configured.get_slice(".", 2)), "Android versionCode stays aligned with the project patch version")
 	_assert(main.get_node_or_null("%Subtitle") == null, "the main menu subtitle is gone")
 	var version_label := main.get_node_or_null("%VersionLabel") as Label
 	_assert(version_label != null, "Main has a version label")
@@ -1532,6 +1746,7 @@ func _first_sprite(node: Node) -> Sprite2D:
 func _test_main_parallax_and_quit() -> void:
 	var packed := load("res://scenes/main.tscn") as PackedScene
 	_assert(packed != null, "main.tscn loads for parallax")
+	WebLaunchConfig.reset()
 	var main: Node = packed.instantiate()
 	root.add_child(main)
 	await process_frame
@@ -2531,6 +2746,8 @@ func _export_character_pngs() -> void:
 
 ## 电视遥控器：上下切菜单、OK 确认、BACK 返回/退出。
 func _test_tv_remote() -> void:
+	# 遥控器用例不继承其他 Web 菜单用例的参数快照。
+	WebLaunchConfig.reset()
 	TvRemote.install()
 	TvRemote.install()  # 幂等，重复调用不该把同一个按键塞两遍
 	var cancel_keys := 0
@@ -2569,7 +2786,7 @@ func _test_tv_remote() -> void:
 			back_setting = line.strip_edges().trim_prefix("config/quit_on_go_back=")
 	_assert(back_setting == "false", "the engine does not quit on BACK; each scene handles it")
 
-	# 主菜单：焦点从“查看排行”一路往下走，再走回来。
+	# 主菜单：焦点从“进入对战”一路往下走，再走回来。
 	var main: Node = (load("res://scenes/main.tscn") as PackedScene).instantiate()
 	root.add_child(main)
 	await process_frame
@@ -2577,11 +2794,11 @@ func _test_tv_remote() -> void:
 	var battle_btn: Button = main.get_node("%BattleButton")
 	var settings_btn: Button = main.get_node("%SettingsButton")
 	var quit_btn: Button = main.get_node("%QuitButton")
-	_assert(ranking_btn.has_focus(), "the menu starts with a focused button, so the remote has something to move")
+	_assert(battle_btn.has_focus(), "the menu starts on Battle, so the remote has something to move")
 	_assert(battle_btn.focus_mode == Control.FOCUS_ALL and settings_btn.focus_mode == Control.FOCUS_ALL and quit_btn.focus_mode == Control.FOCUS_ALL, "every menu entry can take focus")
-	_assert(ranking_btn.has_theme_stylebox_override("focus"), "focused buttons draw a TV-visible outline")
+	_assert(battle_btn.has_theme_stylebox_override("focus"), "focused buttons draw a TV-visible outline")
 	await _press_key(KEY_DOWN)
-	_assert(battle_btn.has_focus(), "D-pad down moves to 进入对战")
+	_assert(ranking_btn.has_focus(), "D-pad down moves to 查看排行")
 	await _press_key(KEY_DOWN)
 	_assert(settings_btn.has_focus(), "D-pad down moves to 设置")
 	await _press_key(KEY_DOWN)
@@ -2594,8 +2811,8 @@ func _test_tv_remote() -> void:
 	# 菜单一加项就会错位，而错位之后这条断言是“假通过”。
 	settings_btn.release_focus()
 	await process_frame
-	_assert(TvRemote.ensure_focus(ranking_btn), "a lost focus is restored before navigating")
-	_assert(ranking_btn.has_focus(), "focus lands back on the first entry")
+	_assert(TvRemote.ensure_focus(battle_btn), "a lost focus is restored before navigating")
+	_assert(battle_btn.has_focus(), "focus lands back on Battle, the first entry")
 
 	# OK 键确认：焦点在按钮上时按下回车会触发 pressed。
 	var probe := Button.new()

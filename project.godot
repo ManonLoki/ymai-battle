@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="YMAIBattle"
-config/version="1.0.5"
+config/version="1.0.6"
 run/main_scene="res://scenes/main.tscn"
 config/quit_on_go_back=false
 config/features=PackedStringArray("4.7", "Forward Plus")
@@ -21,6 +21,7 @@ config/icon="uid://dr0v5kk6exdih"
 [autoload]
 
 CursorController="*res://scripts/cursor_controller.gd"
+WebLaunchConfigBootstrap="*res://scripts/web_launch_config.gd"
 
 [display]
 

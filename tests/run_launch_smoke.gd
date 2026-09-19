@@ -17,6 +17,7 @@ func _initialize() -> void:
 
 
 func _run() -> void:
+	WebLaunchConfig.reset()
 	# 先把三个场景都加载一遍，任何一个资源坏了在这里就会暴露。
 	var packed_main := load("res://scenes/main.tscn") as PackedScene
 	var packed_ranking := load("res://scenes/ranking.tscn") as PackedScene
@@ -27,7 +28,7 @@ func _run() -> void:
 		quit(1)
 		return
 
-	# 主菜单：三个按钮都得在，少一个电视上就有路走不通。
+	# 主菜单：四个按钮都得在，少一个电视上就有路走不通。
 	var main: Node = packed_main.instantiate()
 	root.add_child(main)
 	# 等一帧让 _ready 跑完，唯一名节点（%）才查得到。
@@ -93,8 +94,8 @@ func _run() -> void:
 		printerr("SETTINGS_CONTROLS_MISSING")
 		quit(1)
 		return
-	# 服务器地址那一栏：输入框和两个按钮都得在，不然换服务器就没入口了。
-	if settings.get_node_or_null("%ServerInput") == null or settings.get_node_or_null("%ServerSave") == null or settings.get_node_or_null("%ServerReset") == null:
+	# 服务器地址那一栏：下拉、增加输入和增删按钮都得在。
+	if settings.get_node_or_null("%ServerSelect") == null or settings.get_node_or_null("%ServerAddInput") == null or settings.get_node_or_null("%ServerAdd") == null or settings.get_node_or_null("%ServerDelete") == null:
 		printerr("SETTINGS_SERVER_CONTROLS_MISSING")
 		quit(1)
 		return
