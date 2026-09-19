@@ -355,6 +355,39 @@ func _disarm(fighter: Fighter) -> void:
 	fighter.hp = fighter.max_hp
 
 
+
+## 技能池是不是真的由 SkillCatalog.SPECS 那一张表生成的：每行的 prop 必须是
+## SkillDef 上真实存在的字段，生成出来的技能要带上配置的 id / 名字 / 数值 / 边框族，
+## 说明里也不许留下没填上的占位符。「加技能只补一行」靠的就是这条。
+func _assert_specs_drive_pool() -> void:
+	var fields: Dictionary = {}
+	for entry in SkillDef.new().get_property_list():
+		fields[str(entry["name"])] = true
+	var families: Dictionary = SkillCatalog.icon_families()
+	var built: Array[SkillDef] = SkillCatalog.pool()
+	_assert(built.size() == SkillCatalog.SPECS.size(), "pool has exactly one skill per spec row")
+	for i in SkillCatalog.SPECS.size():
+		var spec: Dictionary = SkillCatalog.SPECS[i]
+		var id := str(spec["id"])
+		var prop := str(spec["prop"])
+		var family := str(spec["family"])
+		var skill: SkillDef = built[i]
+		_assert(fields.has(prop), "%s writes a real SkillDef field (%s)" % [id, prop])
+		_assert(skill.id == id and skill.icon_id == id, "%s keeps its id as icon name" % id)
+		_assert(skill.display_name == str(spec["name"]), "%s keeps its display name" % id)
+		if typeof(spec["value"]) == TYPE_BOOL:
+			_assert(bool(skill.get(prop)) == bool(spec["value"]), "%s carries its configured switch" % id)
+		else:
+			_assert(is_equal_approx(float(skill.get(prop)), float(spec["value"])), "%s carries its configured value" % id)
+		_assert(skill.description.find("{") < 0, "%s tooltip has no unfilled placeholder" % id)
+		_assert(SkillCatalog.icon_family(id) == family, "%s reports its configured family" % id)
+		_assert(families.has(family) and (families[family] as Array).has(id), "%s is listed under its family" % id)
+		_assert(not SkillCatalog.display_group(id).is_empty(), "%s lands in a display group" % id)
+		_assert(SkillCatalog.spec_rank(id) == i, "%s keeps its table order" % id)
+		var looked_up: SkillDef = SkillCatalog.by_id(id)
+		_assert(looked_up != null and looked_up.description == skill.description, "by_id rebuilds %s from the same row" % id)
+	_assert(SkillCatalog.spec_rank("buff_codex") < 0, "agent buffs are not pool rows")
+
 ## 和 SkillCatalog._percent 同一口径：tooltip 里写的就是这份百分数。
 func _pct_label(value: float) -> String:
 	return "%d%%" % roundi(value * 100.0)
@@ -454,6 +487,7 @@ func _test_skills() -> void:
 	_assert(pool_ids.find("skill_root") < 0, "定身 is no longer in the pool")
 	_assert(pool_ids.find("skill_paralyze") >= 0, "麻痹 stays as the 3-turn skip")
 	_assert(pool_ids.find("skill_awaken") >= 0, "潜能激发 is in the pool")
+	_assert_specs_drive_pool()
 	_assert_live_combat_numbers()
 	_assert(SkillCatalog.by_id("skill_assassinate").display_name == "幻影刺杀", "assassinate display name")
 	_assert(SkillCatalog.by_id("skill_lingbo").display_name == "凌波微步", "lingbo display name")
@@ -868,6 +902,31 @@ func _test_skills() -> void:
 	_assert(ass_rb[0].assassinated and ass_rb[0].revived, "assassinate with rebirth revives instead of a kill")
 	_assert(defender.is_alive() and defender.hp == defender.max_hp, "rebirth restores full HP after assassinate")
 	_assert(not ass_rb[0].defender_died, "a revived target is not counted as downed")
+
+	# 绝对防御每一次挨打都掷，幻影刺杀也挡得住：它无视的是闪避，不是防御。
+	_disarm(attacker)
+	_disarm(defender)
+	attacker.skills = [SkillCatalog.by_id("skill_assassinate")]
+	defender.skills = [SkillCatalog.by_id("skill_guard")]
+	_give_buffs(defender, [dodge_for_kill])
+	var rng_ass_guard := RollSource.new(1)
+	# 命中点 → 刺杀掷中 → 绝对防御掷中。
+	rng_ass_guard.push([0.4, 0.0, 0.0])
+	var ass_guard: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_ass_guard)
+	_assert(ass_guard.size() == 1 and ass_guard[0].guarded, "absolute guard rolls on an assassinate hit too")
+	_assert(ass_guard[0].damage == 0 and defender.hp == defender.max_hp, "a guarded assassinate deals nothing")
+	_assert(defender.is_alive() and not ass_guard[0].defender_died, "a guarded assassinate is not a kill")
+	# 同一手牌，绝对防御没掷中就照常秒杀。
+	_disarm(attacker)
+	_disarm(defender)
+	attacker.skills = [SkillCatalog.by_id("skill_assassinate")]
+	defender.skills = [SkillCatalog.by_id("skill_guard")]
+	_give_buffs(defender, [dodge_for_kill])
+	var rng_ass_open := RollSource.new(1)
+	rng_ass_open.push([0.4, 0.0, 0.99])
+	var ass_open: Array[StrikeResult] = CombatResolver.resolve_strikes(attacker, defender, win, rng_ass_open)
+	_assert(ass_open[0].assassinated and not ass_open[0].guarded, "a failed guard roll lets the assassinate through")
+	_assert(defender.hp == 0, "the unguarded assassinate still knocks the target out")
 
 	# 追击不掷幻影刺杀：首击未刺杀、追击落在闪避段，不得变成刺杀。
 	_disarm(attacker)
@@ -1737,8 +1796,9 @@ func name_label_parent_is_status(view: FighterView) -> bool:
 ## 五族边框：同族外圈颜色一致，异族不一致；技能池每张图可加载且内部图案两两不同。
 func _assert_icon_family_borders() -> void:
 	var family_colors: Dictionary = {}
-	for family in SkillCatalog.ICON_FAMILIES:
-		var ids: Array = SkillCatalog.ICON_FAMILIES[family]
+	var families: Dictionary = SkillCatalog.icon_families()
+	for family in families:
+		var ids: Array = families[family]
 		_assert(ids.size() >= 2, "family %s has at least two icons to compare" % family)
 		var ink := _icon_border_color(str(ids[0]))
 		family_colors[family] = ink

@@ -400,7 +400,7 @@ static func _skip_event(actor: Fighter, reason: String) -> StrikeResult:
 	return result
 
 
-## 一次单独的挥击：命中判定 →（幻影刺杀 / 治疗闪避 / 凌波微步）→ 绝对防御 → 伤害 → 吸血 → 复活 → 挂状态。
+## 一次单独的挥击：命中判定 →（幻影刺杀 / 治疗闪避 / 凌波微步）→ 绝对防御 →（秒杀 / 伤害）→ 吸血 → 复活 → 挂状态。
 ##
 ## allow_techniques 只在主动首击上为真。追击和反击都不许再掷幻影刺杀、凌波微步。
 ## extra_* 是潜能激发给这一串出手的临时加成。
@@ -453,6 +453,17 @@ static func _one_strike(
 		return result
 	result.hit = true
 
+	# 绝对防御：打中了但伤害归零，不挂中毒/麻痹/混乱，也不吸血。
+	# 每一次打中的挥击都掷一次——首击、连击追击、反击、混乱自伤，以及幻影刺杀：
+	# 刺杀无视的是**闪避**，不是防御，所以它掷中之后仍要过这一关。
+	# 掷点只在对方真带着这张牌时才掷，概率为 0 时白掷会让后面的点数整体错位。
+	if defender.stacked_guard() > 0.0 and rng.randf() < defender.stacked_guard():
+		result.guarded = true
+		result.damage = 0
+		result.defender_hp_after = defender.hp
+		result.attacker_hp_after = attacker.hp
+		return result
+
 	if assassinated:
 		result.assassinated = true
 		# 擂主秒杀打到 0 血；挑战者打最大生命的一半。再走浴火重生。
@@ -463,14 +474,6 @@ static func _one_strike(
 		result.attacker_hp_after = attacker.hp
 		result.defender_died = not defender.is_alive()
 		_apply_on_hit_status(attacker, defender, rng, result)
-		return result
-
-	# 绝对防御：打中了但伤害归零，不挂中毒/麻痹/混乱，也不吸血。
-	if defender.stacked_guard() > 0.0 and rng.randf() < defender.stacked_guard():
-		result.guarded = true
-		result.damage = 0
-		result.defender_hp_after = defender.hp
-		result.attacker_hp_after = attacker.hp
 		return result
 
 	# 伤害：基准值 →（暴击 ×2）→ 增伤 → 对方减伤。
