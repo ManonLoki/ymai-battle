@@ -1,4 +1,4 @@
-extends Node2D
+extends Node
 
 ## 对战场景：拉取当日用量 → 组一场车轮战 → 逐条事件播动画和战报。
 ## 所有胜负判定都在 WheelWar / CombatResolver 里，这里只负责演出。

@@ -16,7 +16,7 @@ shader_parameter/scroll_cycle_seconds = 32.0
 shader_parameter/scroll_direction = 1.0
 shader_parameter/edge_guard_px = 2.0
 
-[node name="Battle" type="Node2D"]
+[node name="Battle" type="Node"]
 script = ExtResource("1_battle")
 
 [node name="BackgroundLayer" type="CanvasLayer" parent="."]
