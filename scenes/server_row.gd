@@ -17,6 +17,9 @@ var _original := ""
 @onready var address: LineEdit = $Address
 
 
+## 把两个按钮和输入框的回车都接到自己的信号上。
+## 在 _ready 里接而不是让设置页去接：这一行自己知道自己有哪几个控件，
+## 外面只需要认识 save_requested / delete_requested 两个信号。
 func _ready() -> void:
 	$SaveButton.pressed.connect(_emit_save)
 	$DeleteButton.pressed.connect(_emit_delete)
@@ -36,5 +39,6 @@ func _emit_save() -> void:
 	save_requested.emit(_original, address.text)
 
 
+## 通知设置页把这一行代表的地址删掉。
 func _emit_delete() -> void:
 	delete_requested.emit(_original)

@@ -20,6 +20,9 @@ var _leaving := false
 var _shown_date := ""
 
 
+## 接好返回按钮、把焦点给它，然后拉一次榜单。
+## 榜单是异步的，所以 _ready 自己是个协程——期间玩家完全可以按返回走人，
+## 下面每个 await 之后都得重新确认自己还在场上。
 func _ready() -> void:
 	TvRemote.install()
 	# 排行和主菜单同一首，切过来不要把金冠铃掐回开头。
@@ -33,6 +36,7 @@ func _ready() -> void:
 	await _load_ranking()
 
 
+## 两件事：遥控器的返回键，以及从后台切回来时发现已经跨天了就重拉。
 func _notification(what: int) -> void:
 	# 电视遥控器 BACK 键。
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
@@ -44,6 +48,10 @@ func _notification(what: int) -> void:
 			_load_ranking()
 
 
+## 返回键，以及用上下键翻榜。
+##
+## 榜单本身是一堆 Label，不吃焦点，所以方向键在控件之间找不到下一个邻居，
+## 事件就一路冒泡到这里——正好拿来手动推 ScrollContainer。
 func _unhandled_input(event: InputEvent) -> void:
 	if TvRemote.consume_back(event, self):
 		_on_back_pressed()
@@ -61,6 +69,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		%Scroll.scroll_vertical = maxi(0, %Scroll.scroll_vertical + step)
 
 
+## 回主菜单。_leaving 挡住连按：切场景要等到帧末才真的发生，
+## 这中间再按一次就会切两遍。
 func _on_back_pressed() -> void:
 	if _leaving:
 		return

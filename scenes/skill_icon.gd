@@ -14,6 +14,9 @@ signal unhovered
 var _skill: SkillDef
 
 
+## 把鼠标进/出翻译成自己的两个信号。
+## 之所以转一道手而不让外面直接连 mouse_entered：外面要的是“哪个技能被指着了”，
+## 而 mouse_entered 不带参数，得由认识 _skill 的这一侧补上。
 func _ready() -> void:
 	mouse_entered.connect(func() -> void: hovered.emit(self, _skill))
 	mouse_exited.connect(func() -> void: unhovered.emit())

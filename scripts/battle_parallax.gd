@@ -62,6 +62,9 @@ static func _static_init() -> void:
 	BACKGROUND_PATHS = paths
 
 
+## 进场时随机化选图种子、缓存 shader 材质，并把视差时间归零。
+## 注意这里**不**挑图：场景里预置的那张只是编辑器里的预览，
+## 真正的随机换图要等 battle.gd 确认名单够人、真的要开打时才发生。
 func _ready() -> void:
 	_background_rng.randomize()
 	_shader_material = material as ShaderMaterial
@@ -71,6 +74,7 @@ func _ready() -> void:
 	elapsed_seconds = 0.0
 
 
+## 每帧把视差时间往前推。推进逻辑单独成函数，headless 测试才能手动喂 delta。
 func _process(delta: float) -> void:
 	advance_parallax(delta)
 
@@ -104,12 +108,19 @@ func advance_parallax(delta: float) -> void:
 	elapsed_seconds = fmod(elapsed_seconds + delta, TIME_WRAP_SECONDS)
 
 
+## 当前这张背景的资源路径。还没为真实战斗掷过图时返回空串
+## （场上挂着的是场景里那张预览图，它不算“选中”的结果）。
 func current_background_path() -> String:
 	if current_index < 0 or current_index >= BACKGROUND_PATHS.size():
 		return ""
 	return BACKGROUND_PATHS[current_index]
 
 
+## 真正换图：换贴图、记下编号、重置卷轴。
+##
+## 相邻两张从相反方向起卷（靠编号的奇偶决定），这样连着打几场不会每张都朝同一边飘。
+## 这个方向**不消耗随机数**，所以加了它也不会让战斗的掷骰序列发生任何偏移。
+## 返回 false 表示编号越界或贴图没载出来，调用方据此判定这次换图没成。
 func _apply_background(index: int) -> bool:
 	if index < 0 or index >= BACKGROUND_PATHS.size() or index >= BACKGROUND_TEXTURES.size():
 		return false

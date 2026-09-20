@@ -23,6 +23,9 @@ var wrap_widths: Array[float] = []
 var speeds: Array[float] = []
 
 
+## 绑好三层节点并按当前窗口摆一次位，之后窗口每次改大小都重摆。
+## 接 size_changed 前先查有没有接过：场景重进时 _ready 会再跑一遍，
+## 重复连接会让同一个回调被调用两次。
 func _ready() -> void:
 	_bind_layers()
 	_layout_layers()
@@ -31,6 +34,8 @@ func _ready() -> void:
 		viewport.size_changed.connect(_layout_layers)
 
 
+## 正常运行时每帧推进。真正的推进逻辑在 advance_parallax 里，
+## 这样测试可以不靠真实帧率、直接喂一个固定 delta。
 func _process(delta: float) -> void:
 	advance_parallax(delta)
 

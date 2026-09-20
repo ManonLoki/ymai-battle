@@ -64,6 +64,10 @@ var _tweens: Dictionary = {}
 var _heal_fx_instances: Array[CPUParticles2D] = []
 
 
+## 记住场景实例最初的位置，然后摆成“没绑人”的干净状态。
+##
+## _home_transform 必须在这里存：死亡动画会把整个视图转倒、挪开，
+## 换下一位上场时得有个原始值可以还原，而那时候已经拿不到“改之前”的样子了。
 func _ready() -> void:
 	_home_transform = transform
 	# 字体和配色来自 project.godot 注册的全局主题，这里不用再套。
@@ -176,6 +180,8 @@ func _show_instant_tip(host: Control, skill: SkillDef) -> void:
 	tip_panel.position = Vector2(local.x, local.y + host.size.y + 4.0)
 
 
+## 鼠标移开图标，收起说明面板。只藏不清空——文字留着，
+## 下次悬停同一个图标时即使还没来得及重算也不会闪一下空白。
 func _hide_instant_tip() -> void:
 	tip_panel.visible = false
 
@@ -296,6 +302,8 @@ func play_reflect_fx() -> void:
 	_tint(CombatFx.REFLECT_TINT, 0.28, true)
 
 
+## 盾和波是两条各自独立的 Tween，谁先播完都会来敲这里。
+## 只有两边都收干净了才把外层容器藏起来，否则先完的那条会把还在飞的另一条一起藏掉。
 func _hide_reflect_if_idle() -> void:
 	if is_instance_valid(_reflect_shield) and _reflect_shield.visible:
 		return
@@ -477,6 +485,8 @@ func _hide_afterimages() -> void:
 		ghost.modulate = Color(1.0, 1.0, 1.0, CombatFx.ghost_alpha(i))
 
 
+## 眩晕星转完一圈就收起来，并把角度归零。
+## 不归零的话下次再晕会从上次停下的角度接着转，看起来像卡住了。
 func _hide_stun() -> void:
 	if is_instance_valid(_stun_fx):
 		_stun_fx.visible = false

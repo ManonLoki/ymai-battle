@@ -25,6 +25,8 @@ var _sfx_linear := AppSettings.DEFAULT_SFX_VOLUME
 var settings_path: String = AppSettings.SAVE_PATH
 
 
+## 三块设置各自绑好（窗口模式 / 音量 / 服务器），最后把焦点给第一个下拉框。
+## 页面没有“保存”按钮——每一项都是改完立刻落盘并生效，见各自的 _on_*_changed。
 func _ready() -> void:
 	TvRemote.install()
 	# 设置页也走共用曲；从战斗返回主菜单再进这里时，由主菜单切回金冠铃。
@@ -40,12 +42,16 @@ func _ready() -> void:
 	%ModeSelect.grab_focus()
 
 
+## 电视遥控器的返回键。
 func _notification(what: int) -> void:
 	# 电视遥控器 BACK 键。
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
 		_on_back_pressed()
 
 
+## 返回键，以及焦点掉了之后的兜底。
+## 兜底要分两种情况：维护面板开着时焦点该回到面板里的“关闭”，
+## 不然方向键会把焦点带到面板背后那些看得见但点不到的控件上。
 func _unhandled_input(event: InputEvent) -> void:
 	if TvRemote.consume_back(event, self):
 		_on_back_pressed()
@@ -94,10 +100,12 @@ func _fill_select(
 	select.select(selected_index)
 
 
+## 下拉框底下那行小字，跟着当前选中的模式走。
 func _refresh_mode_description() -> void:
 	%ModeDescription.text = AppSettings.mode_description(_mode)
 
 
+## 选了一个窗口模式。值从 metadata 里取而不是拿下拉索引当模式用。
 func _on_mode_selected(index: int) -> void:
 	_mode = AppSettings.sanitize_mode(int(%ModeSelect.get_item_metadata(index)))
 	# 先存后应用：万一 apply 在某个平台上出岔子，选择也已经落盘了。
@@ -118,11 +126,14 @@ func _bind_audio_controls() -> void:
 	AppSettings.apply_mix(_music_linear, _sfx_linear)
 
 
+## 两个滑块左边的文字。百分比直接读滑块当前值，不另外算一遍。
 func _refresh_audio_labels() -> void:
 	%MusicLabel.text = "背景音乐 %d%%" % int(%MusicSlider.value)
 	%SfxLabel.text = "音效 %d%%" % int(%SfxSlider.value)
 
 
+## 拖背景音乐滑块：存档、推总线、刷新文字。
+## 滑块给的是 0–100，存档里存的是 0–1，除法在这里做。
 func _on_music_volume_changed(value: float) -> void:
 	_music_linear = value / 100.0
 	AppSettings.save_music_volume(_music_linear, settings_path)
@@ -130,6 +141,7 @@ func _on_music_volume_changed(value: float) -> void:
 	_refresh_audio_labels()
 
 
+## 拖音效滑块。和背景音乐那条一样，外加一声试听。
 func _on_sfx_volume_changed(value: float) -> void:
 	_sfx_linear = value / 100.0
 	AppSettings.save_sfx_volume(_sfx_linear, settings_path)
@@ -203,6 +215,8 @@ func _on_server_selected(index: int) -> void:
 	_refresh_server_view("已切换。")
 
 
+## 打开维护面板。列表被网页参数接管时这里直接不响应——
+## 按钮那时本来就是隐藏且 disabled 的，这一道是防手动调用。
 func _on_server_maintain_pressed() -> void:
 	if WebLaunchConfig.has_base_urls_override():
 		return
@@ -211,6 +225,8 @@ func _on_server_maintain_pressed() -> void:
 	%ServerAddInput.grab_focus()
 
 
+## 关掉维护面板，并把焦点还给下拉框——不还的话焦点会落在已经隐藏的控件上，
+## 方向键就全哑了。
 func _close_maintain_panel() -> void:
 	%MaintainOverlay.visible = false
 	%ServerSelect.grab_focus()
@@ -240,6 +256,8 @@ func _on_server_row_save_pressed(original: String, text: String) -> void:
 	_refresh_server_view("已修改。")
 
 
+## 某一行被删掉。删的是地址本身而不是行号：列表随时可能因为别处的改动重建，
+## 行号会串，地址不会。
 func _on_server_row_delete_pressed(base: String) -> void:
 	if WebLaunchConfig.has_base_urls_override():
 		return
@@ -269,6 +287,7 @@ func _on_server_add_pressed() -> void:
 	_refresh_server_view("已增加并切换。")
 
 
+## 返回键的两级行为：维护面板开着就只关面板，关着才真的回主菜单。
 func _on_back_pressed() -> void:
 	if %MaintainOverlay.visible:
 		_close_maintain_panel()

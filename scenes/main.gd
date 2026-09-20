@@ -13,6 +13,9 @@ var _menu_buttons: Array[Button] = []
 var _focus_fallback: Button = null
 
 
+## 装遥控器映射、起 BGM、按 Web 参数决定露出哪几个入口，最后把焦点交出去。
+##
+## 窗口模式在这里应用一次：主菜单是唯一的启动入口，别的场景都是从这儿进去的。
 func _ready() -> void:
 	# 光标由 CursorController autoload 全局接管（装贴图 + 每个事件切换），
 	# 这里不用再管；遥控器映射是幂等的，每个场景都装一次。
@@ -43,6 +46,7 @@ func _notification(what: int) -> void:
 		_on_quit_pressed()
 
 
+## 遥控器的返回键，以及焦点掉了之后的兜底。
 func _unhandled_input(event: InputEvent) -> void:
 	# 主菜单已经是最外层，返回就等于退出游戏。
 	if TvRemote.consume_back(event, self):
@@ -83,6 +87,8 @@ static func project_version() -> String:
 	return value if not value.is_empty() else "0.0.0"
 
 
+# 四个入口各自切到对应场景；退出直接关掉游戏。
+# 切场景本身没有额外动作——当前场景会被整棵释放，不需要在这里收尾。
 func _on_ranking_pressed() -> void:
 	get_tree().change_scene_to_file(RANKING_SCENE)
 

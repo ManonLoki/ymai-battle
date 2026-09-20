@@ -62,6 +62,8 @@ var awaken_damage_bonus: float = 0.0
 var awaken_cost_paid: int = 0
 
 
+## 抹掉潜能激发留下的临时加成。自己下一次行动开始时调——
+## 激发是“这一手拼一把”，加成不该跨回合留着。
 func clear_awaken() -> void:
 	awaken_accuracy_bonus = 0.0
 	awaken_crit_bonus = 0.0
@@ -69,6 +71,7 @@ func clear_awaken() -> void:
 	awaken_cost_paid = 0
 
 
+## 身上还挂着激发加成没有？战报要靠它决定这一下要不要写成“潜能激发”。
 func has_awaken_bonus() -> bool:
 	return awaken_accuracy_bonus > 0.0 or awaken_crit_bonus > 0.0 or awaken_damage_bonus > 0.0
 
@@ -102,6 +105,7 @@ static func assign_balanced_appearances(fighters: Array[Fighter]) -> void:
 		fighter.appearance_id = int(assignments[fighter.username])
 
 
+## 还站着没有。血量是唯一判据——复活也是把 hp 拉回来，没有单独的“死亡”标记。
 func is_alive() -> bool:
 	return hp > 0
 
@@ -134,6 +138,17 @@ func try_rebirth() -> bool:
 	return true
 
 
+# ====================== 各项几率 / 加成的最终取值 ======================
+#
+# 下面这一族全是同一个模子：把身上所有技能和 buff 在某个字段上的值加起来
+# （stacked 负责），少数几项再补上“人人都有的基础值”或体型带来的先天差。
+#
+# 拆成一个个具名函数而不是让结算方直接 stacked("crit_chance")，
+# 是为了让“基础值加在哪、上限卡在哪”只有一个地方说了算：
+# 比如暴击的 BASE_CRIT、减伤的 90% 天花板，都只写在这一族里面，
+# 结算代码问到的永远是已经算完的最终值。
+
+## 暴击率：全员基础值 + 技能/buff。没抽到暴击技也会暴。
 func stacked_crit() -> float:
 	return stacked("crit_chance") + BASE_CRIT
 
@@ -153,10 +168,12 @@ func stacked_dodge() -> float:
 	return stacked("dodge_bonus") + BASE_DODGE + innate_dodge()
 
 
+## 命中加成。没有基础值：基础命中率归 CombatResolver 那边算。
 func stacked_accuracy() -> float:
 	return stacked("accuracy_bonus")
 
 
+## 增伤系数。同样没有基础值，纯粹是技能叠出来的。
 func stacked_damage_bonus() -> float:
 	return stacked("damage_bonus")
 
@@ -166,34 +183,43 @@ func stacked_damage_reduction() -> float:
 	return clampf(stacked("damage_reduction") + innate_damage_reduction(), 0.0, MAX_DAMAGE_REDUCTION)
 
 
+## 以下八项是纯技能几率：没抽到对应的技能就是 0，不存在“人人都有一点”。
+## 二连击。
 func stacked_double() -> float:
 	return stacked("double_chance")
 
 
+## 三连击。和二连击是两张独立的牌，可以同时在身上。
 func stacked_triple() -> float:
 	return stacked("triple_chance")
 
 
+## 幻影刺杀：无视闪避的一击。
 func stacked_assassinate() -> float:
 	return stacked("assassinate_chance")
 
 
+## 凌波微步：闪开的同时还一手。
 func stacked_lingbo() -> float:
 	return stacked("lingbo_chance")
 
 
+## 反弹：把这一包伤害原样打回去。
 func stacked_reflect() -> float:
 	return stacked("reflect_chance")
 
 
+## 绝对防御：这一下完全不掉血。
 func stacked_guard() -> float:
 	return stacked("guard_chance")
 
 
+## 反击：挨完打立刻回敬一下。
 func stacked_counter() -> float:
 	return stacked("counter_chance")
 
 
+## 潜能激发：自扣血换这一手的命中/暴击/伤害。
 func stacked_awaken() -> float:
 	return stacked("awaken_chance")
 

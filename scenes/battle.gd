@@ -44,6 +44,11 @@ var skip_autoload := false
 var record_path := RoundRecord.SAVE_PATH
 
 
+## 接好两个按钮、读出当天战绩，然后进主循环一轮接一轮地打。
+##
+## _ready 本身是个协程（最后 await 了 _round_loop），这个循环直到玩家按返回
+## 把场景换走才结束——所以下面每个等待点都要先问一句 _is_live()。
+## 测试把 skip_autoload 设成 true，在这里就收手，由测试自己喂名单。
 func _ready() -> void:
 	TvRemote.install()
 	# 战斗曲只在这个场景；离开时由主菜单/排行/设置把金冠铃接回去。
@@ -64,6 +69,8 @@ func _ready() -> void:
 	await _round_loop()
 
 
+## 返回键；以及从后台切回来时，在安全的时机把战绩对齐到今天。
+## "安全"指没有请求在飞、也没有战斗在演——否则会把一场昨天的仗记进今天。
 func _notification(what: int) -> void:
 	# 电视遥控器 BACK 键。
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
@@ -74,6 +81,7 @@ func _notification(what: int) -> void:
 		_sync_record_to_today()
 
 
+## 返回键，以及焦点兜底。结果面板弹出来时焦点该落在“再战”上，其余时候落在“返回”。
 func _unhandled_input(event: InputEvent) -> void:
 	if TvRemote.consume_back(event, self):
 		_on_back_pressed()
@@ -81,6 +89,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		TvRemote.ensure_focus(%ReplayButton if %ResultPanel.visible else %BackButton)
 
 
+## 回主菜单。演出协程还挂在各个 await 上，它们靠 _leaving 各自收手。
 func _on_back_pressed() -> void:
 	# 已经在走人的路上就别再切一次场景。
 	if _leaving:

@@ -296,12 +296,17 @@ static func clear_base_url(path: String = SAVE_PATH) -> bool:
 # 循环 OGG 混得轻，五条命中 WAV 本来就顶着满刻度。
 
 
+## 把外面来的值夹回 0–1。存档可能被手改坏，NaN / 无穷会一路传到 AudioServer
+## 把总线彻底搞哑，所以先在这里挡掉——每一条读写路径都要先过它。
 static func sanitize_volume(value: float) -> float:
 	if is_nan(value) or is_inf(value):
 		return VOLUME_MIN
 	return clampf(value, VOLUME_MIN, VOLUME_MAX)
 
 
+## 线性音量转 dB，推总线之前的最后一步。
+## 0 不能直接换算（数学上是 -inf，AudioServer 和 Tween 都处理不了），
+## 所以贴近 0 的一律返回约定的“静音 dB”。
 static func volume_to_db(linear: float) -> float:
 	var value := sanitize_volume(linear)
 	if value <= 0.0001:
@@ -309,6 +314,8 @@ static func volume_to_db(linear: float) -> float:
 	return linear_to_db(value)
 
 
+## 线性音量转界面上显示的百分比。滑块是 0–100 的整数刻度，存档是 0–1 的小数，
+## 换算只在这里做一次。
 static func volume_percent(linear: float) -> int:
 	return int(round(sanitize_volume(linear) * 100.0))
 
@@ -322,6 +329,10 @@ static func _volume_from(data: Dictionary, key: String, fallback: float) -> floa
 	return sanitize_volume(float(raw))
 
 
+## 下面四个是两个音量各自的读写。写走 patch_dict（只改自己那个键，
+## 不会把同一份存档里的窗口模式、服务器地址顺手冲掉）。
+## 设置页开着的时候一次只动一个滑块，所以单独读单独写；
+## 启动时要两个一起用的场合走 apply_audio，那边只读一次盘。
 static func load_music_volume(path: String = SAVE_PATH) -> float:
 	return _volume_from(JsonStore.read_dict(path), MUSIC_VOLUME_KEY, DEFAULT_MUSIC_VOLUME)
 
@@ -354,6 +365,9 @@ static func apply_mix(music: float, sfx: float) -> void:
 	_set_bus_volume(SFX_BUS, sfx)
 
 
+## 把一条总线的音量设成给定的线性值。
+## 总线是 default_bus_layout.tres 里配的，名字对不上就直接放弃——
+## headless 测试和某些平台上总线可能压根没建起来，这时候静默跳过比报错合理。
 static func _set_bus_volume(bus_name: StringName, linear: float) -> void:
 	var index := AudioServer.get_bus_index(bus_name)
 	if index < 0:

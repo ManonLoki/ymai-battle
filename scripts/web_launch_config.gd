@@ -34,6 +34,8 @@ static var _base_urls: Array[String] = []
 static var _closed_menus: Dictionary = {}
 
 
+## autoload 一进树就先把上一次会话的注入清空，再看这次是不是跑在浏览器里。
+## 只有 Web 版有启动参数可读；桌面和安卓跑到这里就结束，一切回落到本地存档。
 func _enter_tree() -> void:
 	reset()
 	if OS.has_feature("web"):
@@ -57,6 +59,8 @@ static func reset() -> void:
 	_closed_menus.clear()
 
 
+## 这次启动到底有没有被网页参数接管服务器列表。
+## 设置页拿它决定列表是只读还是可增删——注意“提供了空数组”也算接管。
 static func has_base_urls_override() -> bool:
 	return _has_base_urls_override
 
@@ -79,6 +83,8 @@ static func effective_base_url(settings_path: String = AppSettings.SAVE_PATH) ->
 	return selected if active_base_urls(settings_path).has(selected) else ""
 
 
+## 这个菜单入口是不是被网页参数关掉了。
+## 比对前统一去空白转小写，免得 ?CloseMenu=Ranking 和 =ranking 表现不一样。
 static func is_menu_closed(menu_id: String) -> bool:
 	return _closed_menus.has(menu_id.strip_edges().to_lower())
 
@@ -158,6 +164,11 @@ static func _configure_from_browser() -> void:
 	configure(has_base_urls, base_urls, close_menus)
 
 
+## 把浏览器那边的 JS 数组一项项抄成 GDScript 数组。
+##
+## 不能直接拿来用：JS 对象是跨引擎的活引用，页面随时可能改它，而且里面什么类型都可能有。
+## 所以逐项检查、只留字符串，并且封顶 MAX_ARRAY_ITEMS——参数来自 URL，
+## 谁都能往里塞一万项，不封顶就等于让页面决定我们分配多少内存。
 static func _copy_js_string_array(value: Variant, array_api: Variant, label: String) -> Array:
 	var copied: Array = []
 	if value == null or array_api == null or not bool(array_api.isArray(value)):
@@ -171,10 +182,14 @@ static func _copy_js_string_array(value: Variant, array_api: Variant, label: Str
 	return copied
 
 
+## 能不能当字符串列表遍历。Array 和 PackedStringArray 都收：
+## 前者来自 JS 注入，后者来自本地存档，两条路最后都进同一个归一化函数。
 static func _is_supported_array(values: Variant) -> bool:
 	return typeof(values) == TYPE_ARRAY or typeof(values) == TYPE_PACKED_STRING_ARRAY
 
 
+## 复制一份再交出去。内部那份 _base_urls 是静态状态，
+## 直接返回的话调用方一改就把全局配置改了。
 static func _copy_strings(values: Array[String]) -> Array[String]:
 	var copied: Array[String] = []
 	copied.assign(values)

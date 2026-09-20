@@ -138,6 +138,9 @@ static func _awaken_prefix(event: StrikeResult) -> String:
 	return _awaken_line(event)
 
 
+## "某某发动【潜能激发】，损失 N 生命" 这一句，末尾带换行。
+## 激发是这一手的前置动作，所以它总是作为前缀单独占一行，
+## 后面才接真正的攻击结果；自扣的血为 0 时那半句省掉。
 static func _awaken_line(event: StrikeResult) -> String:
 	var line := "%s发动【潜能激发】" % event.attacker_name
 	if event.awaken_cost > 0:
