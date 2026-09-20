@@ -136,6 +136,26 @@ static func style_back_button(button: Button) -> void:
 	style_button(button, false, BACK_BUTTON_MIN_SIZE)
 
 
+## 音量滑块：电视上靠左右键调，所以必须能拿焦点，焦点框和按钮同一套金边。
+static func style_slider(slider: HSlider) -> void:
+	slider.focus_mode = Control.FOCUS_ALL
+	slider.custom_minimum_size = Vector2(0, BUTTON_MIN_SIZE.y)
+	slider.scrollable = false
+	slider.add_theme_stylebox_override("slider", make_flat(CARD, 8))
+	slider.add_theme_stylebox_override("grabber_area", make_flat(ACCENT, 8))
+	slider.add_theme_stylebox_override("grabber_area_highlight", make_flat(ACCENT.lightened(0.12), 8))
+	slider.add_theme_stylebox_override("focus", make_focus(10))
+	slider.add_theme_icon_override("grabber", _slider_grabber())
+	slider.add_theme_icon_override("grabber_highlight", _slider_grabber())
+	slider.add_theme_icon_override("grabber_disabled", _slider_grabber())
+
+
+static func _slider_grabber() -> Texture2D:
+	var img := Image.create(22, 36, false, Image.FORMAT_RGBA8)
+	img.fill(GOLD)
+	return ImageTexture.create_from_image(img)
+
+
 ## 浮在明亮背景 / 半透明底板上的文字：加一圈深色描边，免得被背景吞掉。
 ## 战斗页的战报和战绩榜的行都用它——描边的颜色和粗细只在这里定一次。
 ## 圆形实底上的徽章数字刻意不走这里：实底已经提供了足够对比度。

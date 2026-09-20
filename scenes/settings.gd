@@ -1,6 +1,6 @@
 extends Control
 
-## 设置页：窗口模式 + 榜单服务器列表。
+## 设置页：窗口模式 + 音量 + 榜单服务器列表。
 ##
 ## 窗口模式用一个下拉框选择；选项按 AppSettings.MODES 的顺序生成，metadata
 ## 保存真实模式值，不把下拉索引当成模式。选择后立即保存、应用并刷新说明。
@@ -33,6 +33,7 @@ func _ready() -> void:
 	%BackButton.pressed.connect(_on_back_pressed)
 	_mode = AppSettings.load_mode(settings_path)
 	_bind_mode_controls()
+	_bind_audio_controls()
 	_bind_server_controls()
 	# 电视上没有鼠标，一进来就让窗口模式下拉框拿焦点。
 	%ModeSelect.grab_focus()
@@ -104,6 +105,41 @@ func _on_mode_selected(index: int) -> void:
 	AppSettings.save_mode(_mode, settings_path)
 	AppSettings.apply_mode(_mode)
 	_refresh_mode_description()
+
+
+## 背景音乐 / 音效两个滑块。0–100，步进 5，电视上左右键就是调音量。
+func _bind_audio_controls() -> void:
+	%AudioTitle.add_theme_color_override("font_color", ThemeHelper.TEXT)
+	%MusicLabel.add_theme_color_override("font_color", ThemeHelper.TEXT)
+	%SfxLabel.add_theme_color_override("font_color", ThemeHelper.TEXT)
+	ThemeHelper.style_slider(%MusicSlider)
+	ThemeHelper.style_slider(%SfxSlider)
+	%MusicSlider.set_value_no_signal(float(AppSettings.volume_percent(AppSettings.load_music_volume(settings_path))))
+	%SfxSlider.set_value_no_signal(float(AppSettings.volume_percent(AppSettings.load_sfx_volume(settings_path))))
+	_refresh_audio_labels()
+	%MusicSlider.value_changed.connect(_on_music_volume_changed)
+	%SfxSlider.value_changed.connect(_on_sfx_volume_changed)
+	AppSettings.apply_audio(-1.0, -1.0, settings_path)
+
+
+func _refresh_audio_labels() -> void:
+	%MusicLabel.text = "背景音乐 %d%%" % int(%MusicSlider.value)
+	%SfxLabel.text = "音效 %d%%" % int(%SfxSlider.value)
+
+
+func _on_music_volume_changed(value: float) -> void:
+	AppSettings.save_music_volume(value / 100.0, settings_path)
+	AppSettings.apply_audio(-1.0, -1.0, settings_path)
+	_refresh_audio_labels()
+
+
+func _on_sfx_volume_changed(value: float) -> void:
+	AppSettings.save_sfx_volume(value / 100.0, settings_path)
+	AppSettings.apply_audio(-1.0, -1.0, settings_path)
+	_refresh_audio_labels()
+	var preview := StrikeResult.new()
+	preview.hit = true
+	CombatSfx.play_event(preview)
 
 
 ## 绑定服务器下拉、维护面板和状态行。Web 参数提供列表时，列表是只读数据源；

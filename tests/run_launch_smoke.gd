@@ -123,14 +123,21 @@ func _run() -> void:
 		printerr("SETTINGS_MODE_INITIAL_STATE_INVALID")
 		quit(1)
 		return
-	# 服务器地址那一栏：下拉紧挨窗口模式，后面是维护按钮；增删改在面板里。
+	# 音量滑块在窗口模式和服务器之间，能拿焦点。
+	var music_slider := settings.get_node_or_null("%MusicSlider") as HSlider
+	var sfx_slider := settings.get_node_or_null("%SfxSlider") as HSlider
+	if music_slider == null or sfx_slider == null or music_slider.focus_mode != Control.FOCUS_ALL or sfx_slider.focus_mode != Control.FOCUS_ALL:
+		printerr("SETTINGS_AUDIO_CONTROLS_MISSING")
+		quit(1)
+		return
+	# 服务器地址那一栏：音量下面，后面是维护按钮；增删改在面板里。
 	var server_select := settings.get_node_or_null("%ServerSelect") as OptionButton
 	var server_maintain := settings.get_node_or_null("%ServerMaintain") as Button
 	if server_select == null or server_maintain == null or settings.get_node_or_null("%ServerAddInput") == null or settings.get_node_or_null("%ServerAdd") == null or settings.get_node_or_null("%MaintainOverlay") == null:
 		printerr("SETTINGS_SERVER_CONTROLS_MISSING")
 		quit(1)
 		return
-	if server_select.global_position.y <= mode_select.global_position.y or server_select.global_position.y - mode_select.global_position.y >= 240.0:
+	if music_slider.global_position.y <= mode_select.global_position.y or sfx_slider.global_position.y <= music_slider.global_position.y or server_select.global_position.y <= sfx_slider.global_position.y:
 		printerr("SETTINGS_SERVER_LAYOUT_INVALID")
 		quit(1)
 		return

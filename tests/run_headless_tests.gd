@@ -1650,7 +1650,46 @@ func _test_settings() -> void:
 			_assert(int(mode_select.get_item_metadata(i)) == mode, "mode option %d stores the real mode in metadata" % i)
 		_assert(int(mode_select.get_item_metadata(mode_select.selected)) == AppSettings.DEFAULT_MODE, "the selector starts on the saved/default mode")
 	_assert(mode_description != null and mode_description.text == AppSettings.mode_description(AppSettings.DEFAULT_MODE), "the selector explains the active mode")
-	# 服务器那一栏：紧挨窗口下拉，旁有维护按钮；增删改都在面板里。
+	# 音量：默认 BGM 拉满、SE 压到 25%；滑块能拿焦点，左右步进 5%。
+	_assert(is_equal_approx(AppSettings.DEFAULT_MUSIC_VOLUME, 1.0), "default BGM volume is 100%")
+	_assert(is_equal_approx(AppSettings.DEFAULT_SFX_VOLUME, 0.25), "default SFX volume is 25%")
+	_assert(AppSettings.volume_percent(AppSettings.DEFAULT_MUSIC_VOLUME) == 100, "100% displays as 100")
+	_assert(AppSettings.volume_percent(AppSettings.DEFAULT_SFX_VOLUME) == 25, "25% displays as 25")
+	_assert(is_equal_approx(AppSettings.sanitize_volume(-3.0), 0.0), "volume below 0 clamps to mute")
+	_assert(is_equal_approx(AppSettings.sanitize_volume(4.0), 1.0), "volume above 1 clamps to full")
+	_assert(is_equal_approx(AppSettings.load_music_volume(path), AppSettings.DEFAULT_MUSIC_VOLUME), "missing save uses the default BGM mix")
+	_assert(is_equal_approx(AppSettings.load_sfx_volume(path), AppSettings.DEFAULT_SFX_VOLUME), "missing save uses the default SFX mix")
+	_assert(AppSettings.save_music_volume(0.2, path) and is_equal_approx(AppSettings.load_music_volume(path), 0.2), "music volume survives a save/load round trip")
+	_assert(AppSettings.save_sfx_volume(0.55, path) and is_equal_approx(AppSettings.load_sfx_volume(path), 0.55), "sfx volume survives a save/load round trip")
+	_assert(is_equal_approx(AppSettings.volume_to_db(0.0), AppSettings.VOLUME_SILENCE_DB), "zero volume is a finite mute, not -inf")
+	_assert(AppSettings.volume_to_db(AppSettings.DEFAULT_MUSIC_VOLUME) > AppSettings.volume_to_db(AppSettings.DEFAULT_SFX_VOLUME), "default mix keeps SFX quieter than BGM: the WAVs are mastered hot, the OGGs are not")
+	_assert(is_equal_approx(AppSettings.volume_to_db(AppSettings.DEFAULT_MUSIC_VOLUME), 0.0), "a full BGM slider is bus 0 dB, not a boost")
+	AppSettings.apply_audio(AppSettings.DEFAULT_MUSIC_VOLUME, AppSettings.DEFAULT_SFX_VOLUME)
+	var music_bus := AudioServer.get_bus_index("Music")
+	var sfx_bus := AudioServer.get_bus_index("SFX")
+	_assert(music_bus >= 0 and sfx_bus >= 0, "Music and SFX buses exist")
+	_assert(is_equal_approx(AudioServer.get_bus_volume_db(music_bus), AppSettings.volume_to_db(AppSettings.DEFAULT_MUSIC_VOLUME)), "apply_audio sets the Music bus from the linear mix")
+	_assert(is_equal_approx(AudioServer.get_bus_volume_db(sfx_bus), AppSettings.volume_to_db(AppSettings.DEFAULT_SFX_VOLUME)), "apply_audio sets the SFX bus from the linear mix")
+	var music_slider := scene.get_node_or_null("%MusicSlider") as HSlider
+	var sfx_slider := scene.get_node_or_null("%SfxSlider") as HSlider
+	_assert(music_slider != null and sfx_slider != null, "Settings has music and sfx sliders")
+	_assert(is_equal_approx(music_slider.value, 100.0) and is_equal_approx(sfx_slider.value, 25.0), "sliders open on the default mix")
+	_assert(music_slider.focus_mode == Control.FOCUS_ALL and sfx_slider.focus_mode == Control.FOCUS_ALL, "volume sliders can take TV remote focus")
+	_assert(is_equal_approx(music_slider.step, 5.0) and is_equal_approx(sfx_slider.step, 5.0), "remote left/right moves volume in 5% steps")
+	# BGM 默认就在满刻度，只有 ui_left 推得动它；SE 在 25%，两个方向都有余量。
+	sfx_slider.grab_focus()
+	_assert(sfx_slider.has_focus(), "the sfx slider can be focused")
+	var sfx_before := sfx_slider.value
+	scene.get_viewport().push_input(_ui_action(&"ui_right"))
+	await process_frame
+	_assert(is_equal_approx(sfx_slider.value, sfx_before + sfx_slider.step), "ui_right raises the focused sfx slider by one step")
+	music_slider.grab_focus()
+	_assert(music_slider.has_focus(), "the music slider can be focused")
+	var music_before := music_slider.value
+	scene.get_viewport().push_input(_ui_action(&"ui_left"))
+	await process_frame
+	_assert(is_equal_approx(music_slider.value, music_before - music_slider.step), "ui_left lowers the focused music slider by one step")
+	# 服务器那一栏：音量滑块下面，旁有维护按钮；增删改都在面板里。
 	var select := scene.get_node_or_null("%ServerSelect") as OptionButton
 	var input := scene.get_node_or_null("%ServerAddInput") as LineEdit
 	var maintain := scene.get_node_or_null("%ServerMaintain") as Button
@@ -1663,8 +1702,9 @@ func _test_settings() -> void:
 	var mode_section := scene.get_node_or_null("%ModeSection") as VBoxContainer
 	_assert(mode_section != null and (mode_section.size_flags_vertical & Control.SIZE_EXPAND) == 0, "ModeSection does not expand and push servers to the bottom")
 	var mode_select_ctrl := scene.get_node("%ModeSelect") as OptionButton
-	_assert(select.global_position.y > mode_select_ctrl.global_position.y, "the server selector sits below the window-mode selector")
-	_assert(select.global_position.y - mode_select_ctrl.global_position.y < 240.0, "the server selector is directly under the window-mode selector")
+	_assert(music_slider.global_position.y > mode_select_ctrl.global_position.y, "music slider sits below the window-mode selector")
+	_assert(sfx_slider.global_position.y > music_slider.global_position.y, "sfx slider sits below the music slider")
+	_assert(select.global_position.y > sfx_slider.global_position.y, "the server selector sits below the volume sliders")
 	_assert(maintain.get_parent() == select.get_parent() and maintain.get_index() > select.get_index(), "the maintain button sits after the server dropdown")
 	var status := scene.get_node_or_null("%ServerStatus") as Label
 	_assert(status != null, "Settings has a server status line")
@@ -1678,6 +1718,7 @@ func _test_settings() -> void:
 	_assert(TokenUsageApi.usage_url().find("to=%s" % DayClock.today()) >= 0, "the real request still sends today's to date")
 	scene.queue_free()
 	await process_frame
+	AppSettings.apply_audio()
 	WebLaunchConfig.reset()
 
 
@@ -1857,7 +1898,8 @@ func _test_server_settings_ui() -> void:
 	_assert(str(local_select.get_item_metadata(local_select.selected)) == "https://local-b.example", "the selector highlights the saved effective server")
 	_assert(local_maintain.visible and not local_maintain.disabled, "local-source controls allow list management")
 	_assert(local_select.global_position.y > local_mode.global_position.y, "the server selector is below the window-mode selector")
-	_assert(local_select.global_position.y - local_mode.global_position.y < 240.0, "the server selector is not pushed to the bottom of the page")
+	var local_sfx := local_scene.get_node("%SfxSlider") as HSlider
+	_assert(local_sfx != null and local_select.global_position.y > local_sfx.global_position.y, "the server selector sits below the volume sliders, not at the bottom of the page")
 	_assert((local_scene.get_node("%ModeSection") as Control).size_flags_vertical & Control.SIZE_EXPAND == 0, "ModeSection does not expand-fill under the server row")
 	_assert(not local_overlay.visible, "the maintain panel starts closed")
 	local_scene.call("_on_server_maintain_pressed")
@@ -2098,7 +2140,12 @@ func _test_bgm() -> void:
 	_assert(manager.music_bus() == &"Music", "BGM plays on the Music bus")
 	var pool: Node = root.get_node_or_null("CombatSfxPool")
 	_assert(pool != null, "CombatSfxPool autoload is present")
-	_assert(pool.sfx_playback_type() == AudioServer.PLAYBACK_TYPE_SAMPLE, "live SE players are Sample")
+	# Sample 播放只有 Web 的驱动实现了：CoreAudio / Android 上 AudioServer 只会 warning 一句
+	# 然后静音（playing 仍为 true，位置停在 0）。指定 Sample 等于在电视和桌面上没有音效。
+	var pool_src := FileAccess.get_file_as_string("res://scripts/combat_sfx_pool.gd")
+	_assert(pool_src.find("PLAYBACK_TYPE_SAMPLE") < 0, "SE never asks for Sample playback: only the Web driver implements it")
+	_assert(pool.sfx_playback_type() == AudioServer.PLAYBACK_TYPE_STREAM, "live SE players are Stream, like the BGM")
+	_assert(pool.sfx_playback_type() == manager.music_playback_type(), "SE and BGM share one playback path on every platform")
 	_assert(pool.sfx_bus() == &"SFX", "SE plays on the SFX bus")
 	CombatSfx.play_event(_sfx_event({&"hit": true}))
 	_assert(manager.is_battle(), "playing a combat one-shot does not replace the battle BGM")
@@ -2115,6 +2162,14 @@ func _test_bgm() -> void:
 	_assert(manager.is_lounge(), "leaving battle restores lounge BGM")
 	main.queue_free()
 	await process_frame
+
+
+## 一次遥控器按键。push_input 要的是已按下的 InputEventAction。
+func _ui_action(action: StringName) -> InputEventAction:
+	var event := InputEventAction.new()
+	event.action = action
+	event.pressed = true
+	return event
 
 
 ## 深度优先找出第一个 Sprite2D，用来取视差层的贴图。

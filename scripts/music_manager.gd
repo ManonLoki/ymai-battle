@@ -22,6 +22,7 @@ var _fade: Tween
 func _ready() -> void:
 	# 暂停时也要继续：BGM 跟光标一样是表现层，不该跟着战斗协程一起停。
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	AppSettings.apply_audio()
 	_player_a = _make_player()
 	_player_b = _make_player()
 	_active_player = _player_a
@@ -128,11 +129,11 @@ func _make_player() -> AudioStreamPlayer:
 	var player := AudioStreamPlayer.new()
 	player.bus = "Music"
 	player.volume_db = SILENCE_DB
-	# Web 默认 Sample 声部有限，SE 会把 BGM 挤掉。BGM 固定走 Stream，和 one-shot 错开。
+	# Sample 播放只有 Web 的驱动实现了，CoreAudio / Android 上会变成静音。
+	# BGM 和 CombatSfxPool 都固定走 Stream，才在每个平台上都出得了声。
 	player.playback_type = AudioServer.PLAYBACK_TYPE_STREAM
 	player.max_polyphony = 2
 	add_child(player)
-	player.playback_type = AudioServer.PLAYBACK_TYPE_STREAM
 	return player
 
 

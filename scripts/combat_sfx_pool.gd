@@ -1,8 +1,17 @@
 extends Node
 
 ## 战斗 one-shot 对象池。连击会在 0.12s 里叠多次命中，不能每次 new 播放器。
+##
+## 播放方式必须和 BGM 一样是 Stream：Sample 播放只有 Web 的音频驱动实现了，
+## CoreAudio / Android 上 AudioServer 只会丢一句
+## 「the driver doesn't support sample playback」的 warning，
+## 然后 playing 照样是 true、播放位置一直停在 0，扬声器一点声音都没有——
+## 也就是说强行指定 Sample 等于在除 Web 外的所有平台上静音。
+## 两边都走 Stream 之后也没有「抢 Sample 声部」这回事了。
 
 const POOL_SIZE := 8
+## 和 MusicManager 同一条规矩，改一边就得改另一边，所以写成同一个常量名。
+const PLAYBACK := AudioServer.PLAYBACK_TYPE_STREAM
 
 var _streams: Dictionary = {}
 var _players: Array[AudioStreamPlayer] = []
@@ -19,10 +28,8 @@ func _ready() -> void:
 	for i in POOL_SIZE:
 		var player := AudioStreamPlayer.new()
 		player.bus = "SFX"
-		# 短 WAV 用 Sample 没关系，但不要和 BGM 抢同一套 Sample 声部。
-		player.playback_type = AudioServer.PLAYBACK_TYPE_SAMPLE
+		player.playback_type = PLAYBACK
 		add_child(player)
-		player.playback_type = AudioServer.PLAYBACK_TYPE_SAMPLE
 		_players.append(player)
 
 
@@ -37,9 +44,6 @@ func sfx_bus() -> StringName:
 func play_clips(clips: PackedStringArray) -> void:
 	for clip_name in clips:
 		_play_one(str(clip_name))
-	var music := get_node_or_null("/root/MusicManager")
-	if music != null and music.has_method("keep_alive"):
-		music.keep_alive()
 
 
 func _play_one(clip_name: String) -> void:

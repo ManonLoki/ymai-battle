@@ -16,6 +16,21 @@ extends RefCounted
 ## 存档位置。和战绩分开存：战绩按天作废，设置要一直留着。
 const SAVE_PATH := "user://settings.json"
 
+## 背景音乐默认拉满。两首 OGG 本身就混得很轻（满音量时总线峰值才 -10 dB 上下），
+## 再往下压就只剩底噪了。
+const DEFAULT_MUSIC_VOLUME := 1.0
+## 音效默认 25%。五条 SE 是顶着满刻度做的短 WAV（单条峰值 -4 ~ -0.5 dB，
+## 命中+回血叠在一起直接顶到 0 dB），不压下来会盖掉 BGM、连招时还发炸。
+const DEFAULT_SFX_VOLUME := 0.25
+const MUSIC_VOLUME_KEY := "music_volume"
+const SFX_VOLUME_KEY := "sfx_volume"
+const VOLUME_MIN := 0.0
+const VOLUME_MAX := 1.0
+## 滑到 0 时的静音，linear_to_db(0) 是 -inf，不能拿去 set_bus_volume_db。
+const VOLUME_SILENCE_DB := -80.0
+const MUSIC_BUS := &"Music"
+const SFX_BUS := &"SFX"
+
 
 # ============================== 窗口模式 ==============================
 #
@@ -74,6 +89,12 @@ static func load_mode(path: String = SAVE_PATH) -> int:
 ## 写下选择。只改自己这一项，同一份存档里还装着服务器地址。
 static func save_mode(mode: int, path: String = SAVE_PATH) -> bool:
 	return JsonStore.patch_dict(path, {MODE_KEY: sanitize_mode(mode)})
+
+
+## 启动时一次性套上窗口模式和音量。两项都幂等。
+static func apply() -> void:
+	apply_mode(load_mode())
+	apply_audio()
 
 
 ## 把模式应用到当前窗口。先定模式再定边框：
@@ -261,3 +282,65 @@ static func remove_base_url(text: String, path: String = SAVE_PATH) -> bool:
 ## 还原默认：把自定义地址清掉，之后取榜单又走 TokenUsageApi 里的默认地址。
 static func clear_base_url(path: String = SAVE_PATH) -> bool:
 	return save_base_url("", path)
+
+
+# ============================== 音量 ==============================
+#
+# 线性 0–1 存档，真正推到 AudioServer 时转 dB。0 是静音，1 是总线 0 dB。
+# 默认 BGM 明显高于 SE：差的不是重要程度，是两边素材的响度——
+# 循环 OGG 混得轻，五条命中 WAV 本来就顶着满刻度。
+
+
+static func sanitize_volume(value: float) -> float:
+	if is_nan(value) or is_inf(value):
+		return VOLUME_MIN
+	return clampf(value, VOLUME_MIN, VOLUME_MAX)
+
+
+static func volume_to_db(linear: float) -> float:
+	var value := sanitize_volume(linear)
+	if value <= 0.0001:
+		return VOLUME_SILENCE_DB
+	return linear_to_db(value)
+
+
+static func volume_percent(linear: float) -> int:
+	return int(round(sanitize_volume(linear) * 100.0))
+
+
+static func _load_volume(key: String, fallback: float, path: String) -> float:
+	var raw: Variant = JsonStore.read_dict(path).get(key, fallback)
+	if typeof(raw) != TYPE_INT and typeof(raw) != TYPE_FLOAT:
+		return sanitize_volume(fallback)
+	return sanitize_volume(float(raw))
+
+
+static func load_music_volume(path: String = SAVE_PATH) -> float:
+	return _load_volume(MUSIC_VOLUME_KEY, DEFAULT_MUSIC_VOLUME, path)
+
+
+static func load_sfx_volume(path: String = SAVE_PATH) -> float:
+	return _load_volume(SFX_VOLUME_KEY, DEFAULT_SFX_VOLUME, path)
+
+
+static func save_music_volume(value: float, path: String = SAVE_PATH) -> bool:
+	return JsonStore.patch_dict(path, {MUSIC_VOLUME_KEY: sanitize_volume(value)})
+
+
+static func save_sfx_volume(value: float, path: String = SAVE_PATH) -> bool:
+	return JsonStore.patch_dict(path, {SFX_VOLUME_KEY: sanitize_volume(value)})
+
+
+## 把线性音量推到 Music / SFX 总线。不传就读存档。
+static func apply_audio(music: float = -1.0, sfx: float = -1.0, path: String = SAVE_PATH) -> void:
+	var music_linear := load_music_volume(path) if music < 0.0 else sanitize_volume(music)
+	var sfx_linear := load_sfx_volume(path) if sfx < 0.0 else sanitize_volume(sfx)
+	_set_bus_volume(MUSIC_BUS, music_linear)
+	_set_bus_volume(SFX_BUS, sfx_linear)
+
+
+static func _set_bus_volume(bus_name: StringName, linear: float) -> void:
+	var index := AudioServer.get_bus_index(bus_name)
+	if index < 0:
+		return
+	AudioServer.set_bus_volume_db(index, volume_to_db(linear))
