@@ -1718,11 +1718,14 @@ func _test_main_menu() -> void:
 	var configured := str(ProjectSettings.get_setting("application/config/version", ""))
 	_assert(not configured.is_empty(), "project.godot declares a version")
 	var android_version_code := -1
+	var android_version_name := ""
 	for line in FileAccess.get_file_as_string("res://export_presets.cfg").split("\n"):
 		if line.strip_edges().begins_with("version/code="):
 			android_version_code = int(line.strip_edges().trim_prefix("version/code="))
-			break
-	_assert(android_version_code == int(configured.get_slice(".", 2)), "Android versionCode stays aligned with the project patch version")
+		elif line.strip_edges().begins_with("version/name="):
+			android_version_name = line.strip_edges().trim_prefix("version/name=").trim_prefix("\"").trim_suffix("\"")
+	_assert(android_version_code > 0, "Android versionCode is a positive install revision")
+	_assert(android_version_name.is_empty() or android_version_name == configured, "Android versionName inherits or matches the project version")
 	_assert(main.get_node_or_null("%Subtitle") == null, "the main menu subtitle is gone")
 	var version_label := main.get_node_or_null("%VersionLabel") as Label
 	_assert(version_label != null, "Main has a version label")
@@ -2095,7 +2098,7 @@ func _test_fighter_anims() -> void:
 	_assert(view.get_node_or_null("Visual/CritFx") != null and view.get_node_or_null("Visual/GuardFx/Gleam") != null, "fixed combat FX are visible in the scene tree")
 	_assert(fighter_src.find("_build_animations") < 0 and combat_fx_src.find("CPUParticles2D.new") < 0 and combat_fx_src.find("Sprite2D.new") < 0, "fighter scripts reuse scene-authored animations and FX nodes")
 	_assert(not FileAccess.file_exists("res://scripts/fighter_anims.gd"), "obsolete runtime animation builder is removed")
-	_assert(SpriteFactory.COUNT >= 12, "appearance pool has at least 12 looks")
+	_assert(SpriteFactory.COUNT == 22, "appearance pool has 12 originals plus 10 new looks")
 	var user := _ranked("anim", 10, AgentChannels.CHANNEL_CODEX)
 	var fighter := Fighter.from_ranked(user, true)
 	_give_buffs(fighter, [SkillCatalog.agent_buff_template(AgentChannels.CHANNEL_CODEX)])
@@ -2581,9 +2584,12 @@ func _test_icons_and_layout() -> void:
 	_assert_icon_family_borders()
 
 
-## 12 种形象两两不同，且只有擂主头顶有金色王冠。
+## 原有特殊形象与新增形象都不能退化成旧人形的换色版，且只有擂主头顶有金色王冠。
 func _test_appearances_and_crown() -> void:
-	_assert(SpriteFactory.COUNT >= 12, "pool size is at least 12")
+	_assert(SpriteFactory.COUNT == 22, "pool size includes all 10 requested newcomers")
+	_assert(SpriteFactory.NEW_APPEARANCE_START == 12, "new appearance ids start after the original 12")
+	_assert(SpriteFactory.COUNT - SpriteFactory.NEW_APPEARANCE_START == 10, "exactly 10 new appearances are registered")
+	_assert(SpriteFactory.PALETTES.size() == SpriteFactory.COUNT, "every appearance has a palette")
 	var ids: Dictionary = {}
 	for i in 80:
 		var user := _ranked("user_%d" % i, 10)
@@ -2598,10 +2604,31 @@ func _test_appearances_and_crown() -> void:
 		for orig in range(SpriteFactory.ORIGINAL_HUMANS):
 			best = mini(best, _mask_diff(human_masks[extra], human_masks[orig]))
 		_assert(best >= 18, "extra human %d silhouette differs from original humans" % extra)
-	for animal in range(SpriteFactory.ANIMAL_START, SpriteFactory.COUNT):
+	# 8~11 是原有四只动物；新增池里又混入了精灵、骑士等人形，不能再一路扫到 COUNT。
+	for animal in range(SpriteFactory.ANIMAL_START, SpriteFactory.NEW_APPEARANCE_START):
 		var amask := _opaque_mask(SpriteFactory.make_texture(animal, "idle", false).get_image())
 		for hid in range(SpriteFactory.ANIMAL_START):
 			_assert(_mask_diff(amask, human_masks[hid]) >= 24, "animal %d is not a recolor of human %d" % [animal, hid])
+	# 本批十个形象逐个对比所有更早形象：轮廓至少要有肉眼可见的差异，不能只换颜色。
+	var earlier_masks: Array[PackedByteArray] = []
+	for id in range(SpriteFactory.NEW_APPEARANCE_START):
+		earlier_masks.append(_opaque_mask(SpriteFactory.make_texture(id, "idle", false).get_image()))
+	for newcomer in range(SpriteFactory.NEW_APPEARANCE_START, SpriteFactory.COUNT):
+		var image := SpriteFactory.make_texture(newcomer, "idle", false).get_image()
+		_assert(image.get_width() == SpriteFactory.SIZE and image.get_height() == SpriteFactory.SIZE, "new appearance %d stays on the 32px canvas" % newcomer)
+		var mask := _opaque_mask(image)
+		for earlier in range(earlier_masks.size()):
+			_assert(_mask_diff(mask, earlier_masks[earlier]) >= 18, "new appearance %d has its own silhouette versus %d" % [newcomer, earlier])
+		earlier_masks.append(mask)
+	# 右侧攻击特效必须完整留在 32px 画布里；这些像素数会在坐标越界时明显减少。
+	var ghost_attack := SpriteFactory.make_texture(13, "attack", false).get_image()
+	var mouse_attack := SpriteFactory.make_texture(16, "attack", false).get_image()
+	var dragon_attack := SpriteFactory.make_texture(18, "attack", false).get_image()
+	var duck_attack := SpriteFactory.make_texture(19, "attack", false).get_image()
+	_assert(_count_pixels_of_color(ghost_attack, SpriteFactory.PALETTES[13]["weapon"]) >= 5, "ghost attack wisps stay inside the canvas")
+	_assert(_count_pixels_of_color(mouse_attack, SpriteFactory.PALETTES[16]["weapon"]) >= 10, "electric mouse sparks stay inside the canvas")
+	_assert(_count_pixels_of_color(dragon_attack, SpriteFactory.PALETTES[18]["weapon"]) >= 9, "dragon flame stays inside the canvas")
+	_assert(_count_pixels_of_color(duck_attack, SpriteFactory.PALETTES[19]["accent"]) >= 17, "duck attack keeps both energy waves inside the canvas")
 	for id in range(SpriteFactory.COUNT):
 		for pose in ["idle", "attack", "hurt"]:
 			var champ_img := SpriteFactory.make_texture(id, pose, true).get_image()
@@ -2631,6 +2658,16 @@ func _opaque_mask(image: Image) -> PackedByteArray:
 			bits[i] = 1 if image.get_pixel(x, y).a > 0.5 else 0
 			i += 1
 	return bits
+
+
+## 数出完全匹配指定调色板颜色的像素，用于守住细小攻击特效。
+func _count_pixels_of_color(image: Image, target: Color) -> int:
+	var count := 0
+	for y in image.get_height():
+		for x in image.get_width():
+			if image.get_pixel(x, y).is_equal_approx(target):
+				count += 1
+	return count
 
 
 ## 两张轮廓位图有多少个像素不一样。
@@ -2743,7 +2780,7 @@ func _test_result_copy() -> void:
 	await process_frame
 
 
-## 顺手把 12 种形象 × 3 种姿势 × 有无王冠导成 PNG，
+## 顺手把全部形象 × 3 种姿势 × 有无王冠导成 PNG，
 ## 放进 assets/characters 供人肉检查，不参与断言。
 func _export_character_pngs() -> void:
 	var abs_dir := ProjectSettings.globalize_path("res://assets/characters")
