@@ -37,10 +37,6 @@ window/stretch/aspect="expand"
 mouse_cursor/custom_image="res://assets/cursors/arrow.png"
 mouse_cursor/custom_image_hotspot=Vector2(1, 1)
 
-[audio]
-
-buses/default_bus_layout="res://default_bus_layout.tres"
-
 [gui]
 
 timers/tooltip_delay_sec=0.0
