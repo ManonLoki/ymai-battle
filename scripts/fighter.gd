@@ -25,7 +25,7 @@ var agent_buffs: Array[SkillDef] = []
 var skills: Array[SkillDef] = []
 ## 是不是这一场的擂主（榜首）。体型、技能位、先天加成都看它。
 var is_champion: bool = false
-## 立绘编号，由用户名哈希决定，所以同一个人每场长相一致。
+## 立绘 canonical 编号。单人创建时使用稳定兜底；完整战斗名单会在洗牌前均衡重分配。
 var appearance_id: int = 0
 ## 要挨多少次干净命中才倒下。默认按一场单挑算，进入车轮战后由 WheelWar
 ## 按“这条血要扛几场”重新分配。单次伤害就是 max_hp / hits_to_down，
@@ -70,9 +70,20 @@ static func from_ranked(user: RankedUser, p_is_champion: bool) -> Fighter:
 	fighter.channels = user.channels
 	fighter.agent_buffs = []
 	fighter.is_champion = p_is_champion
-	# 用名字的哈希取模选立绘：同一个人每场都是同一张脸。
-	fighter.appearance_id = absi(user.username.hash()) % SpriteFactory.COUNT
+	# 单人调用也只会落进可选池；WheelWar 拿到完整名单后还会做一次无重复均衡分配。
+	fighter.appearance_id = SpriteFactory.fallback_appearance_id(user.username)
 	return fighter
+
+
+## 按完整名单批量分配形象。名单顺序不影响 username -> appearance_id 的结果；同名角色
+## 会保持同一形象，符合用户名作为稳定身份键的既有约定。
+static func assign_balanced_appearances(fighters: Array[Fighter]) -> void:
+	var usernames: Array[String] = []
+	for fighter in fighters:
+		usernames.append(fighter.username)
+	var assignments := SpriteFactory.assign_appearance_ids(usernames)
+	for fighter in fighters:
+		fighter.appearance_id = int(assignments[fighter.username])
 
 
 func is_alive() -> bool:

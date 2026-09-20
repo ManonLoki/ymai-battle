@@ -1826,7 +1826,7 @@ func _test_main_parallax_and_quit() -> void:
 	await process_frame
 
 
-## 十六套战斗背景、独立随机、分带视差，以及排行榜的可读性承托。
+## 十八套战斗背景、独立随机、分带视差，以及排行榜的可读性承托。
 func _test_battle_and_ranking_backgrounds() -> void:
 	var expected_active_paths: Array[String] = [
 		"res://assets/battle_backgrounds/ember_forge.png",
@@ -1845,14 +1845,19 @@ func _test_battle_and_ranking_backgrounds() -> void:
 		"res://assets/battle_backgrounds/cyber_rooftop.png",
 		"res://assets/battle_backgrounds/mystic_mushroom_marsh.png",
 		"res://assets/battle_backgrounds/desert_oasis_day.png",
+		"res://assets/battle_backgrounds/super_mario_inspired_stage.png",
+		"res://assets/battle_backgrounds/pokemon_inspired_stadium.png",
 	]
 	var retired_paths: Array[String] = [
-		"res://assets/battle_backgrounds/celestial_citadel.png",
-		"res://assets/battle_backgrounds/sunken_ruins.png",
-		"res://assets/battle_backgrounds/frozen_observatory.png",
-		"res://assets/battle_backgrounds/neon_archive.png",
+		"res://assets/battle_backgrounds/retired/celestial_citadel.png",
+		"res://assets/battle_backgrounds/retired/coastal_cliffs_day.png",
+		"res://assets/battle_backgrounds/retired/sunken_ruins.png",
+		"res://assets/battle_backgrounds/retired/frozen_observatory.png",
+		"res://assets/battle_backgrounds/retired/neon_archive.png",
 	]
-	_assert(BattleParallax.BACKGROUND_PATHS.size() == 16, "battle ships exactly sixteen active backgrounds")
+	var expected_background_count := expected_active_paths.size()
+	_assert(expected_background_count == 18, "battle fixture lists exactly eighteen active backgrounds")
+	_assert(BattleParallax.BACKGROUND_PATHS.size() == expected_background_count, "battle ships every expected active background")
 	_assert(BattleParallax.BACKGROUND_TEXTURES.size() == BattleParallax.BACKGROUND_PATHS.size(), "every battle path is preloaded for export")
 	for expected_path in expected_active_paths:
 		_assert(BattleParallax.BACKGROUND_PATHS.has(expected_path), "active battle pool includes: %s" % expected_path.get_file())
@@ -1871,13 +1876,13 @@ func _test_battle_and_ranking_backgrounds() -> void:
 		_assert(image != null and image.get_size() == Vector2i(640, 360), "battle background is 640x360: %s" % path.get_file())
 		_assert(image != null and _opaque_count(image) > 100000, "battle background contains visible art: %s" % path.get_file())
 		images.append(image)
-	_assert(unique_paths.size() == 16, "all sixteen battle background paths are unique")
-	var all_distinct := images.size() == 16
+	_assert(unique_paths.size() == expected_background_count, "all eighteen battle background paths are unique")
+	var all_distinct := images.size() == expected_background_count
 	for i in images.size():
 		for j in range(i + 1, images.size()):
 			if not _images_differ(images[i], images[j]):
 				all_distinct = false
-	_assert(all_distinct, "all sixteen battle backgrounds are visually distinct files")
+	_assert(all_distinct, "all eighteen battle backgrounds are visually distinct files")
 
 	var battle := (load("res://scenes/battle.tscn") as PackedScene).instantiate()
 	battle.skip_autoload = true
@@ -1924,7 +1929,7 @@ func _test_battle_and_ranking_backgrounds() -> void:
 		seen[second_path] = true
 		for _roll in 128:
 			seen[backdrop.roll_background()] = true
-		_assert(seen.size() == 16, "the independent background roll can reach every active arena")
+		_assert(seen.size() == expected_background_count, "the independent background roll can reach every active arena")
 	var floor_scrim := battle.get_node("BackgroundLayer/Floor") as ColorRect
 	var arena_scrim := battle.get_node("BackgroundLayer/ArenaTint") as ColorRect
 	_assert(floor_scrim.color.a >= 0.4 and floor_scrim.color.a < 0.8, "lower arena is dimmed without hiding the generated floor")
@@ -2098,7 +2103,7 @@ func _test_fighter_anims() -> void:
 	_assert(view.get_node_or_null("Visual/CritFx") != null and view.get_node_or_null("Visual/GuardFx/Gleam") != null, "fixed combat FX are visible in the scene tree")
 	_assert(fighter_src.find("_build_animations") < 0 and combat_fx_src.find("CPUParticles2D.new") < 0 and combat_fx_src.find("Sprite2D.new") < 0, "fighter scripts reuse scene-authored animations and FX nodes")
 	_assert(not FileAccess.file_exists("res://scripts/fighter_anims.gd"), "obsolete runtime animation builder is removed")
-	_assert(SpriteFactory.COUNT == 22, "appearance pool has 12 originals plus 10 new looks")
+	_assert(SpriteFactory.COUNT == 16, "appearance pool keeps 2 of the first 8 plus all 14 later looks")
 	var user := _ranked("anim", 10, AgentChannels.CHANNEL_CODEX)
 	var fighter := Fighter.from_ranked(user, true)
 	_give_buffs(fighter, [SkillCatalog.agent_buff_template(AgentChannels.CHANNEL_CODEX)])
@@ -2584,18 +2589,100 @@ func _test_icons_and_layout() -> void:
 	_assert_icon_family_borders()
 
 
-## 原有特殊形象与新增形象都不能退化成旧人形的换色版，且只有擂主头顶有金色王冠。
+## 最初八个只留轮廓差最大的 4/5 号；同场名单均衡分配有效形象，
+## 其余特殊/新增形象保持独立轮廓，且只有擂主头顶有金色王冠。
 func _test_appearances_and_crown() -> void:
-	_assert(SpriteFactory.COUNT == 22, "pool size includes all 10 requested newcomers")
+	var expected_selectable: Array[int] = [4, 5, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+	_assert(SpriteFactory.REGISTERED_COUNT == 22, "all canonical renderers remain registered for compatibility")
+	_assert(SpriteFactory.COUNT == 16 and SpriteFactory.SELECTABLE_COUNT == 16, "selectable pool contains exactly sixteen appearances")
+	_assert(SpriteFactory.SELECTABLE_IDS == expected_selectable, "only canonical 4/5 survive from the first eight")
+	for retired_id in [0, 1, 2, 3, 6, 7]:
+		for pose in ["idle", "attack", "hurt"]:
+			var plain_path := "res://assets/characters/fighter_%d_%s.png" % [retired_id, pose]
+			var crown_path := "res://assets/characters/fighter_%d_%s_crown.png" % [retired_id, pose]
+			_assert(not FileAccess.file_exists(plain_path) and not FileAccess.file_exists(crown_path), "retired appearance %d has no exported %s assets" % [retired_id, pose])
 	_assert(SpriteFactory.NEW_APPEARANCE_START == 12, "new appearance ids start after the original 12")
-	_assert(SpriteFactory.COUNT - SpriteFactory.NEW_APPEARANCE_START == 10, "exactly 10 new appearances are registered")
-	_assert(SpriteFactory.PALETTES.size() == SpriteFactory.COUNT, "every appearance has a palette")
+	_assert(SpriteFactory.REGISTERED_COUNT - SpriteFactory.NEW_APPEARANCE_START == 10, "exactly 10 new appearances are registered")
+	_assert(SpriteFactory.PALETTES.size() == SpriteFactory.REGISTERED_COUNT, "every registered appearance has a palette")
+
+	# 用三个姿势的透明轮廓 XOR 复算“差异最大”，避免池子是凭主观挑的。
+	var first_eight_masks: Array[Array] = []
+	for id in range(8):
+		var pose_masks: Array[PackedByteArray] = []
+		for pose in ["idle", "attack", "hurt"]:
+			pose_masks.append(_opaque_mask(SpriteFactory.make_texture(id, pose, false).get_image()))
+		first_eight_masks.append(pose_masks)
+	var most_different := Vector2i(-1, -1)
+	var largest_diff := -1
+	for left in range(8):
+		for right in range(left + 1, 8):
+			var total_diff := 0
+			for pose_index in range(3):
+				total_diff += _mask_diff(first_eight_masks[left][pose_index], first_eight_masks[right][pose_index])
+			if total_diff > largest_diff:
+				largest_diff = total_diff
+				most_different = Vector2i(left, right)
+	_assert(most_different == Vector2i(4, 5) and largest_diff == 494, "canonical 4/5 are the most different pair across all poses")
+
+	# 单人 fallback 也不得抽到已淘汰的 0~3、6、7。
 	var ids: Dictionary = {}
 	for i in 80:
 		var user := _ranked("user_%d" % i, 10)
 		var fighter := Fighter.from_ranked(user, false)
+		_assert(expected_selectable.has(fighter.appearance_id), "single-user fallback stays inside the selectable pool")
 		ids[fighter.appearance_id] = true
 	_assert(ids.size() > 4, "username hashes cover more than 4 appearance ids")
+
+	# 一轮 16 人全部不重复；倒序输入不改变 username -> ID；37 人时用量只会是 2 或 3。
+	var sixteen_names: Array[String] = []
+	for i in range(SpriteFactory.COUNT):
+		sixteen_names.append("balanced_%02d" % i)
+	var sixteen_assignments := SpriteFactory.assign_appearance_ids(sixteen_names)
+	var sixteen_ids: Dictionary = {}
+	for username in sixteen_names:
+		sixteen_ids[int(sixteen_assignments[username])] = true
+	_assert(sixteen_ids.size() == SpriteFactory.COUNT, "sixteen-player roster uses every selectable appearance exactly once")
+	var reversed_names: Array[String] = []
+	for i in range(sixteen_names.size() - 1, -1, -1):
+		reversed_names.append(sixteen_names[i])
+	var reversed_assignments := SpriteFactory.assign_appearance_ids(reversed_names)
+	var same_mapping := true
+	for username in sixteen_names:
+		if sixteen_assignments[username] != reversed_assignments[username]:
+			same_mapping = false
+	_assert(same_mapping, "balanced appearance assignment is independent of roster input order")
+
+	var thirty_seven_names: Array[String] = []
+	for i in range(37):
+		thirty_seven_names.append("crowd_%02d" % i)
+	var crowded_assignments := SpriteFactory.assign_appearance_ids(thirty_seven_names)
+	var usage: Dictionary = {}
+	for selectable_id in expected_selectable:
+		usage[selectable_id] = 0
+	for username in thirty_seven_names:
+		var assigned_id := int(crowded_assignments[username])
+		_assert(expected_selectable.has(assigned_id), "crowded roster never uses a retired appearance")
+		usage[assigned_id] = int(usage[assigned_id]) + 1
+	var least_used := 999
+	var most_used := -1
+	for selectable_id in expected_selectable:
+		least_used = mini(least_used, int(usage[selectable_id]))
+		most_used = maxi(most_used, int(usage[selectable_id]))
+	_assert(least_used == 2 and most_used == 3, "thirty-seven-player roster spreads usage evenly across all appearances")
+
+	# WheelWar 必须真正接上名单级分配，不只是工厂有个没人调的函数。
+	var balanced_ranked: Array[RankedUser] = []
+	for username in sixteen_names:
+		balanced_ranked.append(_ranked(username, 10))
+	var balanced_war := WheelWar.new()
+	balanced_war.setup(balanced_ranked, RollSource.new(1600))
+	var war_ids: Dictionary = {balanced_war.champion.appearance_id: true}
+	if balanced_war.current_opponent != null:
+		war_ids[balanced_war.current_opponent.appearance_id] = true
+	for waiting_fighter in balanced_war.waiting:
+		war_ids[waiting_fighter.appearance_id] = true
+	_assert(war_ids.size() == SpriteFactory.COUNT, "WheelWar applies the balanced roster assignment before shuffling")
+
 	var human_masks: Array[PackedByteArray] = []
 	for id in range(SpriteFactory.ANIMAL_START):
 		human_masks.append(_opaque_mask(SpriteFactory.make_texture(id, "idle", false).get_image()))
@@ -2613,7 +2700,7 @@ func _test_appearances_and_crown() -> void:
 	var earlier_masks: Array[PackedByteArray] = []
 	for id in range(SpriteFactory.NEW_APPEARANCE_START):
 		earlier_masks.append(_opaque_mask(SpriteFactory.make_texture(id, "idle", false).get_image()))
-	for newcomer in range(SpriteFactory.NEW_APPEARANCE_START, SpriteFactory.COUNT):
+	for newcomer in range(SpriteFactory.NEW_APPEARANCE_START, SpriteFactory.REGISTERED_COUNT):
 		var image := SpriteFactory.make_texture(newcomer, "idle", false).get_image()
 		_assert(image.get_width() == SpriteFactory.SIZE and image.get_height() == SpriteFactory.SIZE, "new appearance %d stays on the 32px canvas" % newcomer)
 		var mask := _opaque_mask(image)
@@ -2629,7 +2716,7 @@ func _test_appearances_and_crown() -> void:
 	_assert(_count_pixels_of_color(mouse_attack, SpriteFactory.PALETTES[16]["weapon"]) >= 10, "electric mouse sparks stay inside the canvas")
 	_assert(_count_pixels_of_color(dragon_attack, SpriteFactory.PALETTES[18]["weapon"]) >= 9, "dragon flame stays inside the canvas")
 	_assert(_count_pixels_of_color(duck_attack, SpriteFactory.PALETTES[19]["accent"]) >= 17, "duck attack keeps both energy waves inside the canvas")
-	for id in range(SpriteFactory.COUNT):
+	for id in SpriteFactory.SELECTABLE_IDS:
 		for pose in ["idle", "attack", "hurt"]:
 			var champ_img := SpriteFactory.make_texture(id, pose, true).get_image()
 			var foe_img := SpriteFactory.make_texture(id, pose, false).get_image()
@@ -2785,7 +2872,7 @@ func _test_result_copy() -> void:
 func _export_character_pngs() -> void:
 	var abs_dir := ProjectSettings.globalize_path("res://assets/characters")
 	DirAccess.make_dir_recursive_absolute(abs_dir)
-	for appearance in range(SpriteFactory.COUNT):
+	for appearance in SpriteFactory.SELECTABLE_IDS:
 		for pose in ["idle", "attack", "hurt"]:
 			var tex := SpriteFactory.make_texture(appearance, pose, false)
 			var image := tex.get_image()

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c28cd8jrt447o"
-path="res://.godot/imported/fighter_0_attack_crown.png-6d79e9ce0b27e6455c5130958dc4f4b6.ctex"
+uid="uid://dffwv0qwp23xw"
+path="res://.godot/imported/super_mario_inspired_stage.png-7825c42174f15cd1367c07f38e6e96c2.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/characters/fighter_0_attack_crown.png"
-dest_files=["res://.godot/imported/fighter_0_attack_crown.png-6d79e9ce0b27e6455c5130958dc4f4b6.ctex"]
+source_file="res://assets/battle_backgrounds/super_mario_inspired_stage.png"
+dest_files=["res://.godot/imported/super_mario_inspired_stage.png-7825c42174f15cd1367c07f38e6e96c2.ctex"]
 
 [params]
 

@@ -2,15 +2,23 @@ class_name SpriteFactory
 extends RefCounted
 
 ## 按 appearance_id 程序化生成角色立绘，省掉美术资源。
-## COUNT 是可选形象总数，Fighter 用用户名的哈希取模来固定每个人的长相。
+## REGISTERED_COUNT 是绘制层认识的 canonical ID 上限；真正发给新角色的形象只来自
+## SELECTABLE_IDS。旧 ID 继续能画，避免已有存档或截图工具失效，但不会再进入新名单。
 ##
 ## 每张图都是 32×32 的像素画，靠一堆 _fill_rect 摞出来；
 ## 三种姿势（idle / attack / hurt）共用同一套画法，只是躯干前倾量和武器位置不同。
 
 ## 立绘边长，正方形。
 const SIZE := 32
-## 可选形象总数。0~3 是四个同款人形，4~7 是四种特殊人形，8~11 是四种动物，12~21 是新增形象。
-const COUNT := 22
+## 已注册的 canonical 形象总数，合法绘制编号是 0~21。
+const REGISTERED_COUNT := 22
+## 最初 0~7 号只保留差异最大的瘦高长枪（4）和壮汉大锤（5）；
+## 8~21 号后续形象全部保留。0~3、6、7 仅用于旧数据绘制兼容。
+## GDScript 的 const 初始化不能从 Array.size() 推导，所以修改本表时必须同步 COUNT。
+const SELECTABLE_IDS: Array[int] = [4, 5, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+## 对外的“形象数量”始终指新角色有效可选数，不包含仅供旧数据绘制的 canonical ID。
+const COUNT := 16
+const SELECTABLE_COUNT := COUNT
 ## 0~3 这四个是最初的同款人形（只有配色不同）。
 const ORIGINAL_HUMANS := 4
 ## 原有动物形象起点；8~11 是猫、狗、鸟、兔。
@@ -56,13 +64,62 @@ const PALETTES := [
 ]
 
 
+## 单人创建时的兼容兜底。正式开战会由 assign_appearance_ids 按完整名单重新均衡分配，
+## 这里也必须只落进可选池，避免其他调用方重新抽到 0~3、6、7。
+static func fallback_appearance_id(username: String) -> int:
+	var pool_index := posmod((username + "|appearance_fallback").hash(), SELECTABLE_COUNT)
+	return int(SELECTABLE_IDS[pool_index])
+
+
+## 给整份名单做确定性的均衡分配，返回 username -> canonical ID。
+##
+## 先按用户名排序，确保传入顺序不会影响结果；每人再从自己的稳定哈希起点、按奇数步长
+## 探测整个 16 格池，只拿当前使用次数最少的形象。这样 16 人以内绝不撞形象，超过
+## 16 人时任意两个形象的使用次数最多只差 1，同时比从 4 号起顺排更不容易视觉扎堆。
+static func assign_appearance_ids(usernames: Array[String]) -> Dictionary:
+	var unique_names: Array[String] = []
+	var seen: Dictionary = {}
+	for username in usernames:
+		# 同名代表同一身份；Dictionary 结果也天然只能为它保留一个稳定形象。
+		if seen.has(username):
+			continue
+		seen[username] = true
+		unique_names.append(username)
+	unique_names.sort()
+
+	var usage: Array[int] = []
+	usage.resize(SELECTABLE_COUNT)
+	usage.fill(0)
+	var assignments: Dictionary = {}
+	for username in unique_names:
+		var least_used := usage[0]
+		for count in usage:
+			least_used = mini(least_used, count)
+
+		var start := posmod((username + "|appearance_start").hash(), SELECTABLE_COUNT)
+		# 池大小是 16，奇数与 16 互质，所以无论哈希结果为何都能完整探测全池。
+		var step := posmod((username + "|appearance_step").hash(), SELECTABLE_COUNT >> 1) * 2 + 1
+		var chosen_index := -1
+		for offset in range(SELECTABLE_COUNT):
+			var pool_index := posmod(start + offset * step, SELECTABLE_COUNT)
+			if usage[pool_index] == least_used:
+				chosen_index = pool_index
+				break
+		# 奇数步长一定会覆盖全池；这个兜底只防未来有人改池大小却没同步算法。
+		if chosen_index < 0:
+			chosen_index = start
+		assignments[username] = int(SELECTABLE_IDS[chosen_index])
+		usage[chosen_index] += 1
+	return assignments
+
+
 ## 画一张立绘。pose 取 "idle" / "attack" / "hurt"，crowned 决定加不加王冠（擂主）。
 static func make_texture(appearance_id: int, pose: String = "idle", crowned: bool = false) -> Texture2D:
 	var image := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
 	# 全透明打底，没画到的地方就是镂空。
 	image.fill(Color(0, 0, 0, 0))
 	# 取模保证任何 id 都能落到合法范围。
-	var id := posmod(appearance_id, COUNT)
+	var id := posmod(appearance_id, REGISTERED_COUNT)
 	var palette: Dictionary = PALETTES[id]
 	var attack := pose == "attack"
 	var hurt := pose == "hurt"

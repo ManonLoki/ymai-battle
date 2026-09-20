@@ -40,6 +40,11 @@ func setup(ranked: Array[RankedUser], rng: RollSource) -> void:
 		var challenger := Fighter.from_ranked(ranked[i], false)
 		challengers.append(challenger)
 		powers.append(challenger.tokens)
+	# 全员创建完毕后按完整名单均衡形象；必须放在洗牌前，保证随机出场顺序不会改变长相。
+	var roster: Array[Fighter] = []
+	roster.append(champion)
+	roster.append_array(challengers)
+	Fighter.assign_balanced_appearances(roster)
 	# 出场顺序随机，同一份榜单每场打起来都不一样。
 	rng.shuffle(challengers)
 	waiting = challengers
@@ -132,4 +137,3 @@ func _advance_opponent() -> void:
 		outcome = Outcome.ALL_OPPONENTS_DOWN
 		return
 	current_opponent = waiting.pop_front()
-

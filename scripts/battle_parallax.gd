@@ -3,11 +3,11 @@ extends TextureRect
 
 ## 战斗场景的一张图式视差背景。
 ##
-## 十六张图都保持完整的 16:9 构图，shader 按画面的远景 / 中景 / 近景高度带做
+## 十八张图都保持完整的 16:9 构图，shader 按画面的远景 / 中景 / 近景高度带做
 ## 不同幅度的水平往返卷轴。背景选择用自己的 RandomNumberGenerator，绝不借用战斗
 ## 结算的 RollSource；换一张背景因此不会改变任何一次命中、暴击或技能结果。
 
-## 逐张 preload 保证十六张图进入导出包，并把首次 Roll 的磁盘加载挪到进场之前。
+## 逐张 preload 保证十八张图进入导出包，并把首次 Roll 的磁盘加载挪到进场之前。
 ## **这是唯一一份清单**：路径由 BACKGROUND_PATHS 从贴图的 resource_path 现算，
 ## 加一张图只改这里，不会出现两份清单对不上的情况。
 const BACKGROUND_TEXTURES: Array[Texture2D] = [
@@ -27,8 +27,10 @@ const BACKGROUND_TEXTURES: Array[Texture2D] = [
 	preload("res://assets/battle_backgrounds/cyber_rooftop.png"),
 	preload("res://assets/battle_backgrounds/mystic_mushroom_marsh.png"),
 	preload("res://assets/battle_backgrounds/desert_oasis_day.png"),
+	preload("res://assets/battle_backgrounds/super_mario_inspired_stage.png"),
+	preload("res://assets/battle_backgrounds/pokemon_inspired_stadium.png"),
 ]
-## 十六张图的资源路径，顺序和 BACKGROUND_TEXTURES 一一对应，进程启动时算一次。
+## 十八张图的资源路径，顺序和 BACKGROUND_TEXTURES 一一对应，进程启动时算一次。
 static var BACKGROUND_PATHS: Array[String] = []
 
 const SHADER_TIME_PARAMETER := &"elapsed_seconds"
@@ -79,7 +81,7 @@ func seed_backgrounds(value: int) -> void:
 	_background_rng.seed = value
 
 
-## 为一场真实开战随机选图。首次在全部十六张里选；之后保证不连续重复。
+## 为一场真实开战随机选图。首次在全部十八张里选；之后保证不连续重复。
 ## 返回资源路径，方便调试和无渲染测试确认选择结果。
 func roll_background() -> String:
 	if BACKGROUND_PATHS.is_empty():

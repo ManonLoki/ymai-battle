@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CURSOR_DIR = ROOT / "assets" / "cursors"
 ICON_PATH = ROOT / "icon.png"
-FIGHTER = ROOT / "assets" / "characters" / "fighter_0_idle_crown.png"
+FIGHTER = ROOT / "assets" / "characters" / "fighter_4_idle_crown.png"
 
 # ThemeHelper / SpriteFactory palette
 OUT = (11, 28, 36, 255)
@@ -183,9 +183,10 @@ def rounded_tile(size: int) -> list:
 
 def bake_icon_from_fighter() -> list:
     tile = rounded_tile(32)
-    if FIGHTER.exists():
-        fighter = load_png_rgba(FIGHTER)
-        blit(tile, fighter, 0, 0)
+    if not FIGHTER.is_file():
+        raise FileNotFoundError(f"icon fighter sprite is missing: {FIGHTER}")
+    fighter = load_png_rgba(FIGHTER)
+    blit(tile, fighter, 0, 0)
     return scale_nearest(tile, 8)
 
 

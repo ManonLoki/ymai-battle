@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://8e4hbhkbm7gr"
-path="res://.godot/imported/fighter_2_hurt.png-808ba0049b5212756b6d74e0bd5f0d38.ctex"
+uid="uid://bkh6g2c3inpl0"
+path="res://.godot/imported/pokemon_inspired_stadium.png-5ea580d9f311fd535e07490e4aa3f2af.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/characters/fighter_2_hurt.png"
-dest_files=["res://.godot/imported/fighter_2_hurt.png-808ba0049b5212756b6d74e0bd5f0d38.ctex"]
+source_file="res://assets/battle_backgrounds/pokemon_inspired_stadium.png"
+dest_files=["res://.godot/imported/pokemon_inspired_stadium.png-5ea580d9f311fd535e07490e4aa3f2af.ctex"]
 
 [params]
 
