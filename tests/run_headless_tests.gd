@@ -2004,12 +2004,22 @@ func _test_main_menu() -> void:
 			android_version_code = int(line.strip_edges().trim_prefix("version/code="))
 		elif line.strip_edges().begins_with("version/name="):
 			android_version_name = line.strip_edges().trim_prefix("version/name=").trim_prefix("\"").trim_suffix("\"")
-	_assert(android_version_code > 0, "Android versionCode is a positive install revision")
+	_assert(configured == "1.2.0", "project version is 1.2.0")
+	_assert(android_version_code >= 13, "Android versionCode is at least 13")
 	_assert(android_version_name.is_empty() or android_version_name == configured, "Android versionName inherits or matches the project version")
 	_assert(main.get_node_or_null("%Subtitle") == null, "the main menu subtitle is gone")
 	var version_label := main.get_node_or_null("%VersionLabel") as Label
 	_assert(version_label != null, "Main has a version label")
-	_assert(version_label != null and version_label.text == "v%s" % configured, "the label shows the configured version, prefixed with v")
+	_assert(version_label != null and version_label.text == "v1.2.0", "the label shows v1.2.0")
+	_assert(version_label.text == "v%s" % configured, "the label shows the configured version, prefixed with v")
+	var include_filters := 0
+	for line in FileAccess.get_file_as_string("res://export_presets.cfg").split("\n"):
+		if not line.strip_edges().begins_with("include_filter="):
+			continue
+		include_filters += 1
+		_assert(line.find("*.ogg") >= 0, "export include_filter includes *.ogg: %s" % line)
+		_assert(line.find("*.wav") >= 0, "export include_filter includes *.wav: %s" % line)
+	_assert(include_filters >= 1, "export_presets.cfg declares include_filter lines")
 	_assert(ranking_script.find("application/config/version") >= 0, "the version is read from project settings, not hard-coded")
 	main.queue_free()
 	await process_frame
@@ -2651,6 +2661,14 @@ func _test_api_contract() -> void:
 	var extra := _other_host_paths()
 	_assert(extra.is_empty(), "no other yunmai365 paths: %s" % ",".join(extra))
 	_assert(_shipped_source_has("/api/v1/token-usage") == false, "shipped scripts no longer mention /api/v1/token-usage")
+	var arch_json := FileAccess.get_file_as_string("res://docs/architecture.json")
+	var arch_html := FileAccess.get_file_as_string("res://docs/architecture.html")
+	_assert(arch_json.find("/api/v2/token-usage/dashboard") >= 0, "architecture.json names the v2 dashboard")
+	_assert(arch_json.find("/api/v1/token-usage") < 0, "architecture.json no longer names the v1 token-usage path")
+	_assert(arch_json.find("channelUsage") < 0, "architecture.json no longer names channelUsage")
+	_assert(arch_html.find("/api/v2/token-usage/dashboard") >= 0, "architecture.html names the v2 dashboard")
+	_assert(arch_html.find("/api/v1/token-usage") < 0, "architecture.html no longer names the v1 token-usage path")
+	_assert(arch_html.find("channelUsage") < 0, "architecture.html no longer names channelUsage")
 
 
 ## 要扫描的源码文件清单（排除测试自己）。

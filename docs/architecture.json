@@ -24,7 +24,7 @@
           "aggregator",
           "ranking"
         ],
-        "note": "服务端流水如何变成当日排行榜，以及战斗的出场名单。"
+        "note": "服务端看板如何变成当日排行榜，以及战斗的出场名单。"
       },
       {
         "id": "combat-core",
@@ -179,7 +179,7 @@
       "id": "aggregator",
       "type": "backend",
       "label": "RankingAggregator",
-      "sublabel": "设备 × 渠道 → 逻辑玩家",
+      "sublabel": "逻辑用户桶 → RankedUser",
       "pos": [
         550,
         40
@@ -304,7 +304,7 @@
       "id": "server",
       "type": "external",
       "label": "榜单服务器",
-      "sublabel": "/api/v1/token-usage",
+      "sublabel": "/api/v2/token-usage/dashboard",
       "pos": [
         1100,
         40
@@ -380,7 +380,7 @@
       "id": "fetch",
       "from": "server",
       "to": "api",
-      "label": "HTTP GET 当日流水",
+      "label": "HTTP GET 当日看板",
       "variant": "emphasis",
       "labelDy": -32
     },
@@ -388,7 +388,7 @@
       "id": "to-aggregator",
       "from": "api",
       "to": "aggregator",
-      "label": "channelUsage 明细",
+      "label": "data.ranking 逻辑用户",
       "variant": "emphasis",
       "labelDy": -32
     },
@@ -463,8 +463,8 @@
       "dot": "emerald",
       "title": "数据链路",
       "items": [
-        "服务端返回设备 × 渠道 × 日期的流水",
-        "按 username 压成逻辑玩家再排名",
+        "服务端返回逻辑用户排行桶",
+        "把 ranking 桶映成 RankedUser 再排名",
         "tokens 既是排名依据，也是最大生命值"
       ]
     },
