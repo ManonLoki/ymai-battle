@@ -1,10 +1,16 @@
 class_name ThemeHelper
 extends RefCounted
 
-## 全局配色、字体和按钮样式，让三个场景保持同一套观感。
-
-## 全局中文字体。三个场景的 Theme 和运行时新建的 Label 都用它。
-const UI_FONT := preload("res://assets/fonts/NotoSansSC-Regular.woff2")
+## 全局配色和奖牌表。
+##
+## **观感本身不在这里**：字体、按钮、输入框、滑块、面板的样式全在
+## res://assets/ui_theme.tres 里，由 project.godot 注册成全局主题，
+## 场景在编辑器里挑 theme_type_variation 就能套上，不需要任何运行时代码。
+## 这份脚本只留两样代码真正还要问的东西：
+## 1. 颜色常量——只在“颜色由数据决定”的地方用（报错标红、胜负、奖牌）。
+## 2. 奖牌档位表——第几名配什么颜色和哪张图。
+##
+## 主题里的配色由 tools/bake_ui_theme.gd 从下面这些常量算出来，所以两边不会走散。
 
 ## 深色背景（最底层）。
 const BG := Color("0d1117")
@@ -32,12 +38,17 @@ const MEDAL_GOLD := preload("res://assets/icons/medal_gold.png")
 const MEDAL_SILVER := preload("res://assets/icons/medal_silver.png")
 const MEDAL_BRONZE := preload("res://assets/icons/medal_bronze.png")
 
-## 焦点框的描边宽度。电视上没有鼠标，全靠它看清选中项，所以要粗。
-const FOCUS_BORDER := 3
-## 主按钮的最小尺寸。
-const BUTTON_MIN_SIZE := Vector2(220, 48)
-## 次级“返回”按钮的最小尺寸，比主按钮小一圈。各场景套完 style_button 再盖这个。
-const BACK_BUTTON_MIN_SIZE := Vector2(120, 40)
+## ui_theme.tres 里的 theme_type_variation 名字。场景里是手写字符串（.tscn 只认字面量），
+## 烘焙脚本和运行时切换主/次按钮的代码用这几个常量，保证至少代码这一侧不会拼错。
+const SECONDARY_BUTTON := &"SecondaryButton"
+const MUTED_LABEL := &"MutedLabel"
+const READABLE_LABEL := &"ReadableLabel"
+const MUTED_READABLE_LABEL := &"MutedReadableLabel"
+const GLASS_PANEL := &"GlassPanel"
+const RESULT_PANEL := &"ResultPanel"
+const DIALOG_PANEL := &"DialogPanel"
+const GLASS_LOG := &"GlassLog"
+
 ## 战绩榜的奖牌档位，从第一名往下排。**这是唯一一份清单**：
 ## 有没有牌、什么颜色、配哪张图全从它算，加减档位只改这里。
 const MEDALS := [
@@ -45,6 +56,7 @@ const MEDALS := [
 	{"color": SILVER, "texture": MEDAL_SILVER},
 	{"color": BRONZE, "texture": MEDAL_BRONZE},
 ]
+
 
 ## 这个名次有没有奖牌。挑底色、字色、图的地方都问它，
 ## 免得每个调用方各自记一遍“前三名”这个边界。
@@ -61,123 +73,3 @@ static func medal_color(rank: int) -> Color:
 ## 没有牌的名次返回 null。
 static func medal_texture(rank: int) -> Texture2D:
 	return MEDALS[rank - 1]["texture"] if has_medal(rank) else null
-
-
-## 给一棵控件子树套上统一字体。Theme 会往下继承，所以只要套在根上。
-static func apply(control: Control, font_size: int = 18) -> void:
-	var theme := Theme.new()
-	theme.default_font = UI_FONT
-	theme.default_font_size = font_size
-	control.theme = theme
-
-
-## 一块纯色圆角底。按钮和面板都从它派生。
-static func make_flat(color: Color, radius: int = 8) -> StyleBoxFlat:
-	var box := StyleBoxFlat.new()
-	box.bg_color = color
-	box.set_corner_radius_all(radius)
-	# 文字和边框之间留点空隙，不然贴边很难看。
-	box.content_margin_left = 12
-	box.content_margin_right = 12
-	box.content_margin_top = 8
-	box.content_margin_bottom = 8
-	return box
-
-
-## 焦点框。电视上没有鼠标，全靠它看清“现在选中的是哪一个”，所以描边要粗要亮。
-static func make_focus(radius: int = 10) -> StyleBoxFlat:
-	# 全透明底 + draw_center=false：只画一圈框，不盖住按钮本来的颜色。
-	var box := make_flat(Color(0, 0, 0, 0), radius)
-	box.draw_center = false
-	box.set_border_width_all(FOCUS_BORDER)
-	box.border_color = GOLD
-	# 往外扩同样的宽度，框就落在按钮外沿而不是压在上面。
-	box.set_expand_margin_all(FOCUS_BORDER)
-	return box
-
-
-## 统一的按钮样式。filled=true 是主按钮（实心主色），false 是次级按钮（描边）。
-## 尺寸也一并定掉：想要小一号的按钮就传 min_size，别在调用点自己盖一遍，
-## 不然这里以后多加一条样式，那些「只抄走前半句」的页面就跟不上了。
-static func style_button(button: Button, filled: bool = true, min_size: Vector2 = BUTTON_MIN_SIZE) -> void:
-	button.custom_minimum_size = min_size
-	# 电视上靠方向键选按钮，必须能拿焦点。
-	button.focus_mode = Control.FOCUS_ALL
-	button.add_theme_stylebox_override("focus", make_focus(10))
-	if filled:
-		button.add_theme_stylebox_override("normal", make_flat(ACCENT, 10))
-		button.add_theme_stylebox_override("hover", make_flat(ACCENT.lightened(0.12), 10))
-		button.add_theme_stylebox_override("pressed", make_flat(ACCENT.darkened(0.12), 10))
-		# 主色底上用深色字，三种状态都要单独盖一次。
-		for state in ["font_color", "font_hover_color", "font_pressed_color"]:
-			button.add_theme_color_override(state, BG)
-	else:
-		var box := make_flat(CARD, 10)
-		box.set_border_width_all(1)
-		box.border_color = ACCENT
-		button.add_theme_stylebox_override("normal", box)
-		button.add_theme_color_override("font_color", TEXT)
-
-
-## 统一的输入框样式。电视上同样靠方向键选中，所以焦点框和按钮共用一套，
-## 不然焦点跳进输入框就看不出来了。
-static func style_line_edit(edit: LineEdit) -> void:
-	edit.custom_minimum_size = Vector2(0, BUTTON_MIN_SIZE.y)
-	edit.focus_mode = Control.FOCUS_ALL
-	edit.add_theme_stylebox_override("normal", make_flat(CARD, 10))
-	edit.add_theme_stylebox_override("focus", make_focus(10))
-	edit.add_theme_color_override("font_color", TEXT)
-	edit.add_theme_color_override("font_placeholder_color", MUTED)
-	edit.add_theme_color_override("caret_color", ACCENT)
-
-
-## 次级“返回”按钮：描边样式 + 比主按钮小一圈。
-static func style_back_button(button: Button) -> void:
-	style_button(button, false, BACK_BUTTON_MIN_SIZE)
-
-
-## 音量滑块：电视上靠左右键调，所以必须能拿焦点，焦点框和按钮同一套金边。
-static func style_slider(slider: HSlider) -> void:
-	slider.focus_mode = Control.FOCUS_ALL
-	slider.custom_minimum_size = Vector2(0, BUTTON_MIN_SIZE.y)
-	slider.scrollable = false
-	slider.add_theme_stylebox_override("slider", make_flat(CARD, 8))
-	slider.add_theme_stylebox_override("grabber_area", make_flat(ACCENT, 8))
-	slider.add_theme_stylebox_override("grabber_area_highlight", make_flat(ACCENT.lightened(0.12), 8))
-	slider.add_theme_stylebox_override("focus", make_focus(10))
-	# 三种状态是同一张纯色贴图，三个 override 共用一张，别各建各的。
-	var grabber := _slider_grabber()
-	slider.add_theme_icon_override("grabber", grabber)
-	slider.add_theme_icon_override("grabber_highlight", grabber)
-	slider.add_theme_icon_override("grabber_disabled", grabber)
-
-
-## 滑块的金色把手。纯色实底不随滑块变化，所以整个进程只建一张。
-static var _grabber_texture: Texture2D
-
-
-static func _slider_grabber() -> Texture2D:
-	if _grabber_texture == null:
-		var img := Image.create(22, 36, false, Image.FORMAT_RGBA8)
-		img.fill(GOLD)
-		_grabber_texture = ImageTexture.create_from_image(img)
-	return _grabber_texture
-
-
-## 浮在明亮背景 / 半透明底板上的文字：加一圈深色描边，免得被背景吞掉。
-## 战斗页的战报和战绩榜的行都用它——描边的颜色和粗细只在这里定一次。
-## 圆形实底上的徽章数字刻意不走这里：实底已经提供了足够对比度。
-static func style_readable_text(control: Control) -> void:
-	control.add_theme_color_override("font_outline_color", Color(BG, 0.96))
-	control.add_theme_constant_override("outline_size", 2)
-
-
-## 动态数据行专用的 Label 工厂：排行榜和战绩榜的行数只有请求完成后才知道。
-## 场景里的固定文字都已改为 .tscn 节点。font_size 传 0 表示跟随父级主题。
-static func make_label(text: String, color: Color, font_size: int = 0) -> Label:
-	var label := Label.new()
-	label.text = text
-	label.add_theme_color_override("font_color", color)
-	if font_size > 0:
-		label.add_theme_font_size_override("font_size", font_size)
-	return label

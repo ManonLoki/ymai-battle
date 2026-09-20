@@ -12,9 +12,8 @@ const CHAMPION_BODY_SCALE := 1.1
 const CHALLENGER_BODY_SCALE := 0.9
 ## 回血特效场景，吸血和治疗共用同一个。
 const HEAL_FX := preload("res://scenes/heal_fx.tscn")
-## buff / 技能图标的边长和间距，_fit_row 算行宽时要用。
-const ICON_PX := 20
-const ICON_GAP := 4
+## 一个 buff / 技能图标格子。边长、采样、鼠标形状都在这个场景里。
+const SKILL_ICON := preload("res://scenes/skill_icon.tscn")
 ## 改前暴击粒子数，测试拿它对照“大爆炸”。
 const LEGACY_CRIT_AMOUNT := 28
 
@@ -67,9 +66,7 @@ var _heal_fx_instances: Array[CPUParticles2D] = []
 
 func _ready() -> void:
 	_home_transform = transform
-	# 这几个 Label 是场景里摆好的，得单独套上中文字体。
-	for label in [name_label, hp_label, tip_label]:
-		label.add_theme_font_override("font", ThemeHelper.UI_FONT)
+	# 字体和配色来自 project.godot 注册的全局主题，这里不用再套。
 	tip_panel.visible = false
 	_hide_transient_fx()
 	_play(&"idle")
@@ -123,25 +120,22 @@ func _fill_icons(fighter: Fighter) -> void:
 	for buff in fighter.agent_buffs:
 		if buff.icon_id.is_empty():
 			continue
-		buff_row.add_child(_icon_rect(buff))
+		_add_icon(buff_row, buff)
 	for skill in SkillCatalog.sort_for_display(fighter.skills):
 		if skill.icon_id.is_empty():
 			continue
-		skill_row.add_child(_icon_rect(skill))
+		_add_icon(skill_row, skill)
 	_fit_row(buff_row)
 	_fit_row(skill_row)
 	_align_icon_rows_to_hp()
 
 
-## 把一行的尺寸收紧到刚好装下现有图标，免得空 HBox 撑开布局。
+## 图标从左往右排，行宽按内容重算一次。
+## 格子大小归 skill_icon.tscn，间距归 fighter_view.tscn 里这一行的 separation——
+## 尺寸交给容器自己算，这里不再另存一份数字。
+## 两行的父节点是 Node2D 而不是容器，所以行宽只影响自己，不会推挤别的控件。
 func _fit_row(row: HBoxContainer) -> void:
-	var count := row.get_child_count()
-	# n 个图标之间有 n-1 个间隙。
-	var width := float(count * ICON_PX + maxi(0, count - 1) * ICON_GAP)
 	row.alignment = BoxContainer.ALIGNMENT_BEGIN
-	# 至少留一个图标宽，空行也不会塌成 0。
-	row.custom_minimum_size = Vector2(maxi(int(width), ICON_PX), ICON_PX)
-	row.size = row.custom_minimum_size
 	row.reset_size()
 
 
@@ -159,23 +153,16 @@ func _align_icon_rows_to_hp() -> void:
 		row.reset_size()
 
 
-## 建一个图标格子，并接上悬停显示说明的回调。
-func _icon_rect(skill: SkillDef) -> TextureRect:
-	var rect := TextureRect.new()
-	rect.custom_minimum_size = Vector2(ICON_PX, ICON_PX)
-	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	rect.texture = SkillCatalog.load_icon(skill.icon_id)
-	# 清掉内置 tooltip：它有延迟，这里改用自己的即时提示面板。
-	rect.tooltip_text = ""
-	rect.focus_mode = Control.FOCUS_NONE
-	# STOP 才收得到 mouse_entered。
-	rect.mouse_filter = Control.MOUSE_FILTER_STOP
-	rect.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	rect.mouse_entered.connect(_show_instant_tip.bind(rect, skill))
-	rect.mouse_exited.connect(_hide_instant_tip)
-	return rect
+## 往一行里挂一个图标格子，并接上悬停显示说明的回调。
+## 格子本身（大小、最近邻采样、不吃焦点、鼠标形状、空 tooltip_text）在
+## skill_icon.tscn 里摆好——内置 tooltip 有延迟，这里用自己的即时提示面板顶掉它。
+func _add_icon(row: HBoxContainer, skill: SkillDef) -> void:
+	var icon: SkillIcon = SKILL_ICON.instantiate()
+	# 先进树再 bind：格子自己的 _ready 要先把两个悬停信号接起来。
+	row.add_child(icon)
+	icon.bind(skill)
+	icon.hovered.connect(_show_instant_tip)
+	icon.unhovered.connect(_hide_instant_tip)
 
 
 ## 把说明面板挪到图标正下方并显示出来。

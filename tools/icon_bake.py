@@ -14,6 +14,9 @@ import zlib
 
 SIZE = 32
 SKULL_SIZE = 32
+# ui_theme.tres 里 HSlider 的把手：纯色实底，颜色必须等于 ThemeHelper.GOLD (#d4a017)。
+GRABBER_SIZE = (22, 36)
+GRABBER_GOLD = (212, 160, 23, 255)
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 OUT = os.path.join(ROOT, "assets", "icons")
 FX_OUT = os.path.join(ROOT, "assets", "fx")
@@ -158,6 +161,12 @@ def bake_skull() -> list:
         px(img, 25 - i, 5 + i, xcol)
         px(img, 24 - i, 5 + i, xcol)
     return img
+
+
+def bake_slider_grabber() -> list:
+    """音量滑块的金色把手。纯色实底，theme 直接当 icon 用。"""
+    width, height = GRABBER_SIZE
+    return [[GRABBER_GOLD for _ in range(width)] for _ in range(height)]
 
 
 def bake() -> None:
@@ -430,6 +439,10 @@ def bake() -> None:
         path = os.path.join(OUT, f"{name}.png")
         write_png(path, image)
         print("wrote", path)
+
+    grabber_path = os.path.join(OUT, "slider_grabber.png")
+    write_png(grabber_path, bake_slider_grabber())
+    print("wrote", grabber_path)
 
     os.makedirs(FX_OUT, exist_ok=True)
     skull_path = os.path.join(FX_OUT, "skull_x.png")

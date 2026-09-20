@@ -46,6 +46,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(120, 40)
 layout_mode = 2
 focus_mode = 2
+theme_type_variation = &"SecondaryButton"
 text = "返回"
 
 [node name="Title" type="Label" parent="Margin/VBox/TopBar"]
@@ -58,6 +59,7 @@ text = "设置"
 [node name="Hint" type="Label" parent="Margin/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_type_variation = &"MutedLabel"
 text = "窗口模式和音量选择后立即生效；音量滑块用方向键左右调节"
 
 [node name="Spacer" type="Control" parent="Margin/VBox"]
@@ -78,6 +80,7 @@ focus_mode = 2
 [node name="ModeDescription" type="Label" parent="Margin/VBox/ModeSection"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_type_variation = &"MutedLabel"
 theme_override_font_sizes/font_size = 14
 
 [node name="AudioSection" type="VBoxContainer" parent="Margin/VBox/ModeSection"]
@@ -151,6 +154,7 @@ text = "榜单服务器"
 [node name="ServerHint" type="Label" parent="Margin/VBox/ModeSection/ServerSection"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_type_variation = &"MutedLabel"
 theme_override_font_sizes/font_size = 14
 autowrap_mode = 3
 
@@ -169,13 +173,16 @@ fit_to_longest_item = false
 
 [node name="ServerMaintain" type="Button" parent="Margin/VBox/ModeSection/ServerSection/ServerSelectRow"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(140, 48)
 layout_mode = 2
 focus_mode = 2
+theme_type_variation = &"SecondaryButton"
 text = "维护"
 
 [node name="ServerStatus" type="Label" parent="Margin/VBox/ModeSection/ServerSection"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_type_variation = &"MutedLabel"
 theme_override_font_sizes/font_size = 14
 autowrap_mode = 3
 
@@ -209,6 +216,7 @@ offset_right = 320.0
 offset_bottom = 210.0
 grow_horizontal = 2
 grow_vertical = 2
+theme_type_variation = &"DialogPanel"
 
 [node name="Margin" type="MarginContainer" parent="MaintainOverlay/MaintainPanel"]
 layout_mode = 2
@@ -237,6 +245,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(120, 40)
 layout_mode = 2
 focus_mode = 2
+theme_type_variation = &"SecondaryButton"
 text = "关闭"
 
 [node name="ServerAddRow" type="HBoxContainer" parent="MaintainOverlay/MaintainPanel/Margin/VBox"]
@@ -246,13 +255,16 @@ theme_override_constants/separation = 12
 
 [node name="ServerAddInput" type="LineEdit" parent="MaintainOverlay/MaintainPanel/Margin/VBox/ServerAddRow"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="ServerAdd" type="Button" parent="MaintainOverlay/MaintainPanel/Margin/VBox/ServerAddRow"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(140, 48)
 layout_mode = 2
 focus_mode = 2
+theme_type_variation = &"SecondaryButton"
 text = "增加"
 
 [node name="ListScroll" type="ScrollContainer" parent="MaintainOverlay/MaintainPanel/Margin/VBox"]

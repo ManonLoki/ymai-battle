@@ -19,13 +19,13 @@ func _ready() -> void:
 	TvRemote.install()
 	# 金冠铃是非战斗三页共用；已经在播时 MusicManager 不会重开。
 	MusicManager.play_lounge()
-	ThemeHelper.apply(self, 22)
 	# 主菜单是唯一的启动入口，所以上次选的窗口模式在这里应用一次就够了，
 	# 从设置页返回时顺带再确认一遍，代价只是一次幂等的 DisplayServer 调用。
 	AppSettings.apply()
 	_menu_buttons = [%BattleButton, %RankingButton, %SettingsButton, %QuitButton]
 	_apply_web_menu_visibility()
-	_style()
+	_highlight_primary_entry()
+	%VersionLabel.text = "v%s" % project_version()
 	%RankingButton.pressed.connect(_on_ranking_pressed)
 	%BattleButton.pressed.connect(_on_battle_pressed)
 	%SettingsButton.pressed.connect(_on_settings_pressed)
@@ -34,6 +34,8 @@ func _ready() -> void:
 	_focus_fallback = first_visible_menu_button()
 	if _focus_fallback != null:
 		_focus_fallback.grab_focus()
+
+
 ## 电视遥控器的 BACK 键：引擎会把它变成这个通知（前提是
 ## project.godot 里 quit_on_go_back=false，否则引擎自己就退了）。
 func _notification(what: int) -> void:
@@ -67,16 +69,12 @@ func first_visible_menu_button() -> Button:
 	return null
 
 
-## 上色和按钮样式。布局本身在 main.tscn 里。
-func _style() -> void:
-	%Background.color = ThemeHelper.BG
-	%Title.add_theme_color_override("font_color", ThemeHelper.TEXT)
-	%VersionLabel.text = "v%s" % project_version()
-	%VersionLabel.add_theme_color_override("font_color", ThemeHelper.MUTED)
-	# 当前第一个可见入口是实心主按钮；Battle 不可隐藏，所以它始终是主按钮。
+## 当前第一个可见入口用实心主按钮，其余走描边次级样式；Battle 不可隐藏，
+## 所以它始终是主按钮。两种样式都定义在 ui_theme.tres 里，这里只挑一个名字。
+func _highlight_primary_entry() -> void:
 	var primary := first_visible_menu_button()
 	for button in _menu_buttons:
-		ThemeHelper.style_button(button, button == primary)
+		button.theme_type_variation = &"" if button == primary else ThemeHelper.SECONDARY_BUTTON
 
 
 ## project.godot 里配置的版本号，没配则回落到 0.0.0。

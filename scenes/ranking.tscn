@@ -99,18 +99,23 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(120, 40)
 layout_mode = 2
 focus_mode = 2
+theme_type_variation = &"SecondaryButton"
 text = "返回"
 
 [node name="Title" type="Label" parent="Margin/VBox/TopBar"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.8)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
 theme_override_font_sizes/font_size = 28
 text = "今日排行"
 
 [node name="SummaryLabel" type="Label" parent="Margin/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_type_variation = &"MutedLabel"
 text = "正在拉取…"
 
 [node name="Scroll" type="ScrollContainer" parent="Margin/VBox"]
@@ -129,6 +134,7 @@ columns = 4
 [node name="HeaderRank" type="Label" parent="Margin/VBox/Scroll/Grid"]
 layout_mode = 2
 focus_mode = 0
+theme_type_variation = &"MutedLabel"
 theme_override_font_sizes/font_size = 14
 text = "#"
 
@@ -136,12 +142,14 @@ text = "#"
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
+theme_type_variation = &"MutedLabel"
 theme_override_font_sizes/font_size = 14
 text = "用户"
 
 [node name="HeaderAgent" type="Label" parent="Margin/VBox/Scroll/Grid"]
 layout_mode = 2
 focus_mode = 0
+theme_type_variation = &"MutedLabel"
 theme_override_font_sizes/font_size = 14
 text = "Agent"
 
@@ -149,6 +157,7 @@ text = "Agent"
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
+theme_type_variation = &"MutedLabel"
 theme_override_font_sizes/font_size = 14
 text = "Token / 战力"
 horizontal_alignment = 2

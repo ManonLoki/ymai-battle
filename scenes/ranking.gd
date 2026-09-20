@@ -24,18 +24,9 @@ func _ready() -> void:
 	TvRemote.install()
 	# 排行和主菜单同一首，切过来不要把金冠铃掐回开头。
 	MusicManager.play_lounge()
-	ThemeHelper.apply(self, 18)
-	%Background.color = ThemeHelper.BG
-	# 背景本身保持像素画最近邻采样；深色遮罩和半透明内容板在 scene 中固定
-	# 位于它上面，动态表格仍沿用原来的 Margin/VBox，不改变遥控器交互路径。
-	%RankingBackdrop.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	%Title.add_theme_color_override("font_color", ThemeHelper.TEXT)
-	%Title.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
-	%Title.add_theme_constant_override("shadow_offset_x", 2)
-	%Title.add_theme_constant_override("shadow_offset_y", 2)
-	%SummaryLabel.add_theme_color_override("font_color", ThemeHelper.MUTED)
-	_style_static_header()
-	ThemeHelper.style_back_button(%BackButton)
+	# 配色、字体、标题投影、表头的次要色全在 ui_theme.tres 和 ranking.tscn 里，
+	# 这里只接线：背景图、遮罩、半透明内容板都是场景中固定的节点，顺序也固定，
+	# 动态表格仍沿用原来的 Margin/VBox，不改变遥控器交互路径。
 	%BackButton.pressed.connect(_on_back_pressed)
 	# 场上唯一可聚焦的控件，一进来就给它焦点。
 	%BackButton.grab_focus()
@@ -96,18 +87,11 @@ func _render(date: String, ranked: Array[RankedUser]) -> void:
 	_shown_date = date
 	%Title.text = "今日排行 · %s" % date
 	%SummaryLabel.text = "%d 人上榜 · Token 即基础战力" % ranked.size()
-	# 上一次可能因为报错被染成红色，这里改回普通说明色。
-	%SummaryLabel.add_theme_color_override("font_color", ThemeHelper.MUTED)
+	# 上一次可能因为报错被染成红色；去掉覆盖就回到场景里的次要说明色。
+	%SummaryLabel.remove_theme_color_override("font_color")
 	_clear_rows()
 	for user in ranked:
 		_add_row(user)
-
-
-## 表头是固定 UI，文字和字号都在场景里；只有配色跟着主题走，得在运行时套。
-func _style_static_header() -> void:
-	for i in COLUMNS.size():
-		var label := %Grid.get_child(i) as Label
-		label.add_theme_color_override("font_color", ThemeHelper.MUTED)
 
 
 ## 只清掉表头之后的数据单元格；前四个固定 Label 永远留在场景树里。
@@ -123,15 +107,15 @@ func _add_row(user: RankedUser) -> void:
 		agent_text = ", ".join(user.agents)
 	# 紧凑值方便扫一眼，括号里的精确值方便核对。
 	var tokens_text := "%s  (%s)" % [NumberFormat.compact(user.tokens), NumberFormat.with_commas(user.tokens)]
-	_add_cells([str(user.rank), user.username, agent_text, tokens_text], ThemeHelper.TEXT)
+	_add_cells([str(user.rank), user.username, agent_text, tokens_text])
 
 
-## 往 GridContainer 里塞一行单元格。列数由 %Grid 的 columns 决定。
-func _add_cells(texts: PackedStringArray, color: Color) -> void:
+## 往 GridContainer 里塞一行单元格。列数由 %Grid 的 columns 决定，
+## 字体和正文色来自全局主题，这里只管每列的对齐和伸展。
+func _add_cells(texts: PackedStringArray) -> void:
 	for i in range(texts.size()):
-		var label := ThemeHelper.make_label(texts[i], color)
-		# 表格不参与遥控器导航，翻页靠 _unhandled_input 直接推滚动条。
-		label.focus_mode = Control.FOCUS_NONE
+		var label := Label.new()
+		label.text = texts[i]
 		var column: Dictionary = COLUMNS[i]
 		if bool(column.get("right", false)):
 			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT

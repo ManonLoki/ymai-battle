@@ -1914,10 +1914,11 @@ func _test_server_settings_ui() -> void:
 	_assert(AppSettings.load_base_url(path) == "https://local-c.example", "the Settings add action immediately selects the new candidate")
 	_assert(str(local_select.get_item_metadata(local_select.selected)) == "https://local-c.example", "the selector refreshes to the newly added candidate")
 	_assert(local_scene.get_node("%ServerList").get_child_count() == 3, "adding also appends a row in the maintain panel")
-	var added_row: HBoxContainer = local_scene.get_node("%ServerList").get_child(2)
-	var added_edit := added_row.get_child(0) as LineEdit
-	added_edit.text = "https://local-c-renamed.example"
-	local_scene.call("_on_server_row_save_pressed", added_edit)
+	var added_row := local_scene.get_node("%ServerList").get_child(2) as ServerRow
+	_assert(added_row != null and added_row.address.text == "https://local-c.example", "新增的那一行显示刚存下的地址")
+	added_row.address.text = "https://local-c-renamed.example"
+	# 走行自己的“保存”按钮，把接线一起测了：行发信号、设置页落盘。
+	added_row.get_node("SaveButton").pressed.emit()
 	await process_frame
 	_assert(AppSettings.load_base_urls(path).has("https://local-c-renamed.example"), "the Settings save action rewrites a saved server")
 	_assert(not AppSettings.load_base_urls(path).has("https://local-c.example"), "the old address is gone after a rewrite")
@@ -1952,7 +1953,7 @@ func _test_server_settings_ui() -> void:
 	injected_scene.call("_on_server_add_pressed")
 	injected_scene.call("_on_server_maintain_pressed")
 	injected_scene.call("_on_server_row_delete_pressed", "https://local-a.example")
-	injected_scene.call("_on_server_row_save_pressed", injected_input)
+	injected_scene.call("_on_server_row_save_pressed", "https://local-a.example", "https://must-not-save.example")
 	_assert(not injected_scene.get_node("%MaintainOverlay").visible, "maintain cannot open against an injected list")
 	_assert(AppSettings.load_base_urls(path) == local_before, "manual calls cannot mutate the local list while the injected source is active")
 	injected_scene.queue_free()
@@ -3099,7 +3100,10 @@ func _test_icons_and_layout() -> void:
 		var path := SkillCatalog.icon_path(icon_id)
 		_assert(FileAccess.file_exists(path), "icon file exists: %s" % path)
 	var view_src := FileAccess.get_file_as_string("res://scenes/fighter_view.gd")
-	_assert(view_src.find("SkillCatalog.load_icon") >= 0, "fighter view loads skill/buff icons")
+	var icon_src := FileAccess.get_file_as_string("res://scenes/skill_icon.gd")
+	# 一个格子怎么装图归 skill_icon.tscn / .gd，角色视图只负责挂几个、挂在哪一行。
+	_assert(icon_src.find("SkillCatalog.load_icon") >= 0, "the icon cell loads skill/buff icons")
+	_assert(view_src.find("SKILL_ICON") >= 0, "fighter view builds its icon rows from the icon scene")
 	_assert(view_src.find("buff_row") >= 0 and view_src.find("skill_row") >= 0, "fighter view has separate buff and skill rows")
 	_assert(view_src.find("sort_for_display") >= 0, "fighter view lays out skills by display group")
 	var battle_tscn := FileAccess.get_file_as_string("res://scenes/battle.tscn")
@@ -3590,7 +3594,8 @@ func _test_tv_remote() -> void:
 	var quit_btn: Button = main.get_node("%QuitButton")
 	_assert(battle_btn.has_focus(), "the menu starts on Battle, so the remote has something to move")
 	_assert(battle_btn.focus_mode == Control.FOCUS_ALL and settings_btn.focus_mode == Control.FOCUS_ALL and quit_btn.focus_mode == Control.FOCUS_ALL, "every menu entry can take focus")
-	_assert(battle_btn.has_theme_stylebox_override("focus"), "focused buttons draw a TV-visible outline")
+	var focus_box := battle_btn.get_theme_stylebox("focus") as StyleBoxFlat
+	_assert(focus_box != null and not focus_box.draw_center and focus_box.get_border_width(SIDE_LEFT) >= 3, "focused buttons draw a TV-visible outline")
 	await _press_key(KEY_DOWN)
 	_assert(ranking_btn.has_focus(), "D-pad down moves to 查看排行")
 	await _press_key(KEY_DOWN)
@@ -3809,29 +3814,29 @@ func _test_record_board() -> void:
 	var list: Node = battle.get_node("%RecordList")
 	var empty_label := battle.get_node("%RecordEmptyLabel") as Label
 	_assert(empty_label != null and not empty_label.visible, "有战绩时隐藏场景内预置的空榜提示")
-	var rows: Array[Node] = []
+	var rows: Array[RecordRow] = []
 	for child in list.get_children():
-		if child is HBoxContainer:
+		if child is RecordRow:
 			rows.append(child)
 	_assert(rows.size() == 4, "四位上过榜一的玩家都列出来")
-	var first: Node = rows[0]
-	_assert((first.get_child(1) as Label).text == "【甲】", "第一名是胜场最多的")
-	_assert((first.get_child(2) as Label).text == "3 场", "胜出的场次写在右边")
-	var third: Node = rows[2]
-	_assert((third.get_child(1) as Label).text == "【丙】", "0 胜的也在榜上")
-	_assert((third.get_child(2) as Label).text == "0 场", "0 胜显示成 0 场")
+	_assert(rows[0].name_label.text == "【甲】", "第一名是胜场最多的")
+	_assert(rows[0].wins_label.text == "3 场", "胜出的场次写在右边")
+	_assert(rows[2].name_label.text == "【丙】", "0 胜的也在榜上")
+	_assert(rows[2].wins_label.text == "0 场", "0 胜显示成 0 场")
 	var medal_paths := [
 		"res://assets/icons/medal_gold.png",
 		"res://assets/icons/medal_silver.png",
 		"res://assets/icons/medal_bronze.png",
 	]
 	for i in 3:
-		var badge := rows[i].get_child(0) as TextureRect
-		_assert(badge != null and badge.texture != null, "第 %d 名显示%s牌纹理" % [i + 1, ["金", "银", "铜"][i]])
-		if badge != null and badge.texture != null:
+		var badge := rows[i].medal
+		_assert(badge.visible and badge.texture != null, "第 %d 名显示%s牌纹理" % [i + 1, ["金", "银", "铜"][i]])
+		if badge.texture != null:
 			_assert(badge.texture.resource_path == medal_paths[i], "第 %d 名使用对应的奖牌资源" % [i + 1])
-	var fourth_rank := rows[3].get_child(0) as Label
-	_assert(fourth_rank != null and fourth_rank.text == "4", "第四名起只显示数字排名")
+		_assert(not rows[i].rank_number.visible, "有奖牌的名次不再另写一遍数字")
+	var fourth := rows[3]
+	_assert(not fourth.medal.visible and fourth.rank_number.visible, "第四名起换成数字名次")
+	_assert(fourth.rank_number.text == "4", "第四名起只显示数字排名")
 	battle.queue_free()
 	await process_frame
 

@@ -48,39 +48,11 @@ func _ready() -> void:
 	TvRemote.install()
 	# 战斗曲只在这个场景；离开时由主菜单/排行/设置把金冠铃接回去。
 	MusicManager.play_battle()
-	# HUD 和结果面板各自是一棵子树，字体要分别套。
-	ThemeHelper.apply(%HUD.get_node("Margin") as Control, 18)
-	ThemeHelper.apply(%ResultPanel, 18)
-	%Backdrop.color = ThemeHelper.BG
-	ThemeHelper.style_back_button(%BackButton)
+	# 观感全在 ui_theme.tres 和 battle.tscn 里：结果面板是不透明的 ResultPanel，
+	# 底部战报和战绩榜共用半透明的 GlassLog / GlassPanel，上面的文字带深色描边。
+	# 这里只接线和填数据。
 	%BackButton.pressed.connect(_on_back_pressed)
-	ThemeHelper.style_button(%ReplayButton, true)
 	%ReplayButton.pressed.connect(_on_replay_pressed)
-	%ResultPanel.visible = false
-	# 结果面板压在立绘和战报上面，没有底色会糊成一片。
-	var result_box := ThemeHelper.make_flat(ThemeHelper.PANEL, 14)
-	result_box.content_margin_left = 24
-	result_box.content_margin_right = 24
-	result_box.content_margin_top = 18
-	result_box.content_margin_bottom = 18
-	result_box.set_border_width_all(2)
-	result_box.border_color = ThemeHelper.CARD
-	%ResultPanel.add_theme_stylebox_override("panel", result_box)
-	# 底部两块信息板共用轻薄的半透明底，让卷轴背景能透出来；弱描边只负责
-	# 在高亮场景里勾出边界，不再用大面积深色遮住画面。
-	%RecordPanel.add_theme_stylebox_override("panel", _make_translucent_hud_panel())
-	var log_box := _make_translucent_hud_panel()
-	log_box.content_margin_left = 14
-	log_box.content_margin_right = 14
-	log_box.content_margin_top = 10
-	log_box.content_margin_bottom = 10
-	%BattleLog.add_theme_stylebox_override("normal", log_box)
-	%RecordTitle.add_theme_color_override("font_color", ThemeHelper.MUTED)
-	%RecordEmptyLabel.add_theme_color_override("font_color", ThemeHelper.MUTED)
-	# 透明底板会随背景明暗变化，2px 深色字边保证战报和榜单标题始终清楚。
-	ThemeHelper.style_readable_text(%BattleLog)
-	ThemeHelper.style_readable_text(%RecordTitle)
-	ThemeHelper.style_readable_text(%RecordEmptyLabel)
 	# 先读一次当天战绩。_record 还是 null，所以这一句就是首次加载；
 	# 之后跨天再调它，换成新一天的。
 	_sync_record_to_today()
@@ -92,16 +64,6 @@ func _ready() -> void:
 	await _round_loop()
 
 
-## 战报和战绩榜的统一玻璃底板。独立造两份 StyleBox，避免之后调整战报内边距时
-## 连带改变 RecordPanel 自己的布局。
-func _make_translucent_hud_panel() -> StyleBoxFlat:
-	var box := ThemeHelper.make_flat(Color(ThemeHelper.PANEL, 0.56), 10)
-	box.set_border_width_all(1)
-	box.border_color = Color(ThemeHelper.ACCENT, 0.26)
-	return box
-
-
-## 半透明底板上的固定文字都套同一层深色描边；动态榜单行由 RecordBoard 自己套。
 func _notification(what: int) -> void:
 	# 电视遥控器 BACK 键。
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST:

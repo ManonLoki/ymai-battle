@@ -9,8 +9,8 @@ extends Control
 ## Web 注入列表只读，不能改本地存档。
 
 const MAIN_SCENE := "res://scenes/main.tscn"
-## “维护 / 增加 / 删除 / 保存”按钮比主按钮窄，给地址和下拉框留空间。
-const SERVER_BUTTON_MIN_SIZE := Vector2(140, 48)
+## 维护面板里的一行（地址 + 保存 + 删除）。行长什么样归 server_row.tscn。
+const SERVER_ROW := preload("res://scenes/server_row.tscn")
 const DEFAULT_SERVER_LABEL := "使用默认服务器"
 
 ## 已经在切回主菜单的路上，避免连按两次返回触发两次切场景。
@@ -29,11 +29,8 @@ func _ready() -> void:
 	TvRemote.install()
 	# 设置页也走共用曲；从战斗返回主菜单再进这里时，由主菜单切回金冠铃。
 	MusicManager.play_lounge()
-	ThemeHelper.apply(self, 18)
-	%Background.color = ThemeHelper.BG
-	%Title.add_theme_color_override("font_color", ThemeHelper.TEXT)
-	%Hint.add_theme_color_override("font_color", ThemeHelper.MUTED)
-	ThemeHelper.style_back_button(%BackButton)
+	# 配色、字体、按钮和输入框的样式全在 ui_theme.tres 和 settings.tscn 里；
+	# 这里只接线和填数据。
 	%BackButton.pressed.connect(_on_back_pressed)
 	_mode = AppSettings.load_mode(settings_path)
 	_bind_mode_controls()
@@ -63,8 +60,6 @@ func _unhandled_input(event: InputEvent) -> void:
 ## 用 AppSettings 的定义填充模式下拉框。metadata 存真实模式值，
 ## 以后即使模式枚举不再连续，选择也不会因索引错位。
 func _bind_mode_controls() -> void:
-	ThemeHelper.style_button(%ModeSelect, true)
-	%ModeDescription.add_theme_color_override("font_color", ThemeHelper.MUTED)
 	_fill_select(
 		%ModeSelect,
 		AppSettings.MODES,
@@ -113,22 +108,14 @@ func _on_mode_selected(index: int) -> void:
 
 ## 背景音乐 / 音效两个滑块。0–100，步进 5，电视上左右键就是调音量。
 func _bind_audio_controls() -> void:
-	%AudioTitle.add_theme_color_override("font_color", ThemeHelper.TEXT)
 	_music_linear = AppSettings.load_music_volume(settings_path)
 	_sfx_linear = AppSettings.load_sfx_volume(settings_path)
-	_bind_volume_slider(%MusicSlider, %MusicLabel, _music_linear)
-	_bind_volume_slider(%SfxSlider, %SfxLabel, _sfx_linear)
+	%MusicSlider.set_value_no_signal(float(AppSettings.volume_percent(_music_linear)))
+	%SfxSlider.set_value_no_signal(float(AppSettings.volume_percent(_sfx_linear)))
 	_refresh_audio_labels()
 	%MusicSlider.value_changed.connect(_on_music_volume_changed)
 	%SfxSlider.value_changed.connect(_on_sfx_volume_changed)
 	AppSettings.apply_mix(_music_linear, _sfx_linear)
-
-
-## 一个音量滑块的配色、样式和初值。两个滑块在这一层没有任何区别。
-func _bind_volume_slider(slider: HSlider, label: Label, linear: float) -> void:
-	label.add_theme_color_override("font_color", ThemeHelper.TEXT)
-	ThemeHelper.style_slider(slider)
-	slider.set_value_no_signal(float(AppSettings.volume_percent(linear)))
 
 
 func _refresh_audio_labels() -> void:
@@ -157,14 +144,6 @@ func _on_sfx_volume_changed(value: float) -> void:
 ## 绑定服务器下拉、维护面板和状态行。Web 参数提供列表时，列表是只读数据源；
 ## 没提供时才允许维护本地列表。
 func _bind_server_controls() -> void:
-	%ServerTitle.add_theme_color_override("font_color", ThemeHelper.TEXT)
-	%ServerHint.add_theme_color_override("font_color", ThemeHelper.MUTED)
-	%MaintainTitle.add_theme_color_override("font_color", ThemeHelper.TEXT)
-	ThemeHelper.style_button(%ServerSelect, true)
-	ThemeHelper.style_button(%ServerMaintain, false, SERVER_BUTTON_MIN_SIZE)
-	ThemeHelper.style_back_button(%MaintainClose)
-	ThemeHelper.style_line_edit(%ServerAddInput)
-	ThemeHelper.style_button(%ServerAdd, false, SERVER_BUTTON_MIN_SIZE)
 	%ServerAddInput.placeholder_text = AppSettings.SERVER_PLACEHOLDER
 	%ServerSelect.item_selected.connect(_on_server_selected)
 	%ServerMaintain.pressed.connect(_on_server_maintain_pressed)
@@ -183,19 +162,11 @@ func _bind_server_controls() -> void:
 		if injected
 		else "从下拉框选择服务器；选择空项使用内置地址。点维护可增删改本地服务器。"
 	)
-	_style_maintain_panel()
 	_refresh_server_view()
 
 
-func _style_maintain_panel() -> void:
-	var box := ThemeHelper.make_flat(ThemeHelper.PANEL, 12)
-	box.set_border_width_all(1)
-	box.border_color = ThemeHelper.ACCENT
-	%MaintainPanel.add_theme_stylebox_override("panel", box)
-
-
 ## 用当前数据源重建下拉，状态行只显示主机或「默认」，不把接口路径摊给用户。
-func _refresh_server_view(note: String = "", color: Color = ThemeHelper.MUTED) -> void:
+func _refresh_server_view(note: String = "", is_error: bool = false) -> void:
 	var selected := WebLaunchConfig.effective_base_url(settings_path)
 	# 空串那一项代表“用内置地址”，和真实地址一样把值存进 metadata。
 	var bases: Array = [""]
@@ -209,22 +180,25 @@ func _refresh_server_view(note: String = "", color: Color = ThemeHelper.MUTED) -
 		selected,
 	)
 	var line := "当前：%s" % TokenUsageApi.display_host(selected)
-	_set_server_status(line if note.is_empty() else "%s　%s" % [note, line], color)
+	_set_server_status(line if note.is_empty() else "%s　%s" % [note, line], is_error)
 	if %MaintainOverlay.visible:
 		_refresh_maintain_list()
 
 
-## 状态行。报错走 DANGER，其余都是灰字。
-func _set_server_status(text: String, color: Color) -> void:
+## 状态行。报错标红；其余去掉覆盖，回到场景里的次要说明色。
+func _set_server_status(text: String, is_error: bool) -> void:
 	%ServerStatus.text = text
-	%ServerStatus.add_theme_color_override("font_color", color)
+	if is_error:
+		%ServerStatus.add_theme_color_override("font_color", ThemeHelper.DANGER)
+	else:
+		%ServerStatus.remove_theme_color_override("font_color")
 
 
 ## 下拉选择立即落盘；选第一项就是清空覆盖、恢复内置服务器。
 func _on_server_selected(index: int) -> void:
 	var base := str(%ServerSelect.get_item_metadata(index))
 	if not AppSettings.save_base_url(base, settings_path):
-		_refresh_server_view("选择未能保存。", ThemeHelper.DANGER)
+		_refresh_server_view("选择未能保存。", true)
 		return
 	_refresh_server_view("已切换。")
 
@@ -248,37 +222,20 @@ func _refresh_maintain_list() -> void:
 	if WebLaunchConfig.has_base_urls_override():
 		return
 	for base in AppSettings.load_base_urls(settings_path):
-		%ServerList.add_child(_make_server_row(str(base)))
+		var row: ServerRow = SERVER_ROW.instantiate()
+		# 先进树再 bind：行自己的 @onready 要先拿到子节点。
+		%ServerList.add_child(row)
+		row.bind(str(base))
+		row.save_requested.connect(_on_server_row_save_pressed)
+		row.delete_requested.connect(_on_server_row_delete_pressed)
 
 
-func _make_server_row(base: String) -> HBoxContainer:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 12)
-	var edit := LineEdit.new()
-	edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	edit.text = base
-	edit.set_meta("original", base)
-	ThemeHelper.style_line_edit(edit)
-	var save_btn := Button.new()
-	save_btn.text = "保存"
-	ThemeHelper.style_button(save_btn, false, SERVER_BUTTON_MIN_SIZE)
-	save_btn.pressed.connect(_on_server_row_save_pressed.bind(edit))
-	var delete_btn := Button.new()
-	delete_btn.text = "删除"
-	ThemeHelper.style_button(delete_btn, false, SERVER_BUTTON_MIN_SIZE)
-	delete_btn.pressed.connect(_on_server_row_delete_pressed.bind(base))
-	row.add_child(edit)
-	row.add_child(save_btn)
-	row.add_child(delete_btn)
-	return row
-
-
-func _on_server_row_save_pressed(edit: LineEdit) -> void:
+## 某一行改了地址。original 是这一行原本的地址，用来在存档里找回它。
+func _on_server_row_save_pressed(original: String, text: String) -> void:
 	if WebLaunchConfig.has_base_urls_override():
 		return
-	var old_base := str(edit.get_meta("original", ""))
-	if not AppSettings.replace_base_url(old_base, edit.text, settings_path):
-		_set_server_status("地址格式不对或存不下来，服务器未修改", ThemeHelper.DANGER)
+	if not AppSettings.replace_base_url(original, text, settings_path):
+		_set_server_status("地址格式不对或存不下来，服务器未修改", true)
 		return
 	_refresh_server_view("已修改。")
 
@@ -287,7 +244,7 @@ func _on_server_row_delete_pressed(base: String) -> void:
 	if WebLaunchConfig.has_base_urls_override():
 		return
 	if not AppSettings.remove_base_url(base, settings_path):
-		_set_server_status("存不下来，服务器未删除", ThemeHelper.DANGER)
+		_set_server_status("存不下来，服务器未删除", true)
 		return
 	_refresh_server_view("已删除。")
 
@@ -303,10 +260,10 @@ func _on_server_add_pressed() -> void:
 		return
 	var text := str(%ServerAddInput.text)
 	if AppSettings.normalize_base_url(text).is_empty():
-		_set_server_status("地址格式不对，应该是 %s" % AppSettings.SERVER_PLACEHOLDER, ThemeHelper.DANGER)
+		_set_server_status("地址格式不对，应该是 %s" % AppSettings.SERVER_PLACEHOLDER, true)
 		return
 	if not AppSettings.add_and_select_base_url(text, settings_path):
-		_set_server_status("存不下来，服务器未增加", ThemeHelper.DANGER)
+		_set_server_status("存不下来，服务器未增加", true)
 		return
 	%ServerAddInput.clear()
 	_refresh_server_view("已增加并切换。")
