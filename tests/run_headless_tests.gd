@@ -1403,7 +1403,8 @@ func _test_settings() -> void:
 	_assert(AppSettings.window_mode_for(AppSettings.Mode.MAXIMIZED) == DisplayServer.WINDOW_MODE_MAXIMIZED, "maximized maps to WINDOW_MODE_MAXIMIZED")
 	_assert(AppSettings.window_mode_for(AppSettings.Mode.FULLSCREEN) == DisplayServer.WINDOW_MODE_FULLSCREEN, "fullscreen maps to WINDOW_MODE_FULLSCREEN")
 
-	# 场景本身：三个固定模式按钮都在设计器节点树里，运行时只绑定模式数据。
+	# 场景本身：窗口模式由一个下拉框呈现，metadata 保存真实模式值，
+	# 因此以后即使调整选项顺序，也不会把下拉索引误当成模式枚举。
 	var packed := load("res://scenes/settings.tscn") as PackedScene
 	_assert(packed != null, "settings.tscn loads")
 	WebLaunchConfig.reset()
@@ -1412,18 +1413,18 @@ func _test_settings() -> void:
 	root.add_child(scene)
 	await process_frame
 	_assert(scene.get_node_or_null("%BackButton") != null, "Settings has a Back button")
-	var list := scene.get_node_or_null("%ModeList") as VBoxContainer
-	_assert(list != null, "Settings has a mode list")
-	var buttons := 0
-	for child in list.get_children():
-		if child is Button:
-			buttons += 1
-	_assert(buttons == AppSettings.MODES.size(), "every window mode gets a button (%d)" % buttons)
-	_assert(scene.get_node_or_null("%WindowedButton") != null, "windowed mode button is scene-authored")
-	_assert(scene.get_node_or_null("%MaximizedButton") != null, "maximized mode button is scene-authored")
-	_assert(scene.get_node_or_null("%FullscreenButton") != null, "fullscreen mode button is scene-authored")
-	var settings_src := FileAccess.get_file_as_string("res://scenes/settings.gd")
-	_assert(settings_src.find("Button.new") < 0 and settings_src.find("%ModeList.add_child") < 0, "settings binds fixed mode controls without constructing them in code")
+	var mode_select := scene.get_node_or_null("%ModeSelect") as OptionButton
+	var mode_description := scene.get_node_or_null("%ModeDescription") as Label
+	_assert(mode_select != null, "Settings has a window mode selector")
+	_assert(mode_description != null, "Settings keeps the selected mode description")
+	if mode_select != null:
+		_assert(mode_select.item_count == AppSettings.MODES.size(), "the selector lists every window mode")
+		for i in range(mode_select.item_count):
+			var mode: int = AppSettings.MODES[i]
+			_assert(mode_select.get_item_text(i) == AppSettings.mode_display_name(mode), "mode option %d uses its display name" % i)
+			_assert(int(mode_select.get_item_metadata(i)) == mode, "mode option %d stores the real mode in metadata" % i)
+		_assert(int(mode_select.get_item_metadata(mode_select.selected)) == AppSettings.DEFAULT_MODE, "the selector starts on the saved/default mode")
+	_assert(mode_description != null and mode_description.text == AppSettings.mode_description(AppSettings.DEFAULT_MODE), "the selector explains the active mode")
 	# 服务器那一栏：下拉选择 + 增加输入 + 增删操作 + 一行当前 endpoint。
 	var select := scene.get_node_or_null("%ServerSelect") as OptionButton
 	var input := scene.get_node_or_null("%ServerAddInput") as LineEdit
@@ -3020,12 +3021,13 @@ func _test_record_board() -> void:
 		battle._record.record_round("甲", true)
 	battle._record.record_round("乙", true)
 	battle._record.record_round("丙", false)
+	battle._record.record_round("戊", false)
 	battle._refresh_record_board()
 	await process_frame
-	_assert(battle.get_node("%RoundLabel").text == "今日第 6 场", "顶栏显示这是今天第几场")
+	_assert(battle.get_node("%RoundLabel").text == "今日第 7 场", "顶栏显示这是今天第几场")
 	var result_style: StyleBoxFlat = battle.get_node("%ResultPanel").get_theme_stylebox("panel") as StyleBoxFlat
 	_assert(result_style != null and result_style.bg_color.a >= 1.0, "结果面板有不透明底色，不会糊在立绘上")
-	_assert(battle.get_node("%RecordTitle").text.find("共 5 场") >= 0, "战绩榜标题带当天总场次")
+	_assert(battle.get_node("%RecordTitle").text.find("共 6 场") >= 0, "战绩榜标题带当天总场次")
 	var list: Node = battle.get_node("%RecordList")
 	var empty_label := battle.get_node("%RecordEmptyLabel") as Label
 	_assert(empty_label != null and not empty_label.visible, "有战绩时隐藏场景内预置的空榜提示")
@@ -3033,18 +3035,25 @@ func _test_record_board() -> void:
 	for child in list.get_children():
 		if child is HBoxContainer:
 			rows.append(child)
-	_assert(rows.size() == 3, "三位上过榜一的玩家都列出来")
+	_assert(rows.size() == 4, "四位上过榜一的玩家都列出来")
 	var first: Node = rows[0]
 	_assert((first.get_child(1) as Label).text == "【甲】", "第一名是胜场最多的")
 	_assert((first.get_child(2) as Label).text == "3 场", "胜出的场次写在右边")
 	var third: Node = rows[2]
 	_assert((third.get_child(1) as Label).text == "【丙】", "0 胜的也在榜上")
 	_assert((third.get_child(2) as Label).text == "0 场", "0 胜显示成 0 场")
-	var medals := [ThemeHelper.GOLD, ThemeHelper.SILVER, ThemeHelper.BRONZE]
+	var medal_paths := [
+		"res://assets/icons/medal_gold.png",
+		"res://assets/icons/medal_silver.png",
+		"res://assets/icons/medal_bronze.png",
+	]
 	for i in 3:
-		var badge: Panel = rows[i].get_child(0) as Panel
-		var box: StyleBoxFlat = badge.get_theme_stylebox("panel") as StyleBoxFlat
-		_assert(box != null and box.bg_color == medals[i], "第 %d 名挂的是%s牌" % [i + 1, ["金", "银", "铜"][i]])
+		var badge := rows[i].get_child(0) as TextureRect
+		_assert(badge != null and badge.texture != null, "第 %d 名显示%s牌纹理" % [i + 1, ["金", "银", "铜"][i]])
+		if badge != null and badge.texture != null:
+			_assert(badge.texture.resource_path == medal_paths[i], "第 %d 名使用对应的奖牌资源" % [i + 1])
+	var fourth_rank := rows[3].get_child(0) as Label
+	_assert(fourth_rank != null and fourth_rank.text == "4", "第四名起只显示数字排名")
 	battle.queue_free()
 	await process_frame
 

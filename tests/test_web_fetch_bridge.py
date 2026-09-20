@@ -65,8 +65,10 @@ class WebFetchBridgeTests(unittest.TestCase):
     def test_patched_bridge_rejects_redirects_and_cancels_real_fetch(self) -> None:
         patched = patch_source(self.stock_source)
         with tempfile.TemporaryDirectory() as directory:
-            generated = Path(directory) / "index.js"
-            generated.write_text(patched, encoding="utf-8")
+            generated = Path(directory) / "bridge.js"
+            # Extract here rather than in the harness: the markers live in
+            # tools/web_fetch_bridge.py and should only be written down once.
+            generated.write_text(extract_bridge(patched), encoding="utf-8")
             result = subprocess.run(
                 [
                     shutil.which("node") or "node",

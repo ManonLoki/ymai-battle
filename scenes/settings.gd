@@ -2,9 +2,8 @@ extends Control
 
 ## 设置页：窗口模式 + 榜单服务器列表。
 ##
-## 三个模式按钮和说明文字都预置在 settings.tscn，编辑器里能直接看到完整布局；
-## 脚本只把它们绑定到 AppSettings 的模式值，并用 AppSettings 的文案刷新显示。
-## 选中的那个用实心主按钮样式，一眼能看出当前是哪种。
+## 窗口模式用一个下拉框选择；选项按 AppSettings.MODES 的顺序生成，metadata
+## 保存真实模式值，不把下拉索引当成模式。选择后立即保存、应用并刷新说明。
 ##
 ## 服务器那一栏把 Web 启动参数或本地存档解析出的列表摆进下拉框；选空项走内置
 ## 地址，选某一项就把它记作当前服务器。本地列表可以增删，Web 注入列表只读。
@@ -16,10 +15,8 @@ const DEFAULT_SERVER_LABEL := "使用默认服务器"
 
 ## 已经在切回主菜单的路上，避免连按两次返回触发两次切场景。
 var _leaving := false
-## 当前选中的模式，按下按钮后立刻更新，用来刷新高亮。
+## 当前选中的模式，用来刷新说明。
 var _mode := AppSettings.DEFAULT_MODE
-## mode -> 对应的按钮，刷新高亮时要按模式找回按钮。
-var _buttons: Dictionary = {}
 ## 测试可在节点入树前换成隔离存档；正式运行使用全局设置文件。
 var settings_path: String = AppSettings.SAVE_PATH
 
@@ -34,14 +31,9 @@ func _ready() -> void:
 	%BackButton.pressed.connect(_on_back_pressed)
 	_mode = AppSettings.load_mode(settings_path)
 	_bind_mode_controls()
-	_refresh_highlight()
 	_bind_server_controls()
-	# 电视上没有鼠标，一进来就得有个控件拿着焦点；给当前选中的那个。
-	var focused: Button = _buttons.get(_mode)
-	if focused != null:
-		focused.grab_focus()
-	else:
-		%BackButton.grab_focus()
+	# 电视上没有鼠标，一进来就让窗口模式下拉框拿焦点。
+	%ModeSelect.grab_focus()
 
 
 func _notification(what: int) -> void:
@@ -58,44 +50,57 @@ func _unhandled_input(event: InputEvent) -> void:
 		TvRemote.ensure_focus(%BackButton)
 
 
-## 把场景里的三个固定按钮及说明绑定到对应模式。文字仍以 AppSettings 为准，
-## 避免场景预览文案和真正运行时的模式定义各维护一套。
+## 用 AppSettings 的定义填充模式下拉框。metadata 存真实模式值，
+## 以后即使模式枚举不再连续，选择也不会因索引错位。
 func _bind_mode_controls() -> void:
-	_buttons = {
-		AppSettings.Mode.WINDOWED: %WindowedButton,
-		AppSettings.Mode.MAXIMIZED: %MaximizedButton,
-		AppSettings.Mode.FULLSCREEN: %FullscreenButton,
-	}
-	var descriptions := {
-		AppSettings.Mode.WINDOWED: %WindowedDescription,
-		AppSettings.Mode.MAXIMIZED: %MaximizedDescription,
-		AppSettings.Mode.FULLSCREEN: %FullscreenDescription,
-	}
-	for mode in AppSettings.MODES:
-		var button := _buttons.get(mode) as Button
-		var description := descriptions.get(mode) as Label
-		if button == null or description == null:
-			push_warning("设置页缺少窗口模式控件：%s" % AppSettings.mode_display_name(mode))
-			continue
-		button.text = AppSettings.mode_display_name(mode)
-		description.text = AppSettings.mode_description(mode)
-		description.add_theme_color_override("font_color", ThemeHelper.MUTED)
-		# bind 把模式带进回调，三个按钮共用同一个处理函数。
-		button.pressed.connect(_on_mode_pressed.bind(mode))
+	ThemeHelper.style_button(%ModeSelect, true)
+	%ModeDescription.add_theme_color_override("font_color", ThemeHelper.MUTED)
+	_fill_select(
+		%ModeSelect,
+		AppSettings.MODES,
+		AppSettings.mode_display_name,
+		AppSettings.mode_description,
+		_mode,
+	)
+	_refresh_mode_description()
+	%ModeSelect.item_selected.connect(_on_mode_selected)
 
 
-## 选中的那个是实心主按钮，其余走描边。样式里带着最小尺寸，所以每次都要重套。
-func _refresh_highlight() -> void:
-	for mode in _buttons:
-		ThemeHelper.style_button(_buttons[mode] as Button, mode == _mode)
+## 按 values 重建一个下拉框：文字取 label_of，悬浮提示取 tooltip_of，
+## metadata 存原值本身，并选中值等于 current 的那一项（找不到就落回第一项）。
+##
+## 「下拉索引不等于业务值」这条规矩只在这里写一遍，两个下拉都从这里过。
+func _fill_select(
+	select: OptionButton,
+	values: Array,
+	label_of: Callable,
+	tooltip_of: Callable,
+	current: Variant,
+) -> void:
+	select.clear()
+	var selected_index := 0
+	for value in values:
+		select.add_item(str(label_of.call(value)))
+		var index: int = select.item_count - 1
+		select.set_item_metadata(index, value)
+		select.set_item_tooltip(index, str(tooltip_of.call(value)))
+		if value == current:
+			selected_index = index
+	select.select(selected_index)
 
 
-func _on_mode_pressed(mode: int) -> void:
-	_mode = AppSettings.sanitize_mode(mode)
+func _refresh_mode_description() -> void:
+	%ModeDescription.text = AppSettings.mode_description(_mode)
+
+
+func _on_mode_selected(index: int) -> void:
+	if index < 0 or index >= %ModeSelect.item_count:
+		return
+	_mode = AppSettings.sanitize_mode(int(%ModeSelect.get_item_metadata(index)))
 	# 先存后应用：万一 apply 在某个平台上出岔子，选择也已经落盘了。
 	AppSettings.save_mode(_mode, settings_path)
 	AppSettings.apply_mode(_mode)
-	_refresh_highlight()
+	_refresh_mode_description()
 
 
 ## 绑定服务器下拉、增加、删除和状态行。Web 参数提供列表时，列表是只读数据源；
@@ -129,19 +134,17 @@ func _bind_server_controls() -> void:
 ## 用当前数据源重建下拉，并把状态行刷成真正会访问的 endpoint。
 func _refresh_server_view(note: String = "", color: Color = ThemeHelper.MUTED) -> void:
 	var selected := WebLaunchConfig.effective_base_url(settings_path)
-	%ServerSelect.clear()
-	%ServerSelect.add_item(DEFAULT_SERVER_LABEL)
-	%ServerSelect.set_item_metadata(0, "")
-	var selected_index := 0
+	# 空串那一项代表“用内置地址”，和真实地址一样把值存进 metadata。
+	var bases: Array = [""]
 	for raw_base in WebLaunchConfig.active_base_urls(settings_path):
-		var base := str(raw_base)
-		%ServerSelect.add_item(base)
-		var index: int = %ServerSelect.item_count - 1
-		%ServerSelect.set_item_metadata(index, base)
-		%ServerSelect.set_item_tooltip(index, TokenUsageApi.usage_url(base))
-		if base == selected:
-			selected_index = index
-	%ServerSelect.select(selected_index)
+		bases.append(str(raw_base))
+	_fill_select(
+		%ServerSelect,
+		bases,
+		func(base: Variant) -> String: return DEFAULT_SERVER_LABEL if str(base).is_empty() else str(base),
+		func(base: Variant) -> String: return TokenUsageApi.usage_url(str(base)),
+		selected,
+	)
 	%ServerDelete.disabled = WebLaunchConfig.has_base_urls_override() or selected.is_empty()
 	var label := "默认" if selected.is_empty() else selected
 	var line := "当前：%s · %s" % [label, TokenUsageApi.usage_url(selected)]

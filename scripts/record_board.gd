@@ -5,9 +5,9 @@ extends RefCounted
 ## 纯控件构建，输入只有一个 RoundRecord——和演出、战斗判定都没有关系，
 ## 所以从 battle.gd 里拆出来单独放，改徽章样式不用碰播放逻辑。
 
-## 奖牌徽章的直径，圆角取一半就是正圆。
+## 名次列宽度；奖牌与纯数字排名共用，保证每行文字对齐。
 const BADGE_PX := 22
-## 徽章里名次数字的字号。
+## 第四名起名次数字的字号。
 const BADGE_FONT_PX := 13
 ## 一行（名字、胜场）的字号。
 const ROW_FONT_PX := 16
@@ -67,21 +67,20 @@ static func _rank_color(rank: int) -> Color:
 	return ThemeHelper.medal_color(rank) if ThemeHelper.has_medal(rank) else ThemeHelper.TEXT
 
 
-## 前三名的金银铜牌。用一个圆底 + 名次数字，不依赖字体里有没有奖牌字符。
+## 前三名显示金银铜奖牌纹理；之后只保留同宽、居中的纯数字名次。
 static func _medal(rank: int) -> Control:
-	var badge := Panel.new()
-	badge.custom_minimum_size = Vector2(BADGE_PX, BADGE_PX)
-	# 底色和别的控件一样从 ThemeHelper 出，圆片样式也是。
-	var bg := ThemeHelper.medal_color(rank) if ThemeHelper.has_medal(rank) else ThemeHelper.CARD
-	badge.add_theme_stylebox_override("panel", ThemeHelper.make_circle(bg, BADGE_PX))
-	# 名次数字铺满整个圆，居中显示。亮底上用深色字，暗底上用浅灰字。
-	var number := ThemeHelper.make_label(
-		str(rank),
-		ThemeHelper.BG if ThemeHelper.has_medal(rank) else ThemeHelper.MUTED,
-		BADGE_FONT_PX,
-	)
-	number.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var texture := ThemeHelper.medal_texture(rank)
+	if texture != null:
+		var medal := TextureRect.new()
+		medal.custom_minimum_size = Vector2(BADGE_PX, BADGE_PX)
+		medal.texture = texture
+		medal.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		medal.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		medal.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		return medal
+
+	var number := _readable_label(str(rank), ThemeHelper.MUTED, BADGE_FONT_PX)
+	number.custom_minimum_size = Vector2(BADGE_PX, BADGE_PX)
 	number.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	number.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	badge.add_child(number)
-	return badge
+	return number

@@ -27,6 +27,11 @@ const GOLD := Color("d4a017")
 const SILVER := Color("c0c8d0")
 const BRONZE := Color("b87333")
 
+## 战绩榜前三的奖牌图，和上面三种颜色一一对应。
+const MEDAL_GOLD := preload("res://assets/icons/medal_gold.png")
+const MEDAL_SILVER := preload("res://assets/icons/medal_silver.png")
+const MEDAL_BRONZE := preload("res://assets/icons/medal_bronze.png")
+
 ## 焦点框的描边宽度。电视上没有鼠标，全靠它看清选中项，所以要粗。
 const FOCUS_BORDER := 3
 ## 主按钮的最小尺寸。
@@ -51,6 +56,16 @@ static func medal_color(rank: int) -> Color:
 		_: return MUTED
 
 
+## 前三名的奖牌图。和 medal_color 一样按 MEDAL_RANKS 分档，
+## 免得调用方另记一份「第几名配哪张图」的表。没有牌的名次返回 null。
+static func medal_texture(rank: int) -> Texture2D:
+	match rank:
+		1: return MEDAL_GOLD
+		2: return MEDAL_SILVER
+		3: return MEDAL_BRONZE
+		_: return null
+
+
 ## 给一棵控件子树套上统一字体。Theme 会往下继承，所以只要套在根上。
 static func apply(control: Control, font_size: int = 18) -> void:
 	var theme := Theme.new()
@@ -69,15 +84,6 @@ static func make_flat(color: Color, radius: int = 8) -> StyleBoxFlat:
 	box.content_margin_right = 12
 	box.content_margin_top = 8
 	box.content_margin_bottom = 8
-	return box
-
-
-## 一个纯色圆片：圆角开到边长的一半，且不留内边距。
-## 奖牌徽章这类“只有一个居中数字”的小圆用它——make_flat 的内边距会把它撑成椭圆。
-static func make_circle(color: Color, diameter: int) -> StyleBoxFlat:
-	var box := StyleBoxFlat.new()
-	box.bg_color = color
-	box.set_corner_radius_all(diameter / 2)
 	return box
 
 

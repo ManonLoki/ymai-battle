@@ -86,12 +86,28 @@ func _run() -> void:
 	battle.queue_free()
 	await process_frame
 
-	# 设置页：返回按钮 + 模式列表，少一个就没法切窗口模式了。
+	# 设置页：返回按钮 + 模式下拉框和说明，少一个就没法切窗口模式了。
 	var settings: Node = packed_settings.instantiate()
 	root.add_child(settings)
 	await process_frame
-	if settings.get_node_or_null("%BackButton") == null or settings.get_node_or_null("%ModeList") == null:
+	var mode_select := settings.get_node_or_null("%ModeSelect") as OptionButton
+	var mode_description := settings.get_node_or_null("%ModeDescription") as Label
+	if settings.get_node_or_null("%BackButton") == null or mode_select == null or mode_description == null:
 		printerr("SETTINGS_CONTROLS_MISSING")
+		quit(1)
+		return
+	if mode_select.item_count != AppSettings.MODES.size():
+		printerr("SETTINGS_MODE_OPTIONS_MISSING")
+		quit(1)
+		return
+	for index in range(mode_select.item_count):
+		if int(mode_select.get_item_metadata(index)) != AppSettings.MODES[index]:
+			printerr("SETTINGS_MODE_METADATA_INVALID")
+			quit(1)
+			return
+	var selected_mode := int(mode_select.get_item_metadata(mode_select.selected))
+	if selected_mode != AppSettings.load_mode() or not mode_select.has_focus():
+		printerr("SETTINGS_MODE_INITIAL_STATE_INVALID")
 		quit(1)
 		return
 	# 服务器地址那一栏：下拉、增加输入和增删按钮都得在。

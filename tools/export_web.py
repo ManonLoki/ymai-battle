@@ -6,12 +6,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 
+from exe_lookup import find_executable
 from web_fetch_bridge import BridgePatchError, patch_file, verify_file
 
 
@@ -133,28 +133,18 @@ def verify_export(output: Path, embedded: bool) -> str:
 
 
 def _find_godot(explicit: str | None) -> Path:
-    candidates: list[str] = []
-    if explicit:
-        candidates.append(explicit)
-    configured = os.environ.get("GODOT_BIN")
-    if configured:
-        candidates.append(configured)
-    for command in ("godot", "Godot"):
-        found = shutil.which(command)
-        if found:
-            candidates.append(found)
-    candidates.extend(
+    # GODOT is what tools/build_android.sh already reads, so a machine configured
+    # for the Android build needs no second variable for the Web build.
+    return find_executable(
+        "Godot",
+        explicit,
+        ("GODOT_BIN", "GODOT"),
+        ("godot", "Godot"),
         (
             "/Applications/Godot.app/Contents/MacOS/Godot",
             "/Applications/Godot.app/Contents/MacOS/godot",
-        )
-    )
-    for candidate in candidates:
-        path = Path(candidate).expanduser()
-        if path.is_file() and os.access(path, os.X_OK):
-            return path.resolve()
-    raise FileNotFoundError(
-        "Godot was not found; pass --godot or set the task-specific GODOT_BIN"
+        ),
+        "Godot was not found; pass --godot or set GODOT_BIN / GODOT",
     )
 
 

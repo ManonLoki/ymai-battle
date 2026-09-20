@@ -64,50 +64,21 @@ text = "窗口模式 · 选择后立即生效，下次启动时也会记住"
 custom_minimum_size = Vector2(0, 8)
 layout_mode = 2
 
-[node name="ModeList" type="VBoxContainer" parent="Margin/VBox"]
-unique_name_in_owner = true
+[node name="ModeSection" type="VBoxContainer" parent="Margin/VBox"]
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 10
 
-[node name="WindowedButton" type="Button" parent="Margin/VBox/ModeList"]
+[node name="ModeSelect" type="OptionButton" parent="Margin/VBox/ModeSection"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(220, 48)
 layout_mode = 2
 focus_mode = 2
-text = "窗口"
 
-[node name="WindowedDescription" type="Label" parent="Margin/VBox/ModeList"]
+[node name="ModeDescription" type="Label" parent="Margin/VBox/ModeSection"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 14
-text = "有系统边框，可以拖动和缩放"
-
-[node name="MaximizedButton" type="Button" parent="Margin/VBox/ModeList"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(220, 48)
-layout_mode = 2
-focus_mode = 2
-text = "最大化"
-
-[node name="MaximizedDescription" type="Label" parent="Margin/VBox/ModeList"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_font_sizes/font_size = 14
-text = "铺满桌面，无边框"
-
-[node name="FullscreenButton" type="Button" parent="Margin/VBox/ModeList"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(220, 48)
-layout_mode = 2
-focus_mode = 2
-text = "全屏"
-
-[node name="FullscreenDescription" type="Label" parent="Margin/VBox/ModeList"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_font_sizes/font_size = 14
-text = "独占整个屏幕，无边框"
 
 [node name="ServerSection" type="VBoxContainer" parent="Margin/VBox"]
 unique_name_in_owner = true

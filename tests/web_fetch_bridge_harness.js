@@ -8,19 +8,8 @@ const vm = require('node:vm');
 
 const input = process.argv[2];
 if (!input) {
-	console.error('usage: node tests/web_fetch_bridge_harness.js PATH_TO_INDEX_JS');
+	console.error('usage: node tests/web_fetch_bridge_harness.js PATH_TO_EXTRACTED_BRIDGE_JS');
 	process.exit(2);
-}
-
-function extractBridge(source) {
-	const startMarker = 'var GodotFetch=';
-	const endMarker = ';function _godot_js_fetch_create';
-	const start = source.indexOf(startMarker);
-	const end = source.indexOf(endMarker, start);
-	assert.notEqual(start, -1, 'GodotFetch bridge start must exist');
-	assert.notEqual(end, -1, 'GodotFetch bridge end must exist');
-	assert.equal(source.indexOf(startMarker, start + 1), -1, 'GodotFetch bridge must be unique');
-	return source.slice(start, end);
 }
 
 function waitFor(predicate, label, timeoutMs = 4000) {
@@ -42,7 +31,10 @@ function waitFor(predicate, label, timeoutMs = 4000) {
 }
 
 async function main() {
-	const bridge = extractBridge(fs.readFileSync(input, 'utf8'));
+	// The caller hands over an already-extracted bridge: tools/web_fetch_bridge.py
+	// owns the markers and the "exactly one bridge" rule, so they are not
+	// restated here in a second language that could drift from it.
+	const bridge = fs.readFileSync(input, 'utf8');
 	const state = {
 		redirectHits: 0,
 		redirectTargetHits: 0,

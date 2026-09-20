@@ -493,8 +493,6 @@ func _show_notice(text: String) -> void:
 	%ResultLabel.add_theme_color_override("font_color", ThemeHelper.DANGER)
 	%MvpLabel.text = ""
 	%ReplayHintLabel.text = "1 分钟后自动重试，也可立即点击按钮"
-	if not %ReplayButton.disabled:
-		%ReplayButton.grab_focus()
 
 
 ## 一场打完：亮结果、记战绩、评 MVP。
@@ -513,7 +511,5 @@ func _show_result() -> void:
 	%MvpLabel.text = mvp_line
 	%MvpLabel.add_theme_color_override("font_color", ThemeHelper.GOLD)
 	%ReplayHintLabel.text = "1 分钟后自动再战，也可立即点击按钮"
-	if not %ReplayButton.disabled:
-		%ReplayButton.grab_focus()
 	_append_log(mvp_line)
 	_update_hud()

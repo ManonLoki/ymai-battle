@@ -9,7 +9,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
-import shutil
 import socket
 import struct
 import subprocess
@@ -24,27 +23,36 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
+from exe_lookup import find_executable  # noqa: E402
 from web_fetch_bridge import extract_bridge, verify_file  # noqa: E402
 
 
 def _find_chrome(explicit: str | None) -> Path:
-    candidates = [explicit, os.environ.get("CHROME_BIN"), shutil.which("google-chrome")]
-    candidates.extend(
+    return find_executable(
+        "Chromium browser",
+        explicit,
+        ("CHROME_BIN",),
+        ("google-chrome",),
         (
             "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
             "/Applications/Chromium.app/Contents/MacOS/Chromium",
             "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-        )
+        ),
+        "Chromium browser not found; pass --chrome or set task-specific CHROME_BIN",
     )
-    for candidate in candidates:
-        if not candidate:
-            continue
-        path = Path(candidate).expanduser()
-        if path.is_file() and os.access(path, os.X_OK):
-            return path.resolve()
-    raise FileNotFoundError(
-        "Chromium browser not found; pass --chrome or set task-specific CHROME_BIN"
-    )
+
+
+def _stop(process: subprocess.Popen | None) -> None:
+    """Chrome must be gone before the temporary --user-data-dir is removed."""
+
+    if process is None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
 
 
 class LoopbackState:
@@ -357,21 +365,10 @@ def main() -> int:
                     websocket_url = _wait_for_page_target(debug_port, page_url)
                     _wait_for_browser_result(websocket_url)
                 finally:
-                    process.terminate()
-                    try:
-                        process.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                        process.wait(timeout=5)
+                    _stop(process)
                     process = None
         finally:
-            if process is not None:
-                process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=5)
+            _stop(process)
             server.shutdown()
             server.server_close()
             thread.join(timeout=2)
