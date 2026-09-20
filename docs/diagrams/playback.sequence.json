@@ -1,0 +1,269 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "一条战报事件是怎么被演出来的",
+    "locale": "zh-CN",
+    "viewBox": [
+      1060,
+      560
+    ],
+    "column_fit": "spread",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "turn",
+        "label": "一个回合",
+        "focus": [
+          "battle",
+          "war",
+          "resolver"
+        ],
+        "note": "判定一次性算完整回合，演出再逐条补播。"
+      },
+      {
+        "id": "swing",
+        "label": "挥到一半才结算",
+        "focus": [
+          "battle",
+          "attacker",
+          "defender"
+        ],
+        "note": "出招、等半拍、挨打方反应，这样才像打中了。"
+      },
+      {
+        "id": "aside",
+        "label": "旁路",
+        "focus": [
+          "battle",
+          "sfx",
+          "log"
+        ],
+        "note": "音效和战报不参与等待，不拖慢节奏。"
+      }
+    ],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "emphasis": {
+          "label": "主链路"
+        },
+        "default": {
+          "label": "普通调用"
+        },
+        "dashed": {
+          "label": "不参与等待的旁路"
+        },
+        "return": {
+          "label": "返回 / 等待结束"
+        }
+      }
+    }
+  },
+  "participants": [
+    {
+      "id": "battle",
+      "type": "frontend",
+      "label": "battle.gd",
+      "sublabel": "只负责演出"
+    },
+    {
+      "id": "war",
+      "type": "backend",
+      "label": "WheelWar",
+      "sublabel": "回合推进"
+    },
+    {
+      "id": "resolver",
+      "type": "backend",
+      "label": "CombatResolver",
+      "sublabel": "掷骰判定"
+    },
+    {
+      "id": "attacker",
+      "type": "messagebus",
+      "label": "出手方视图",
+      "sublabel": "FighterView"
+    },
+    {
+      "id": "defender",
+      "type": "messagebus",
+      "label": "挨打方视图",
+      "sublabel": "FighterView"
+    },
+    {
+      "id": "sfx",
+      "type": "cloud",
+      "label": "CombatSfx",
+      "sublabel": "音效点名"
+    },
+    {
+      "id": "log",
+      "type": "database",
+      "label": "战报",
+      "sublabel": "RichTextLabel"
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 232,
+      "label": "先算完整回合"
+    },
+    {
+      "from": 240,
+      "to": 396,
+      "label": "再逐条演"
+    },
+    {
+      "from": 404,
+      "to": 470,
+      "label": "收尾"
+    }
+  ],
+  "messages": [
+    {
+      "id": "m-turn",
+      "from": "battle",
+      "to": "war",
+      "y": 165,
+      "label": "simulate_turn()",
+      "variant": "emphasis"
+    },
+    {
+      "id": "m-resolve",
+      "from": "war",
+      "to": "resolver",
+      "y": 190,
+      "label": "resolve_action() ×2",
+      "variant": "default"
+    },
+    {
+      "id": "m-events",
+      "from": "war",
+      "to": "battle",
+      "y": 218,
+      "label": "整回合的 StrikeResult[]",
+      "variant": "return"
+    },
+    {
+      "id": "m-sfx",
+      "from": "battle",
+      "to": "sfx",
+      "y": 252,
+      "label": "按事件字段点名",
+      "variant": "dashed"
+    },
+    {
+      "id": "m-attack",
+      "from": "battle",
+      "to": "attacker",
+      "y": 284,
+      "label": "play_attack()",
+      "variant": "emphasis"
+    },
+    {
+      "id": "m-hp",
+      "from": "battle",
+      "to": "defender",
+      "y": 316,
+      "label": "挥到一半才 set_hp + 挨打反应",
+      "variant": "emphasis",
+      "note": "HIT_IMPACT_DELAY"
+    },
+    {
+      "id": "m-fx",
+      "from": "battle",
+      "to": "defender",
+      "y": 348,
+      "label": "暴击 / 挡下 / 复活特效",
+      "variant": "default"
+    },
+    {
+      "id": "m-log",
+      "from": "battle",
+      "to": "log",
+      "y": 380,
+      "label": "追加一行文字",
+      "variant": "dashed"
+    },
+    {
+      "id": "m-finish",
+      "from": "attacker",
+      "to": "battle",
+      "y": 412,
+      "label": "动画剩余时长走完",
+      "variant": "return"
+    },
+    {
+      "id": "m-idle",
+      "from": "battle",
+      "to": "attacker",
+      "y": 444,
+      "label": "回到站立",
+      "variant": "default",
+      "note": "再停 TURN_BEAT 播下一条"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "war",
+      "from": 160,
+      "to": 224,
+      "type": "backend"
+    },
+    {
+      "participant": "resolver",
+      "from": 185,
+      "to": 214,
+      "type": "backend"
+    },
+    {
+      "participant": "battle",
+      "from": 246,
+      "to": 452,
+      "type": "frontend"
+    },
+    {
+      "participant": "attacker",
+      "from": 279,
+      "to": 450,
+      "type": "messagebus"
+    },
+    {
+      "participant": "defender",
+      "from": 311,
+      "to": 354,
+      "type": "messagebus"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "判定和演出是分开的两拍",
+      "items": [
+        "WheelWar 一次把整个回合算完，battle.gd 拿到的是一串已成定局的 StrikeResult",
+        "演出只读事件字段，不做任何判定——改动画永远不会改胜负",
+        "所以 headless 测试能跳过全部动画，直接对着事件串断言"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "为什么要等半拍",
+      "items": [
+        "出招动画挥到一半时才扣血、才播挨打反应，同步扣血看起来像还没碰到就掉血了",
+        "等动画不用 animation_finished：玩家中途返回会让节点离树，那个信号永远不来、协程挂死",
+        "改成按动画剩余时长 await，既能正常等完，场景没了也能立刻收手"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "不参与等待的两条旁路",
+      "items": [
+        "音效在事件开头就点名，一批几声同时响，不排队",
+        "战报用 add_text 追加而不是重设 text——一场十几个挑战者能攒上千行，重排会越打越卡",
+        "反弹和中毒这类没有挥击动作的事件走另一条更短的路径，一帧就演完"
+      ]
+    }
+  ]
+}

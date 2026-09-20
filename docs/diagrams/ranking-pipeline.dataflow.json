@@ -1,0 +1,234 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "榜单数据链路：看板 JSON 怎么变成战力",
+    "locale": "zh-CN",
+    "viewBox": [
+      1072,
+      560
+    ],
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "fetch",
+        "label": "取数",
+        "focus": [
+          "server",
+          "config",
+          "api"
+        ],
+        "note": "基址怎么定、请求怎么发、失败怎么表达。"
+      },
+      {
+        "id": "normalize",
+        "label": "归一",
+        "focus": [
+          "api",
+          "aggregator",
+          "ranked"
+        ],
+        "note": "看板桶映成 RankedUser，名次在这里定。"
+      },
+      {
+        "id": "consumers",
+        "label": "两个消费端",
+        "focus": [
+          "ranked",
+          "board",
+          "war"
+        ],
+        "note": "同一份 RankedUser 同时喂表格和战斗。"
+      }
+    ],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "emphasis": {
+          "label": "主链路"
+        },
+        "default": {
+          "label": "次要流向"
+        },
+        "security": {
+          "label": "配置来源"
+        },
+        "database": {
+          "label": "领域数据"
+        }
+      }
+    }
+  },
+  "stages": [
+    {
+      "label": "服务端"
+    },
+    {
+      "label": "取数"
+    },
+    {
+      "label": "归一"
+    },
+    {
+      "label": "领域对象"
+    },
+    {
+      "label": "消费"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "server",
+      "type": "external",
+      "label": "YMAI 看板",
+      "sublabel": "v2 dashboard",
+      "stage": 0,
+      "row": 0,
+      "tag": "已按逻辑用户聚合",
+      "width": 150
+    },
+    {
+      "id": "config",
+      "type": "security",
+      "label": "生效基址",
+      "sublabel": "WebLaunchConfig 决定",
+      "stage": 0,
+      "row": 2,
+      "tag": "空串=内置地址",
+      "width": 150
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "TokenUsageApi",
+      "sublabel": "fetch_ranking()",
+      "stage": 1,
+      "row": 1,
+      "tag": "HTTPRequest 节点",
+      "width": 142
+    },
+    {
+      "id": "aggregator",
+      "type": "backend",
+      "label": "RankingAggregator",
+      "sublabel": "rank_users()",
+      "stage": 2,
+      "row": 1,
+      "tag": "唯一映射处",
+      "width": 152
+    },
+    {
+      "id": "ranked",
+      "type": "database",
+      "label": "RankedUser[]",
+      "sublabel": "username / tokens / rank",
+      "stage": 3,
+      "row": 1,
+      "tag": "战力降序",
+      "width": 150
+    },
+    {
+      "id": "board",
+      "type": "frontend",
+      "label": "排行榜场景",
+      "sublabel": "scenes/ranking.gd",
+      "stage": 4,
+      "row": 0,
+      "tag": "四列表格",
+      "width": 138
+    },
+    {
+      "id": "war",
+      "type": "backend",
+      "label": "车轮战开场",
+      "sublabel": "WheelWar.setup / Fighter",
+      "stage": 4,
+      "row": 1,
+      "tag": "tokens = 最大生命",
+      "width": 152
+    }
+  ],
+  "flows": [
+    {
+      "id": "pick-base",
+      "from": "config",
+      "to": "api",
+      "label": "基址",
+      "classification": "本地存档或网页参数",
+      "variant": "security"
+    },
+    {
+      "id": "request",
+      "from": "server",
+      "to": "api",
+      "label": "GET 当日看板",
+      "classification": "JSON",
+      "variant": "emphasis"
+    },
+    {
+      "id": "buckets",
+      "from": "api",
+      "to": "aggregator",
+      "label": "data.ranking 桶数组",
+      "classification": "原始字段",
+      "variant": "emphasis",
+      "labelDy": -40
+    },
+    {
+      "id": "mapped",
+      "from": "aggregator",
+      "to": "ranked",
+      "label": "逐桶映射并排名",
+      "classification": "名次从 1 起",
+      "variant": "emphasis",
+      "labelDy": -40
+    },
+    {
+      "id": "to-board",
+      "from": "ranked",
+      "to": "board",
+      "label": "铺成表格",
+      "classification": "只读展示",
+      "labelDy": -12
+    },
+    {
+      "id": "to-war",
+      "from": "ranked",
+      "to": "war",
+      "label": "洗牌排队",
+      "classification": "榜首当擂主",
+      "variant": "emphasis",
+      "route": "straight",
+      "labelDy": 26
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "服务端已经聚合好了",
+      "items": [
+        "v2 看板的 data.ranking 每个桶就是一个逻辑用户，客户端不再读设备 × 渠道明细",
+        "桶已按 totalTokens 降序，聚合器只做映射，名次按数组顺序从 1 起排",
+        "key.logicalDeviceName 是用户名，也是全项目认人的唯一键：形象分配、战绩榜都按它认"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "token 是字符串，不是数字",
+      "items": [
+        "totalTokens 以十进制字符串下发，绕开 JS 安全整数上限（榜首常年上十亿）",
+        "_to_tokens 同时收 int 和字符串，非法值一律当 0，不让一个坏字段把整张榜打掉",
+        "名字为空的桶直接跳过——没有身份的记录既排不了名，也没法分配形象"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "同一份名单，两个去处",
+      "items": [
+        "排行榜只读展示；战斗把它变成有血有肉的 Fighter，tokens 直接当最大生命",
+        "渠道码去重保序后转成 agent 展示名，一个人用了几个 agent 就挂几个 buff",
+        "取数失败时状态栏标红并在结果面板说明，一分钟后自动重试，不静默失败"
+      ]
+    }
+  ]
+}

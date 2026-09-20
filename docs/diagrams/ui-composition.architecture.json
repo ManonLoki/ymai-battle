@@ -1,0 +1,350 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "界面是怎么拼出来的：一份主题 + 可复用的行",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1060,
+      500
+    ],
+    "views": [
+      {
+        "id": "theme",
+        "label": "样式从哪来",
+        "focus": [
+          "project",
+          "theme",
+          "palette"
+        ],
+        "note": "全局主题一处定义，所有控件（含运行时新建的）自动套上。"
+      },
+      {
+        "id": "scenes",
+        "label": "四个场景",
+        "focus": [
+          "main",
+          "ranking",
+          "settings",
+          "battle"
+        ],
+        "note": "场景只挑变体名，不在 _ready 里写样式。"
+      },
+      {
+        "id": "rows",
+        "label": "抽出来的行",
+        "focus": [
+          "record_row",
+          "server_row",
+          "skill_icon"
+        ],
+        "note": "运行时要反复生成的三种行，各自成场景。"
+      }
+    ],
+    "repository": {
+      "url": "https://github.com/ManonLoki/ymai-battle",
+      "provider": "github",
+      "revision": "42828c3acc42e0b4bca0ad81e5fe487cf6aec2b0"
+    },
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "cloud": {
+          "label": "引擎配置"
+        },
+        "security": {
+          "label": "主题资源"
+        },
+        "backend": {
+          "label": "配色数据"
+        },
+        "external": {
+          "label": "烘焙脚本"
+        },
+        "frontend": {
+          "label": "场景"
+        },
+        "messagebus": {
+          "label": "可复用的行"
+        }
+      }
+    }
+  },
+  "layout": {
+    "mode": "grid",
+    "cols": 4,
+    "cellW": 176,
+    "cellH": 76,
+    "gapX": 60,
+    "gapY": 46,
+    "origin": [
+      56,
+      120
+    ]
+  },
+  "components": [
+    {
+      "id": "project",
+      "type": "cloud",
+      "label": "project.godot",
+      "sublabel": "gui/theme/custom",
+      "tag": "注册全局主题",
+      "row": 0,
+      "col": 0,
+      "sources": [
+        {
+          "path": "project.godot",
+          "label": "project.godot"
+        }
+      ]
+    },
+    {
+      "id": "theme",
+      "type": "security",
+      "label": "ui_theme.tres",
+      "sublabel": "字体 / 按钮 / 面板",
+      "tag": "编辑器里改",
+      "row": 0,
+      "col": 1,
+      "sources": [
+        {
+          "path": "assets/ui_theme.tres",
+          "label": "ui_theme.tres"
+        }
+      ]
+    },
+    {
+      "id": "palette",
+      "type": "backend",
+      "label": "ThemeHelper",
+      "sublabel": "配色与奖牌表",
+      "tag": "只剩数据",
+      "row": 0,
+      "col": 3,
+      "sources": [
+        {
+          "path": "scripts/theme_helper.gd",
+          "label": "theme_helper.gd"
+        }
+      ]
+    },
+    {
+      "id": "baker",
+      "type": "external",
+      "label": "bake_ui_theme.gd",
+      "sublabel": "按常量烘出 .tres",
+      "tag": "偶尔跑一次",
+      "row": 0,
+      "col": 2,
+      "sources": [
+        {
+          "path": "tools/bake_ui_theme.gd",
+          "label": "bake_ui_theme.gd"
+        }
+      ]
+    },
+    {
+      "id": "main",
+      "type": "frontend",
+      "label": "主菜单",
+      "sublabel": "main.tscn",
+      "tag": "主/次按钮切换",
+      "row": 1,
+      "col": 0,
+      "sources": [
+        {
+          "path": "scenes/main.gd",
+          "label": "main.gd"
+        }
+      ]
+    },
+    {
+      "id": "ranking",
+      "type": "frontend",
+      "label": "排行榜",
+      "sublabel": "ranking.tscn",
+      "tag": "MutedLabel 表头",
+      "row": 1,
+      "col": 1,
+      "sources": [
+        {
+          "path": "scenes/ranking.gd",
+          "label": "ranking.gd"
+        }
+      ]
+    },
+    {
+      "id": "settings",
+      "type": "frontend",
+      "label": "设置页",
+      "sublabel": "settings.tscn",
+      "tag": "DialogPanel 弹窗",
+      "row": 1,
+      "col": 2,
+      "sources": [
+        {
+          "path": "scenes/settings.gd",
+          "label": "settings.gd"
+        }
+      ]
+    },
+    {
+      "id": "battle",
+      "type": "frontend",
+      "label": "战斗页",
+      "sublabel": "battle.tscn",
+      "tag": "GlassPanel 底板",
+      "row": 1,
+      "col": 3,
+      "sources": [
+        {
+          "path": "scenes/battle.gd",
+          "label": "battle.gd"
+        }
+      ]
+    },
+    {
+      "id": "server_row",
+      "type": "messagebus",
+      "label": "server_row.tscn",
+      "sublabel": "地址 + 保存 + 删除",
+      "tag": "发信号，不落盘",
+      "row": 2,
+      "col": 1
+    },
+    {
+      "id": "record_row",
+      "type": "messagebus",
+      "label": "record_row.tscn",
+      "sublabel": "奖牌 / 名次 / 胜场",
+      "tag": "按名次切显示",
+      "row": 2,
+      "col": 2
+    },
+    {
+      "id": "skill_icon",
+      "type": "messagebus",
+      "label": "skill_icon.tscn",
+      "sublabel": "一个图标格子",
+      "tag": "悬停发信号",
+      "row": 2,
+      "col": 3
+    }
+  ],
+  "connections": [
+    {
+      "id": "c-register",
+      "from": "project",
+      "to": "theme",
+      "label": "开机注册",
+      "variant": "emphasis"
+    },
+    {
+      "id": "c-bake",
+      "from": "palette",
+      "to": "baker",
+      "label": "颜色常量",
+      "variant": "dashed"
+    },
+    {
+      "id": "c-baked",
+      "from": "baker",
+      "to": "theme",
+      "label": "烘出资源",
+      "variant": "dashed"
+    },
+    {
+      "id": "c-main",
+      "from": "theme",
+      "to": "main",
+      "label": "自动套用",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "c-ranking",
+      "from": "theme",
+      "to": "ranking",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "c-settings",
+      "from": "theme",
+      "to": "settings",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "c-battle",
+      "from": "theme",
+      "to": "battle",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "c-danger",
+      "from": "palette",
+      "to": "battle",
+      "label": "胜负 / 报错色",
+      "variant": "dashed",
+      "labelDy": 26
+    },
+    {
+      "id": "c-server-row",
+      "from": "settings",
+      "to": "server_row",
+      "label": "维护面板逐行实例化",
+      "variant": "emphasis"
+    },
+    {
+      "id": "c-record-row",
+      "from": "battle",
+      "to": "record_row",
+      "label": "战绩榜逐行实例化",
+      "variant": "emphasis"
+    },
+    {
+      "id": "c-skill-icon",
+      "from": "battle",
+      "to": "skill_icon",
+      "label": "角色头上两行图标",
+      "variant": "default",
+      "labelDy": 34
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "样式不再写在代码里",
+      "items": [
+        "字体、按钮、输入框、滑块、面板全在 ui_theme.tres，由 project.godot 注册成全局主题",
+        "场景只在编辑器里挑 theme_type_variation（SecondaryButton / MutedLabel / GlassPanel…）",
+        "四个场景的 _ready 里一句 add_theme_*_override 都不剩，只接线和填数据"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "为什么还留着 ThemeHelper",
+      "items": [
+        "颜色由数据决定的地方仍需要代码：报错标红、胜负配色、前三名的奖牌色",
+        "主题里的配色由 bake_ui_theme.gd 从这些常量算出来，手敲小数和 Color(\"58a6ff\") 不是逐位相等",
+        "测试拿按钮解析出的底色和 ThemeHelper 常量对比，两边走散会立刻挂"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "会被反复生成的东西才抽成场景",
+      "items": [
+        "这三种行的数量只有运行时才知道，原先都是代码里手搭控件",
+        "抽成场景后尺寸、字号、间距都回到编辑器，脚本只管填内容和发信号",
+        "行不认识存档也不认识战斗：server_row 只发 save/delete，落盘归设置页"
+      ]
+    }
+  ]
+}

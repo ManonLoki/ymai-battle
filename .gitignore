@@ -14,3 +14,4 @@ __pycache__/
 
 # archify 的浏览器校验产物（截图和 receipt），可随时重新生成
 /docs/*.visual-check.*
+/docs/**/*.visual-check.*

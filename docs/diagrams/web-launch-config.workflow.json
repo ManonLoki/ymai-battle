@@ -1,0 +1,279 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "网页参数怎么接管一次会话",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "read",
+        "label": "读一次",
+        "focus": [
+          "page",
+          "query",
+          "merge",
+          "snapshot"
+        ],
+        "note": "只在进树时读一次浏览器，之后全走快照。"
+      },
+      {
+        "id": "guard",
+        "label": "不可信输入",
+        "focus": [
+          "query",
+          "sanitize",
+          "snapshot"
+        ],
+        "note": "逐项抄、限长限量、非法项丢掉。"
+      },
+      {
+        "id": "effect",
+        "label": "影响到哪",
+        "focus": [
+          "snapshot",
+          "servers",
+          "menus"
+        ],
+        "note": "接管服务器列表，或者藏掉三个非核心入口。"
+      }
+    ],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "external": {
+          "label": "浏览器输入"
+        },
+        "backend": {
+          "label": "读取与合并"
+        },
+        "security": {
+          "label": "清洗"
+        },
+        "database": {
+          "label": "快照"
+        },
+        "frontend": {
+          "label": "受影响的界面"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "browser",
+      "label": "浏览器侧（不可信）",
+      "variant": "exception"
+    },
+    {
+      "id": "config",
+      "label": "WebLaunchConfig"
+    },
+    {
+      "id": "use",
+      "label": "谁受影响"
+    }
+  ],
+  "phases": [
+    {
+      "id": "collect",
+      "label": "收集",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "clean",
+      "label": "清洗并定格",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "apply",
+      "label": "生效",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "groups": [
+    {
+      "id": "untrusted",
+      "label": "页面随时可改，只信抄下来的那份",
+      "lane": "browser",
+      "fromCol": 0,
+      "toCol": 1,
+      "variant": "security"
+    }
+  ],
+  "mainPath": [
+    "enter",
+    "page",
+    "query",
+    "merge",
+    "sanitize",
+    "snapshot",
+    "servers"
+  ],
+  "nodes": [
+    {
+      "id": "page",
+      "lane": "browser",
+      "col": 0,
+      "type": "external",
+      "label": "页面全局对象",
+      "sublabel": "YMAIBattleConfig",
+      "width": 148
+    },
+    {
+      "id": "query",
+      "lane": "browser",
+      "col": 1,
+      "type": "external",
+      "label": "URL 查询串",
+      "sublabel": "重复同名键成数组",
+      "tag": "按字段覆盖",
+      "width": 152
+    },
+    {
+      "id": "enter",
+      "lane": "config",
+      "col": 0,
+      "type": "backend",
+      "label": "_enter_tree",
+      "sublabel": "仅 Web 导出执行",
+      "tag": "只读一次",
+      "width": 148
+    },
+    {
+      "id": "merge",
+      "lane": "config",
+      "col": 2,
+      "type": "backend",
+      "label": "逐字段合并",
+      "sublabel": "查询串盖过全局对象",
+      "width": 152
+    },
+    {
+      "id": "sanitize",
+      "lane": "config",
+      "col": 3,
+      "type": "security",
+      "label": "清洗",
+      "sublabel": "限长限量、丢非法项",
+      "tag": "最多 64 项",
+      "width": 148
+    },
+    {
+      "id": "snapshot",
+      "lane": "config",
+      "col": 4,
+      "type": "database",
+      "label": "GDScript 快照",
+      "sublabel": "之后只读它",
+      "tag": "无异步竞态",
+      "width": 148
+    },
+    {
+      "id": "servers",
+      "lane": "use",
+      "col": 5,
+      "type": "frontend",
+      "label": "服务器列表",
+      "sublabel": "设置页下拉框",
+      "tag": "只读不可增删",
+      "width": 148
+    },
+    {
+      "id": "menus",
+      "lane": "use",
+      "col": 4,
+      "type": "frontend",
+      "label": "主菜单入口",
+      "sublabel": "只隐藏，不删节点",
+      "tag": "对战关不掉",
+      "width": 148
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-page",
+      "from": "enter",
+      "to": "page",
+      "label": "读全局对象",
+      "variant": "default"
+    },
+    {
+      "id": "e-query",
+      "from": "page",
+      "to": "query",
+      "label": "再读查询串",
+      "variant": "default"
+    },
+    {
+      "id": "e-merge",
+      "from": "query",
+      "to": "merge",
+      "label": "两边合一",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-sanitize",
+      "from": "merge",
+      "to": "sanitize",
+      "label": "逐项抄成 GDScript 值",
+      "variant": "security"
+    },
+    {
+      "id": "e-snapshot",
+      "from": "sanitize",
+      "to": "snapshot",
+      "label": "定格",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-servers",
+      "from": "snapshot",
+      "to": "servers",
+      "label": "提供了 BaseURL 就接管",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-menus",
+      "from": "snapshot",
+      "to": "menus",
+      "label": "CloseMenu 命中就藏",
+      "variant": "default",
+      "role": "branch"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "网页是不可信输入",
+      "items": [
+        "JS 数组是跨引擎的活引用，页面随时能改，所以逐项抄成 GDScript 值再用",
+        "只留字符串项，数组封顶 64 项、地址封顶 2048 字符——否则等于让页面决定我们分配多少内存",
+        "地址只接受 http(s)://主机[:端口]，带路径、查询串或账号密码的一律丢掉"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "“没提供”和“提供了空的”不是一回事",
+      "items": [
+        "完全没有 BaseURL：回落到本地保存的服务器列表，设置页可以增删改",
+        "显式给了空数组（包括 ?BaseURL=）：本次会话就是空候选，不回落，也不能改",
+        "所以注入标记单独存一个布尔，不能靠“列表是不是空的”去猜"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "只隐藏，不删",
+      "items": [
+        "CloseMenu 只能关排行、设置、退出三个；对战是核心入口，故意不在可关名单里",
+        "保证三个可选入口全关掉时，页面仍有一个能进入且能拿焦点的操作",
+        "关掉的按钮是 visible=false，节点还在场景树上，测试因此能直接断言可见性"
+      ]
+    }
+  ]
+}

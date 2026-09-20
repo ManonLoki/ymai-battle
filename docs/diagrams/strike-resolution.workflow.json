@@ -1,0 +1,385 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "一次出手的判定阶梯",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "gates",
+        "label": "还能不能出手",
+        "focus": [
+          "poison",
+          "paralyze",
+          "heal",
+          "action"
+        ],
+        "note": "中毒、麻痹、治疗各自会把这一手整个吃掉。"
+      },
+      {
+        "id": "miss",
+        "label": "打不打得中",
+        "focus": [
+          "reflect",
+          "assassinate",
+          "lingbo",
+          "dodge",
+          "guard"
+        ],
+        "note": "闪避与无视闪避的两条通道，顺序即掷骰顺序。"
+      },
+      {
+        "id": "landed",
+        "label": "打中之后",
+        "focus": [
+          "damage",
+          "lifesteal",
+          "rebirth",
+          "after"
+        ],
+        "note": "伤害成形、吸血、复活，最后才是连击与还手。"
+      }
+    ],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "backend": {
+          "label": "判定步骤"
+        },
+        "security": {
+          "label": "打断 / 归零"
+        },
+        "cloud": {
+          "label": "无视闪避"
+        },
+        "messagebus": {
+          "label": "改变承受方"
+        },
+        "database": {
+          "label": "命中后的结算"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "pre",
+      "label": "这一手没造成伤害",
+      "variant": "exception"
+    },
+    {
+      "id": "main",
+      "label": "命中判定（主链）"
+    },
+    {
+      "id": "bypass",
+      "label": "无视闪避"
+    },
+    {
+      "id": "post",
+      "label": "命中之后"
+    }
+  ],
+  "phases": [
+    {
+      "id": "gate",
+      "label": "能不能出手",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "landing",
+      "label": "打不打得中",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "settle",
+      "label": "结算与收尾",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "groups": [
+    {
+      "id": "skip_group",
+      "label": "整手跳过",
+      "lane": "pre",
+      "fromCol": 0,
+      "toCol": 2,
+      "variant": "security"
+    }
+  ],
+  "mainPath": [
+    "action",
+    "reflect",
+    "dodge",
+    "guard",
+    "damage",
+    "after"
+  ],
+  "nodes": [
+    {
+      "id": "poison",
+      "lane": "pre",
+      "col": 0,
+      "type": "security",
+      "label": "中毒跳血",
+      "sublabel": "毒死就到此为止",
+      "width": 136
+    },
+    {
+      "id": "paralyze",
+      "lane": "pre",
+      "col": 1,
+      "type": "security",
+      "label": "麻痹",
+      "sublabel": "整手跳过",
+      "width": 136
+    },
+    {
+      "id": "heal",
+      "lane": "pre",
+      "col": 2,
+      "type": "security",
+      "label": "治疗",
+      "sublabel": "回血并进满闪",
+      "tag": "不进攻",
+      "width": 136
+    },
+    {
+      "id": "action",
+      "lane": "main",
+      "col": 0,
+      "type": "backend",
+      "label": "本手开始",
+      "sublabel": "清上手的激发与满闪",
+      "width": 140
+    },
+    {
+      "id": "reflect",
+      "lane": "main",
+      "col": 1,
+      "type": "messagebus",
+      "label": "反弹链",
+      "sublabel": "换承受方，最多 16 次",
+      "tag": "落地必中",
+      "width": 148
+    },
+    {
+      "id": "dodge",
+      "lane": "main",
+      "col": 2,
+      "type": "backend",
+      "label": "闪避判定",
+      "sublabel": "命中骰 vs 命中率",
+      "width": 140
+    },
+    {
+      "id": "guard",
+      "lane": "main",
+      "col": 3,
+      "type": "security",
+      "label": "绝对防御",
+      "sublabel": "打中但伤害归零",
+      "width": 140
+    },
+    {
+      "id": "damage",
+      "lane": "main",
+      "col": 4,
+      "type": "backend",
+      "label": "伤害成形",
+      "sublabel": "暴击 × 增伤 × 减伤",
+      "tag": "至少 1 点",
+      "width": 148
+    },
+    {
+      "id": "after",
+      "lane": "main",
+      "col": 5,
+      "type": "messagebus",
+      "label": "连击与还手",
+      "sublabel": "按刀序逐一回敬",
+      "width": 140
+    },
+    {
+      "id": "assassinate",
+      "lane": "bypass",
+      "col": 2,
+      "type": "cloud",
+      "label": "幻影刺杀",
+      "sublabel": "1% 掷中",
+      "tag": "无视闪避",
+      "width": 136
+    },
+    {
+      "id": "lingbo",
+      "lane": "pre",
+      "col": 3,
+      "type": "cloud",
+      "label": "凌波微步",
+      "sublabel": "闪开并必中还手",
+      "width": 140
+    },
+    {
+      "id": "lifesteal",
+      "lane": "post",
+      "col": 4,
+      "type": "database",
+      "label": "吸血",
+      "sublabel": "按命中当量折算",
+      "width": 136
+    },
+    {
+      "id": "rebirth",
+      "lane": "post",
+      "col": 5,
+      "type": "database",
+      "label": "浴火重生",
+      "sublabel": "复活并弃掉这张牌",
+      "width": 140
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-poison",
+      "from": "action",
+      "to": "poison",
+      "label": "带毒",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "e-paralyze",
+      "from": "poison",
+      "to": "paralyze",
+      "label": "活下来但麻痹",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "e-heal",
+      "from": "paralyze",
+      "to": "heal",
+      "label": "能治疗且掷中",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "e-swing",
+      "from": "action",
+      "to": "reflect",
+      "label": "可以出手",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-land",
+      "from": "reflect",
+      "to": "dodge",
+      "label": "确定谁挨打",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-assassin",
+      "from": "reflect",
+      "to": "assassinate",
+      "label": "主动刀才掷",
+      "variant": "default",
+      "role": "branch"
+    },
+    {
+      "id": "e-lingbo",
+      "from": "dodge",
+      "to": "lingbo",
+      "label": "掷中则闪开",
+      "variant": "default",
+      "role": "branch"
+    },
+    {
+      "id": "e-hit",
+      "from": "dodge",
+      "to": "guard",
+      "label": "打中了",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-bypass",
+      "from": "assassinate",
+      "to": "guard",
+      "label": "跳过闪避，仍要过防御",
+      "variant": "emphasis",
+      "role": "branch"
+    },
+    {
+      "id": "e-damage",
+      "from": "guard",
+      "to": "damage",
+      "label": "没挡住",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-steal",
+      "from": "damage",
+      "to": "lifesteal",
+      "label": "带吸血",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "e-rebirth",
+      "from": "lifesteal",
+      "to": "rebirth",
+      "label": "对方掉到 0",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "e-after",
+      "from": "damage",
+      "to": "after",
+      "label": "这一刀结算完",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-counter",
+      "from": "lingbo",
+      "to": "after",
+      "label": "凌波必还一手",
+      "variant": "default",
+      "role": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "顺序就是掷骰顺序，不能调",
+      "items": [
+        "每个判定都是一次 rng 调用，换一下先后次序就等于换掉所有定种子测试的结果",
+        "概率为 0 时统一不掷骰（由 _rolls 守着），否则空技能位也会悄悄消耗随机数",
+        "蒙特卡洛标定出来的胜率常数也钉在这个顺序上，改顺序要重新跑回归"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "“必中”只有两条路",
+      "items": [
+        "幻影刺杀掷中后无视闪避，但仍要过绝对防御——它免的是闪，不是挡",
+        "反弹链一旦落地，这一包伤害对最终承受方必中：不再闪、不凌波、不吃治疗满闪",
+        "命中骰即使注定被无视也照掷，队列里留着那个点数，测试才证得出“本会闪掉”"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "伤害跟谁走",
+      "items": [
+        "基准血量按原目标算，暴击和增伤跟进攻者，减伤跟最终承受方",
+        "减伤最多吃到 90%，再高也保证至少打掉 1 点，不会变成挠痒痒",
+        "吸血先把这一击折成“相当于自己多少次普通命中”再按比例回，防止打小号回巨款"
+      ]
+    }
+  ]
+}

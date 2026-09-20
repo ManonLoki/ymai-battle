@@ -1,0 +1,199 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "车轮战的一生：开场、换人、终局",
+    "locale": "zh-CN",
+    "viewBox": [
+      1030,
+      566
+    ],
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "setup",
+        "label": "开场定型",
+        "focus": [
+          "setup",
+          "grant",
+          "ongoing"
+        ],
+        "note": "名单一进来就定死：擂主是谁、发几张牌、目标胜率多少。"
+      },
+      {
+        "id": "turn",
+        "label": "一个回合",
+        "focus": [
+          "ongoing",
+          "swap"
+        ],
+        "note": "挑战者永远先手，擂主还活着才还手。"
+      },
+      {
+        "id": "end",
+        "label": "两种终局",
+        "focus": [
+          "ongoing",
+          "champion_down",
+          "all_down"
+        ],
+        "note": "擂主倒下，或者队列排空。"
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "主状态"
+    },
+    {
+      "id": "prep",
+      "label": "回合之间"
+    },
+    {
+      "id": "exit",
+      "label": "终局"
+    }
+  ],
+  "states": [
+    {
+      "id": "setup",
+      "type": "start",
+      "label": "组场",
+      "sublabel": "榜首当擂主",
+      "lane": "main",
+      "col": 0,
+      "step": "01",
+      "tag": "其余人洗牌"
+    },
+    {
+      "id": "grant",
+      "type": "neutral",
+      "label": "发牌与标定",
+      "sublabel": "SkillGrant + 胜率反解",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "tag": "只做一次"
+    },
+    {
+      "id": "ongoing",
+      "type": "active",
+      "label": "ONGOING",
+      "sublabel": "一回合一回合推进",
+      "lane": "main",
+      "col": 2,
+      "step": "03",
+      "tag": "唯一活动态"
+    },
+    {
+      "id": "all_down",
+      "type": "success",
+      "label": "ALL_OPPONENTS_DOWN",
+      "sublabel": "擂主守住了",
+      "lane": "main",
+      "col": 4,
+      "step": "04",
+      "tag": "擂主胜"
+    },
+    {
+      "id": "swap",
+      "type": "waiting",
+      "label": "换人上场",
+      "sublabel": "队列弹出下一位",
+      "lane": "prep",
+      "col": 0,
+      "tag": "擂主不回血"
+    },
+    {
+      "id": "champion_down",
+      "type": "failure",
+      "label": "CHAMPION_DOWN",
+      "sublabel": "擂主被打下去了",
+      "lane": "exit",
+      "col": 1,
+      "tag": "挑战者胜"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t-grant",
+      "from": "setup",
+      "to": "grant",
+      "label": "先发牌",
+      "variant": "default",
+      "labelDy": -34
+    },
+    {
+      "id": "t-start",
+      "from": "grant",
+      "to": "ongoing",
+      "label": "第一位上场",
+      "variant": "emphasis",
+      "labelDy": -34
+    },
+    {
+      "id": "t-turn",
+      "from": "ongoing",
+      "to": "swap",
+      "label": "这位倒下了",
+      "variant": "default",
+      "labelDx": -52,
+      "labelDy": 22
+    },
+    {
+      "id": "t-next",
+      "from": "swap",
+      "to": "ongoing",
+      "label": "下一位顶上",
+      "variant": "emphasis",
+      "labelDx": -52,
+      "labelDy": -22
+    },
+    {
+      "id": "t-win",
+      "from": "ongoing",
+      "to": "all_down",
+      "label": "队列排空",
+      "variant": "emphasis",
+      "route": "straight",
+      "labelDy": -34
+    },
+    {
+      "id": "t-lose",
+      "from": "ongoing",
+      "to": "champion_down",
+      "label": "擂主血尽",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "开场就把这一场定型了",
+      "items": [
+        "擂主耐打度 = 每场标准命中数 × 挑战者人数，所以两边需要的有效命中总数相等",
+        "胜率先按人均战力比算出目标，再反解成几个百分点的命中率偏移喂给每一次判定",
+        "偏移要扣掉擂主多带的 buff 当量和多摸的技能张数，否则多开 agent 等于白嫖胜率"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "回合里谁先动",
+      "items": [
+        "挑战者永远先手；擂主只有还活着才还手，所以先手方偶尔能抢到一个回合的便宜",
+        "挑战者可能死在自己的毒或混乱自伤上，这种情况擂主这回合不再出手，直接换人",
+        "换人不给擂主回血——他那条血条要从第一位一路扛到最后一位"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "只有两个出口",
+      "items": [
+        "ONGOING 是唯一的活动状态，胜负判定收在 WheelWar 里，场景脚本不自己比 outcome",
+        "擂主倒下立刻结束，哪怕队列里还有人没上场",
+        "队列排空即擂主守住全场；空名单时 outcome 留在 ONGOING，由调用方按人数拦下"
+      ]
+    }
+  ]
+}

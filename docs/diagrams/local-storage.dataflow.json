@@ -1,0 +1,238 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "本地存档：两份 JSON 和一条跨天规则",
+    "locale": "zh-CN",
+    "viewBox": [
+      1072,
+      540
+    ],
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "policy",
+        "label": "读写策略",
+        "focus": [
+          "store",
+          "settings_file",
+          "record_file"
+        ],
+        "note": "任何一步不对都当作没有存档，绝不让游戏打不开。"
+      },
+      {
+        "id": "rollover",
+        "label": "跨天",
+        "focus": [
+          "clock",
+          "record",
+          "board"
+        ],
+        "note": "日期一换整份作废，不做增量迁移。"
+      },
+      {
+        "id": "settings",
+        "label": "设置项",
+        "focus": [
+          "settings_file",
+          "prefs"
+        ],
+        "note": "三类设置共用一个文件，各存各的键。"
+      }
+    ],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "emphasis": {
+          "label": "主链路"
+        },
+        "default": {
+          "label": "次要流向"
+        },
+        "security": {
+          "label": "受控读写 / 作废"
+        },
+        "database": {
+          "label": "磁盘数据"
+        }
+      }
+    }
+  },
+  "stages": [
+    {
+      "label": "磁盘"
+    },
+    {
+      "label": "统一读写"
+    },
+    {
+      "label": "领域对象"
+    },
+    {
+      "label": "谁在用"
+    },
+    {
+      "label": "何时作废"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "record_file",
+      "type": "database",
+      "label": "daily_rounds.json",
+      "sublabel": "user:// 私有目录",
+      "stage": 0,
+      "row": 0,
+      "tag": "当天战绩",
+      "width": 150
+    },
+    {
+      "id": "settings_file",
+      "type": "database",
+      "label": "settings.json",
+      "sublabel": "user:// 私有目录",
+      "stage": 0,
+      "row": 2,
+      "tag": "偏好设置",
+      "width": 150
+    },
+    {
+      "id": "store",
+      "type": "security",
+      "label": "JsonStore",
+      "sublabel": "read / patch / write",
+      "stage": 1,
+      "row": 1,
+      "tag": "坏了就当空",
+      "width": 146
+    },
+    {
+      "id": "record",
+      "type": "backend",
+      "label": "RoundRecord",
+      "sublabel": "场次 + 榜一战绩",
+      "stage": 2,
+      "row": 0,
+      "tag": "带日期",
+      "width": 148
+    },
+    {
+      "id": "prefs",
+      "type": "backend",
+      "label": "AppSettings",
+      "sublabel": "窗口 / 音量 / 服务器",
+      "stage": 2,
+      "row": 2,
+      "tag": "按键分别存",
+      "width": 152
+    },
+    {
+      "id": "board",
+      "type": "frontend",
+      "label": "右侧战绩榜",
+      "sublabel": "每场打完就刷新",
+      "stage": 3,
+      "row": 0,
+      "tag": "立刻落盘",
+      "width": 144
+    },
+    {
+      "id": "clock",
+      "type": "cloud",
+      "label": "DayClock",
+      "sublabel": "今天是哪天",
+      "stage": 4,
+      "row": 0,
+      "tag": "每次现取",
+      "width": 140
+    }
+  ],
+  "flows": [
+    {
+      "id": "f-record-read",
+      "from": "record_file",
+      "to": "store",
+      "label": "读一份字典",
+      "classification": "读不出来给空字典"
+    },
+    {
+      "id": "f-settings-read",
+      "from": "settings_file",
+      "to": "store",
+      "label": "合并式写回",
+      "classification": "不抹别人的键"
+    },
+    {
+      "id": "f-to-record",
+      "from": "store",
+      "to": "record",
+      "label": "还原当天战绩",
+      "classification": "单条坏了只跳这条",
+      "variant": "emphasis",
+      "labelAt": [
+        422,
+        200
+      ]
+    },
+    {
+      "id": "f-to-prefs",
+      "from": "store",
+      "to": "prefs",
+      "label": "还原偏好",
+      "classification": "缺项用默认值",
+      "labelAt": [
+        421,
+        428
+      ]
+    },
+    {
+      "id": "f-board",
+      "from": "record",
+      "to": "board",
+      "label": "刷新榜单",
+      "classification": "写盘后立即重画",
+      "variant": "emphasis",
+      "labelAt": [
+        639,
+        200
+      ]
+    },
+    {
+      "id": "f-rollover",
+      "from": "board",
+      "to": "clock",
+      "label": "跨天了吗",
+      "classification": "整份作废重来",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "读写只有一条策略",
+      "items": [
+        "文件不在、权限不足、不是合法 JSON、解析出来不是字典——一律回落到空字典",
+        "这条以前在战绩和设置里各写了一遍，改一处漏一处，所以收进 JsonStore",
+        "写不进去（磁盘满、只读目录）只回报 false，不打断游戏；要不要警告由调用方决定"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "settings.json 是共用的",
+      "items": [
+        "窗口模式、两个音量、服务器列表和当前选择全在同一个文件里，各占各的键",
+        "所以存设置一律走 patch_dict 合并写回，直接 write_dict 会把别人的项抹掉",
+        "音量还要先夹回 0–1：NaN 或无穷会一路传到 AudioServer 把总线彻底搞哑"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "跨天是整份作废，不是迁移",
+      "items": [
+        "存档里带着日期，读的时候日期对不上就直接返回一份空记录",
+        "对战页会通宵开着，所以每轮开打前都问一次 DayClock，不在 _ready 里算一次存着",
+        "请求可能午夜前发出、午夜后返回，最终以接口返回的 date 为准校准，不按本地时刻"
+      ]
+    }
+  ]
+}
