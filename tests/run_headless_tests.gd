@@ -2020,6 +2020,9 @@ func _test_main_menu() -> void:
 		_assert(line.find("*.ogg") >= 0, "export include_filter includes *.ogg: %s" % line)
 		_assert(line.find("*.wav") >= 0, "export include_filter includes *.wav: %s" % line)
 	_assert(include_filters >= 1, "export_presets.cfg declares include_filter lines")
+	var presets_text := FileAccess.get_file_as_string("res://export_presets.cfg")
+	for preset_name in ["Windows Desktop", "macOS", "Android", "Web", "Web Embedded"]:
+		_assert(presets_text.find("name=\"%s\"" % preset_name) >= 0, "export_presets.cfg has preset %s" % preset_name)
 	_assert(ranking_script.find("application/config/version") >= 0, "the version is read from project settings, not hard-coded")
 	main.queue_free()
 	await process_frame
