@@ -39,10 +39,8 @@ mouse_cursor/custom_image_hotspot=Vector2(1, 1)
 
 [gui]
 
-; 全局 UI 主题：字体、按钮、输入框、滑块、面板样式都在这一份资源里，
-; 每个场景（含运行时新建的控件）自动套用，不需要任何运行时 add_theme_*_override。
-theme/custom="res://assets/ui_theme.tres"
 timers/tooltip_delay_sec=0.0
+theme/custom="res://assets/ui_theme.tres"
 
 [physics]
 
