@@ -197,6 +197,13 @@ def main() -> int:
                     "the locked bridge patch requires Godot 4.7.2.stable; "
                     f"found {version}"
                 )
+            # Godot 导出后会把手改过的过滤器刷回模板默认，所以每次导出前先对齐
+            # 一次「什么不进包」的策略（Android 的构建脚本走的是同一个脚本）。
+            subprocess.run(
+                [sys.executable, str(PROJECT_ROOT / "tools" / "fix_android_preset.py"),
+                 str(PROJECT_ROOT / "export_presets.cfg")],
+                check=True,
+            )
             for preset, output, _embedded in EXPORTS:
                 _export(godot, preset, output)
 
