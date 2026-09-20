@@ -94,8 +94,6 @@ func _refresh_mode_description() -> void:
 
 
 func _on_mode_selected(index: int) -> void:
-	if index < 0 or index >= %ModeSelect.item_count:
-		return
 	_mode = AppSettings.sanitize_mode(int(%ModeSelect.get_item_metadata(index)))
 	# 先存后应用：万一 apply 在某个平台上出岔子，选择也已经落盘了。
 	AppSettings.save_mode(_mode, settings_path)

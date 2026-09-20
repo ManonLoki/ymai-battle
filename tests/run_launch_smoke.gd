@@ -78,7 +78,7 @@ func _run() -> void:
 		quit(1)
 		return
 	var battle_backdrop := battle.get_node_or_null("%BattleBackground") as BattleParallax
-	if battle_backdrop == null or battle_backdrop.texture == null or BattleParallax.BACKGROUND_PATHS.size() != 18:
+	if battle_backdrop == null or battle_backdrop.texture == null or BattleParallax.BACKGROUND_PATHS.size() != BattleParallax.BACKGROUND_TEXTURES.size() or BattleParallax.BACKGROUND_PATHS.is_empty():
 		printerr("BATTLE_BACKGROUNDS_MISSING")
 		quit(1)
 		return

@@ -83,7 +83,13 @@ def patch_source(source: str) -> str:
 
 
 def verify_source(source: str) -> None:
-    """Verify the complete hardened bridge, not just individual keywords."""
+    """Verify the generated bridge is byte-identical to the locked hardened one.
+
+    The hardening rules themselves (redirect:"error", the AbortController, the
+    reader/stream cancels) are properties of PATCHED_GODOT_FETCH, so they are
+    asserted once over that constant in tests/test_web_fetch_bridge.py instead
+    of being re-sniffed here after the equality check already passed.
+    """
 
     bridge = extract_bridge(source)
     if bridge != PATCHED_GODOT_FETCH:
@@ -92,19 +98,6 @@ def verify_source(source: str) -> None:
             "generated GodotFetch bridge is not the locked hardened bridge "
             f"(sha256 {digest})"
         )
-    required = (
-        'redirect:"error"',
-        "new AbortController()",
-        "signal:controller.signal",
-        "obj.reader.cancel()",
-        "obj.controller.abort()",
-        "response.body.cancel()",
-    )
-    missing = [fragment for fragment in required if fragment not in bridge]
-    if missing:
-        raise BridgePatchError(f"hardened bridge is missing: {', '.join(missing)}")
-    if "response.abort()" in bridge:
-        raise BridgePatchError("obsolete non-existent Response.abort() remains")
 
 
 def patch_file(path: Path) -> None:

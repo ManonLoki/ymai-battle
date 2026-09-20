@@ -42,7 +42,7 @@ static func new_http_request() -> HTTPRequest:
 ## 不能混成普通“网络失败”，否则界面上看不出安全边界真的生效了。
 static func transport_error_message(result: int) -> String:
 	if result == HTTPRequest.RESULT_BODY_SIZE_LIMIT_EXCEEDED:
-		return "响应体超过 8 MiB 限制"
+		return "响应体超过 %d MiB 限制" % (MAX_RESPONSE_BYTES / 1024 / 1024)
 	if result == HTTPRequest.RESULT_REDIRECT_LIMIT_REACHED:
 		return "服务器返回了重定向，已拒绝"
 	return "网络失败（result=%d）" % result

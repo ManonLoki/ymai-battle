@@ -10,15 +10,15 @@ extends RefCounted
 
 ## 立绘边长，正方形。
 const SIZE := 32
-## 已注册的 canonical 形象总数，合法绘制编号是 0~21。
-const REGISTERED_COUNT := 22
 ## 最初 0~7 号只保留差异最大的瘦高长枪（4）和壮汉大锤（5）；
 ## 8~21 号后续形象全部保留。0~3、6、7 仅用于旧数据绘制兼容。
-## GDScript 的 const 初始化不能从 Array.size() 推导，所以修改本表时必须同步 COUNT。
+## **这是唯一一份可选名单**：数量由 _static_init 现算，加减形象只改这里。
 const SELECTABLE_IDS: Array[int] = [4, 5, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
 ## 对外的“形象数量”始终指新角色有效可选数，不包含仅供旧数据绘制的 canonical ID。
-const COUNT := 16
-const SELECTABLE_COUNT := COUNT
+static var COUNT: int
+## 已注册的 canonical 形象总数，合法绘制编号是 0~(REGISTERED_COUNT - 1)。
+## 调色板表是它唯一的来源：能画的形象必须有配色，两者天然同长。
+static var REGISTERED_COUNT: int
 ## 0~3 这四个是最初的同款人形（只有配色不同）。
 const ORIGINAL_HUMANS := 4
 ## 原有动物形象起点；8~11 是猫、狗、鸟、兔。
@@ -64,11 +64,18 @@ const PALETTES := [
 ]
 
 
+## 两个数量都从各自唯一的清单现算，进程启动时一次建好。
+static func _static_init() -> void:
+	COUNT = SELECTABLE_IDS.size()
+	REGISTERED_COUNT = PALETTES.size()
+
+
 ## 单人创建时的兼容兜底。正式开战会由 assign_appearance_ids 按完整名单重新均衡分配，
-## 这里也必须只落进可选池，避免其他调用方重新抽到 0~3、6、7。
+## 兜底也直接走同一套分配算法：全项目只有一条“用户名 -> 形象”的规则，
+## 单人名单必然落在自己的哈希起点上，也不会抽到 0~3、6、7。
 static func fallback_appearance_id(username: String) -> int:
-	var pool_index := posmod((username + "|appearance_fallback").hash(), SELECTABLE_COUNT)
-	return int(SELECTABLE_IDS[pool_index])
+	var only: Array[String] = [username]
+	return int(assign_appearance_ids(only)[username])
 
 
 ## 给整份名单做确定性的均衡分配，返回 username -> canonical ID。
@@ -88,20 +95,19 @@ static func assign_appearance_ids(usernames: Array[String]) -> Dictionary:
 	unique_names.sort()
 
 	var usage: Array[int] = []
-	usage.resize(SELECTABLE_COUNT)
+	usage.resize(COUNT)
 	usage.fill(0)
 	var assignments: Dictionary = {}
 	for username in unique_names:
-		var least_used := usage[0]
-		for count in usage:
-			least_used = mini(least_used, count)
+		var least_used: int = usage.min()
 
-		var start := posmod((username + "|appearance_start").hash(), SELECTABLE_COUNT)
-		# 池大小是 16，奇数与 16 互质，所以无论哈希结果为何都能完整探测全池。
-		var step := posmod((username + "|appearance_step").hash(), SELECTABLE_COUNT >> 1) * 2 + 1
+		var start := posmod((username + "|appearance_start").hash(), COUNT)
+		# 池大小是 2 的幂（16），任何奇数都与它互质，所以无论哈希结果为何都能完整探测全池。
+		# 下面那个 chosen_index < 0 的兜底就是给「以后池子改成非 2 的幂」留的。
+		var step := posmod((username + "|appearance_step").hash(), COUNT >> 1) * 2 + 1
 		var chosen_index := -1
-		for offset in range(SELECTABLE_COUNT):
-			var pool_index := posmod(start + offset * step, SELECTABLE_COUNT)
+		for offset in range(COUNT):
+			var pool_index := posmod(start + offset * step, COUNT)
 			if usage[pool_index] == least_used:
 				chosen_index = pool_index
 				break
@@ -113,8 +119,19 @@ static func assign_appearance_ids(usernames: Array[String]) -> Dictionary:
 	return assignments
 
 
+## 画好的立绘按 (形象, 姿势, 王冠) 缓存。每张图都是逐像素 set_pixel 堆出来的，
+## 而形象由用户名确定性地算出来，每轮换人上场都会重复要同一批图；电视那边是
+## armv7 CPU，重画纯属浪费。最多 REGISTERED_COUNT × 3 姿势 × 2 种王冠张
+## 32×32，满打满算几百 KB。ImageTexture 画完就不再改，多个 Sprite2D 共用没问题。
+static var _texture_cache: Dictionary = {}
+
+
 ## 画一张立绘。pose 取 "idle" / "attack" / "hurt"，crowned 决定加不加王冠（擂主）。
 static func make_texture(appearance_id: int, pose: String = "idle", crowned: bool = false) -> Texture2D:
+	var cache_key := "%d|%s|%d" % [appearance_id, pose, int(crowned)]
+	var cached: Texture2D = _texture_cache.get(cache_key)
+	if cached != null:
+		return cached
 	var image := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
 	# 全透明打底，没画到的地方就是镂空。
 	image.fill(Color(0, 0, 0, 0))
@@ -168,7 +185,9 @@ static func make_texture(appearance_id: int, pose: String = "idle", crowned: boo
 	# 王冠最后画，盖在头顶上。
 	if crowned:
 		_draw_crown(image, lean)
-	return ImageTexture.create_from_image(image)
+	var texture := ImageTexture.create_from_image(image)
+	_texture_cache[cache_key] = texture
+	return texture
 
 
 ## 画一个像素，越界的直接丢掉——各 _draw_* 里的坐标加上 lean 之后可能出界。

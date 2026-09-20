@@ -69,11 +69,10 @@ static func _rank_color(rank: int) -> Color:
 
 ## 前三名显示金银铜奖牌纹理；之后只保留同宽、居中的纯数字名次。
 static func _medal(rank: int) -> Control:
-	var texture := ThemeHelper.medal_texture(rank)
-	if texture != null:
+	if ThemeHelper.has_medal(rank):
 		var medal := TextureRect.new()
 		medal.custom_minimum_size = Vector2(BADGE_PX, BADGE_PX)
-		medal.texture = texture
+		medal.texture = ThemeHelper.medal_texture(rank)
 		medal.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		medal.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		medal.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST

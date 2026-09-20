@@ -150,7 +150,7 @@ func _round_loop() -> void:
 			return
 		%ReplayButton.disabled = false
 		%ReplayButton.grab_focus()
-		await _countdown(NEXT_ROUND_DELAY, "再战" if fought else "重试")
+		await _countdown(NEXT_ROUND_DELAY, _replay_action(fought))
 		if not _is_live():
 			return
 		%ReplayButton.disabled = true
@@ -186,7 +186,19 @@ func _countdown(seconds: float, action_text: String) -> void:
 	_waiting_for_replay = false
 	_replay_requested = false
 	if _is_live():
-		%ReplayButton.text = "再战"
+		%ReplayButton.text = action_text
+
+
+## 到点之后是“再战”还是“重试”：打起来了就是再战，没打起来（拉取失败等）是重试。
+## 按钮和结果面板提示都问它，免得同一个词在三处各写一份。
+static func _replay_action(fought: bool) -> String:
+	return "再战" if fought else "重试"
+
+
+## 结果面板下面那行等待提示。秒数直接从 NEXT_ROUND_DELAY 算，
+## 改间隔不会留下两句对不上的文案。
+static func _replay_hint(action_text: String) -> String:
+	return "%d 秒后自动%s，也可立即点击按钮" % [int(NEXT_ROUND_DELAY), action_text]
 
 
 ## 跨天之后把当天战绩换成新一天的（场次归零、榜一战绩清空），并刷新右侧榜。
@@ -492,7 +504,7 @@ func _show_notice(text: String) -> void:
 	%ResultLabel.text = text
 	%ResultLabel.add_theme_color_override("font_color", ThemeHelper.DANGER)
 	%MvpLabel.text = ""
-	%ReplayHintLabel.text = "1 分钟后自动重试，也可立即点击按钮"
+	%ReplayHintLabel.text = _replay_hint(_replay_action(false))
 
 
 ## 一场打完：亮结果、记战绩、评 MVP。
@@ -510,6 +522,6 @@ func _show_result() -> void:
 	var mvp_line := CombatLog.mvp_line(_tally.best())
 	%MvpLabel.text = mvp_line
 	%MvpLabel.add_theme_color_override("font_color", ThemeHelper.GOLD)
-	%ReplayHintLabel.text = "1 分钟后自动再战，也可立即点击按钮"
+	%ReplayHintLabel.text = _replay_hint(_replay_action(true))
 	_append_log(mvp_line)
 	_update_hud()

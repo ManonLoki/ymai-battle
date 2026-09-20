@@ -48,6 +48,7 @@ class WebFetchBridgeTests(unittest.TestCase):
         self.assertIn("signal:controller.signal", bridge)
         self.assertIn("obj.reader.cancel()", bridge)
         self.assertIn("obj.controller.abort()", bridge)
+        self.assertIn("response.body.cancel()", bridge)
         self.assertNotIn("response.abort()", bridge)
 
     def test_changed_upstream_bridge_fails_closed(self) -> None:

@@ -1862,7 +1862,11 @@ func _test_battle_and_ranking_backgrounds() -> void:
 	for expected_path in expected_active_paths:
 		_assert(BattleParallax.BACKGROUND_PATHS.has(expected_path), "active battle pool includes: %s" % expected_path.get_file())
 	for retired_path in retired_paths:
-		_assert(not BattleParallax.BACKGROUND_PATHS.has(retired_path), "retired battle background stays out of the active pool: %s" % retired_path.get_file())
+		# 只比对 retired/ 路径等于没查：池子里的路径本来就不带 retired/。
+		# 真正会复发的是有人把淘汰图挪回活动目录再 preload 一次，所以按活动路径查。
+		var active_path := "res://assets/battle_backgrounds/%s" % retired_path.get_file()
+		_assert(not FileAccess.file_exists(active_path), "retired battle background stays out of the active directory: %s" % retired_path.get_file())
+		_assert(not BattleParallax.BACKGROUND_PATHS.has(active_path), "retired battle background stays out of the active pool: %s" % retired_path.get_file())
 	var unique_paths := {}
 	var images: Array[Image] = []
 	for path in BattleParallax.BACKGROUND_PATHS:
@@ -2594,7 +2598,7 @@ func _test_icons_and_layout() -> void:
 func _test_appearances_and_crown() -> void:
 	var expected_selectable: Array[int] = [4, 5, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
 	_assert(SpriteFactory.REGISTERED_COUNT == 22, "all canonical renderers remain registered for compatibility")
-	_assert(SpriteFactory.COUNT == 16 and SpriteFactory.SELECTABLE_COUNT == 16, "selectable pool contains exactly sixteen appearances")
+	_assert(SpriteFactory.COUNT == 16, "selectable pool contains exactly sixteen appearances")
 	_assert(SpriteFactory.SELECTABLE_IDS == expected_selectable, "only canonical 4/5 survive from the first eight")
 	for retired_id in [0, 1, 2, 3, 6, 7]:
 		for pose in ["idle", "attack", "hurt"]:
@@ -2603,7 +2607,6 @@ func _test_appearances_and_crown() -> void:
 			_assert(not FileAccess.file_exists(plain_path) and not FileAccess.file_exists(crown_path), "retired appearance %d has no exported %s assets" % [retired_id, pose])
 	_assert(SpriteFactory.NEW_APPEARANCE_START == 12, "new appearance ids start after the original 12")
 	_assert(SpriteFactory.REGISTERED_COUNT - SpriteFactory.NEW_APPEARANCE_START == 10, "exactly 10 new appearances are registered")
-	_assert(SpriteFactory.PALETTES.size() == SpriteFactory.REGISTERED_COUNT, "every registered appearance has a palette")
 
 	# 用三个姿势的透明轮廓 XOR 复算“差异最大”，避免池子是凭主观挑的。
 	var first_eight_masks: Array[Array] = []

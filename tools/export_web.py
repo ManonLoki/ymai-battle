@@ -84,7 +84,7 @@ def verify_export(output: Path, embedded: bool) -> str:
             missing = sorted(EMBEDDED_FILES - names)
             extra = sorted(names - EMBEDDED_FILES)
             raise ExportVerificationError(
-                "embedded export must contain exactly 9 files; "
+                f"embedded export must contain exactly {len(EMBEDDED_FILES)} files; "
                 f"missing={missing}, extra={extra}"
             )
     else:
@@ -105,16 +105,6 @@ def verify_export(output: Path, embedded: bool) -> str:
             )
         if config.get("gdextensionLibs") != []:
             raise ExportVerificationError("embedded export contains GDExtension libraries")
-        forbidden_suffixes = (
-            ".service.worker.js",
-            ".manifest.json",
-            ".offline.html",
-            ".side.wasm",
-        )
-        if any(name.endswith(forbidden_suffixes) for name in names):
-            raise ExportVerificationError(
-                "embedded export contains PWA, service-worker, or side-module files"
-            )
     else:
         if not threads_enabled:
             raise ExportVerificationError("standard Web export unexpectedly disables threads")

@@ -38,32 +38,29 @@ const FOCUS_BORDER := 3
 const BUTTON_MIN_SIZE := Vector2(220, 48)
 ## 次级“返回”按钮的最小尺寸，比主按钮小一圈。各场景套完 style_button 再盖这个。
 const BACK_BUTTON_MIN_SIZE := Vector2(120, 40)
-## 战绩榜上挂奖牌的名次上限，medal_color 的分档也按它来。
-const MEDAL_RANKS := 3
+## 战绩榜的奖牌档位，从第一名往下排。**这是唯一一份清单**：
+## 有没有牌、什么颜色、配哪张图全从它算，加减档位只改这里。
+const MEDALS := [
+	{"color": GOLD, "texture": MEDAL_GOLD},
+	{"color": SILVER, "texture": MEDAL_SILVER},
+	{"color": BRONZE, "texture": MEDAL_BRONZE},
+]
 
-## 这个名次有没有奖牌。挑底色、字色的地方都问它，
+## 这个名次有没有奖牌。挑底色、字色、图的地方都问它，
 ## 免得每个调用方各自记一遍“前三名”这个边界。
 static func has_medal(rank: int) -> bool:
-	return rank <= MEDAL_RANKS
+	return rank >= 1 and rank <= MEDALS.size()
 
 
-## 战绩榜前三的奖牌色，第 1/2/3 名分别是金银铜；之后的没有牌。
+## 有牌的名次按档次取金银铜；之后的用次要文字色。
 static func medal_color(rank: int) -> Color:
-	match rank:
-		1: return GOLD
-		2: return SILVER
-		3: return BRONZE
-		_: return MUTED
+	return MEDALS[rank - 1]["color"] if has_medal(rank) else MUTED
 
 
-## 前三名的奖牌图。和 medal_color 一样按 MEDAL_RANKS 分档，
-## 免得调用方另记一份「第几名配哪张图」的表。没有牌的名次返回 null。
+## 有牌的名次取对应奖牌图，免得调用方另记一份「第几名配哪张图」的表。
+## 没有牌的名次返回 null。
 static func medal_texture(rank: int) -> Texture2D:
-	match rank:
-		1: return MEDAL_GOLD
-		2: return MEDAL_SILVER
-		3: return MEDAL_BRONZE
-		_: return null
+	return MEDALS[rank - 1]["texture"] if has_medal(rank) else null
 
 
 ## 给一棵控件子树套上统一字体。Theme 会往下继承，所以只要套在根上。
