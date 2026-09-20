@@ -3,10 +3,12 @@ extends Node
 ## 对战场景：拉取当日用量 → 组一场车轮战 → 逐条事件播动画和战报。
 ## 所有胜负判定都在 WheelWar / CombatResolver 里，这里只负责演出。
 ##
-## 进场只拉一次名单；打完或加载失败后停在结果面板，只有玩家明确按“再战”才
-## 重新请求。这样嵌入页面留在后台时不会每 60 秒轮询或在失败后循环重试。
+## 一场结束或加载失败后等待 60 秒自动再战；结果面板上的按钮同时显示倒计时，
+## 玩家也可以随时点击它跳过等待。每轮开始前都会重新读取当天名单。
 
 const MAIN_SCENE := "res://scenes/main.tscn"
+## 一场打完之后隔多久自动开下一轮。拉名单失败时也按这个间隔重试。
+const NEXT_ROUND_DELAY := 60.0
 ## 人数不够时的说明，状态栏和结果面板用的是同一句。
 const SHORT_ROSTER_MSG := "上榜人数不足，无法开战（需要至少 2 人）"
 ## 每条战报事件之间的停顿，太快看不清、太慢一场打不完。
@@ -25,8 +27,12 @@ var _record: RoundRecord
 @onready var _opponent_view: FighterView = %OpponentView
 ## 演出协程正在跑。测试靠它确认循环能自己收手。
 var _busy := false
-## 网络加载正在进行。与 _busy 分开，避免连按“再战”并发发出多条请求。
+## 网络加载正在进行。与 _busy 分开，保证倒计时和按钮都不会并发发出请求。
 var _loading := false
+## 结果面板正在等待自动再战；按钮只负责把 _replay_requested 提前置为 true，
+## 真正开始下一轮始终由 _round_loop 这一条路径负责。
+var _waiting_for_replay := false
+var _replay_requested := false
 ## 玩家中途点“返回”时场景会立刻被释放，但 _run_loop / _play_event 还挂在 await 上。
 ## 这个标记让所有等待点都能及时收手，不再去碰已经离开场景树的节点。
 var _leaving := false
@@ -79,7 +85,7 @@ func _ready() -> void:
 	%BackButton.grab_focus()
 	if skip_autoload:
 		return
-	await _load_once()
+	await _round_loop()
 
 
 ## 战报和战绩榜的统一玻璃底板。独立造两份 StyleBox，避免之后调整战报内边距时
@@ -96,9 +102,9 @@ func _notification(what: int) -> void:
 	# 电视遥控器 BACK 键。
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
 		_on_back_pressed()
-	# 从后台切回来：可能已经跨天了。这里先把右侧战绩榜对齐到今天，
-	# 否则玩家会先看到昨天的场次，要等下一轮开打才刷新。
-	elif what == NOTIFICATION_APPLICATION_RESUMED and _is_live():
+	# 从后台切回来：空闲或倒计时期间可以把榜对齐到今天；请求或战斗正在进行时
+	# 必须保留本轮捕获的日期，不能把一场旧日战斗写进新日记录。
+	elif what == NOTIFICATION_APPLICATION_RESUMED and _is_live() and not _loading and not _busy:
 		_sync_record_to_today()
 
 
@@ -130,43 +136,77 @@ func _wait(seconds: float) -> bool:
 	return _is_live()
 
 
-## 一次明确的名单加载与对战。自动进场会调用一次，之后只有“再战”按钮会调用；
-## _loading 同时保护慢网下的连续点击，确保每个用户动作最多对应一条请求。
-func _load_once() -> void:
-	if _loading or _busy or not _is_live():
-		return
-	_loading = true
-	%ReplayButton.disabled = true
-	_sync_record_to_today()
-	await _load_and_run()
-	_loading = false
-	if not _is_live():
-		return
-	%ReplayButton.disabled = false
-	%ReplayButton.grab_focus()
+## 一轮接一轮地打下去，直到玩家点“返回”把场景换走。
+## 按钮和倒计时都只结束等待，不直接拉接口；因此同一轮永远只有这一处会发请求。
+func _round_loop() -> void:
+	while _is_live():
+		_loading = true
+		%ReplayButton.disabled = true
+		# 这个场景会通宵开着，所以每轮开打前都要确认还是不是同一天。
+		_sync_record_to_today()
+		var fought := await _load_and_run()
+		_loading = false
+		if not _is_live():
+			return
+		%ReplayButton.disabled = false
+		%ReplayButton.grab_focus()
+		await _countdown(NEXT_ROUND_DELAY, "再战" if fought else "重试")
+		if not _is_live():
+			return
+		%ReplayButton.disabled = true
+		_reset_for_replay()
 
 
-## 再战是唯一的后续网络触发点。先清掉上一场的动态状态，再现读当天日期和名单。
+## 玩家可以在 60 秒到点前立即再战。这里只结束当前等待；_round_loop 醒来后
+## 才负责清场和拉取，连点按钮也不会产生第二条请求。
 func _on_replay_pressed() -> void:
-	if _loading or _busy or not _is_live():
+	if _loading or _busy or not _waiting_for_replay or not _is_live():
 		return
-	_reset_for_replay()
-	await _load_once()
+	_replay_requested = true
+
+
+## 以真实时间截止点驱动倒计时。应用切到后台时帧会暂停，但系统时钟照走；恢复后的
+## 第一帧会直接发现已经到点，不会要求玩家重新等待剩余的 60 秒。
+func _countdown(seconds: float, action_text: String) -> void:
+	%ResultPanel.visible = true
+	_waiting_for_replay = true
+	_replay_requested = false
+	var deadline := Time.get_unix_time_from_system() + seconds
+	var shown_seconds := -1
+	while _is_live() and not _replay_requested:
+		var remaining := deadline - Time.get_unix_time_from_system()
+		if remaining <= 0.0:
+			break
+		var seconds_left := int(ceil(remaining))
+		if seconds_left != shown_seconds:
+			shown_seconds = seconds_left
+			%ReplayButton.text = "%s（%d 秒）" % [action_text, seconds_left]
+		# 每帧检查按钮标记，点击后下一帧就能进入新一轮；显示文字仍只在秒数变化时更新。
+		await get_tree().process_frame
+	_waiting_for_replay = false
+	_replay_requested = false
+	if _is_live():
+		%ReplayButton.text = "再战"
 
 
 ## 跨天之后把当天战绩换成新一天的（场次归零、榜一战绩清空），并刷新右侧榜。
 ##
-## 名单本身不用在这里处理：_load_and_run 每轮都会重新取一次系统日期去拉接口，
-## 所以榜单天然就是当天的；会“卡在昨天”的只有 _record，因为它只在 _ready 里读过一次。
+## 平常按系统今天同步；请求跨过午夜时，_load_and_run 会再用接口结果里的明确日期校准。
 func _sync_record_to_today() -> void:
-	if _record != null and not DayClock.rolled_over(_record.date):
+	_sync_record_to(DayClock.today())
+
+
+## 把战绩对象固定到一轮名单实际使用的日期。请求可能在午夜前发出、午夜后返回；
+## TokenUsageApi 返回的 date 才是这份名单真正按哪一天聚合的权威值。
+func _sync_record_to(date: String) -> void:
+	if date.is_empty() or (_record != null and _record.date == date):
 		return
 	# load_for 读到的存档日期对不上就会返回一份空记录，正好是我们要的。
-	_record = RoundRecord.load_for(DayClock.today(), record_path)
+	_record = RoundRecord.load_for(date, record_path)
 	_refresh_record_board()
 
 
-## 把上一场的残留清干净，准备响应用户的“再战”操作。
+## 把上一场的残留清干净，准备自动或手动再战。
 func _reset_for_replay() -> void:
 	%ResultPanel.visible = false
 	%ResultLabel.text = ""
@@ -185,7 +225,7 @@ func _reset_for_replay() -> void:
 
 
 ## 返回值表示这次有没有真的打起来：拉取失败或人数不够时是 false，
-## 此时结果面板说明原因并停住，绝不自动重试。
+## 外层会据此把按钮写成“重试”，一分钟后重新拉取。
 func _load_and_run() -> bool:
 	%MatchupLabel.text = "正在拉取今日对战名单…"
 	var result: Dictionary = await TokenUsageApi.fetch_ranking(self)
@@ -194,6 +234,8 @@ func _load_and_run() -> bool:
 	if not bool(result.get("ok", false)):
 		var reason := str(result.get("error", "未知错误"))
 		return _fail_round("加载失败：%s" % reason, "拉取今日名单失败：%s" % reason)
+	# 名单日期在请求完成后才确定；先把战绩切到同一天，再开战并最终落盘。
+	_sync_record_to(str(result.get("date", "")))
 	var ranked: Array[RankedUser] = result.get("users", [] as Array[RankedUser])
 	# 一个人没法打车轮战。
 	if ranked.size() < 2:
@@ -450,7 +492,7 @@ func _show_notice(text: String) -> void:
 	%ResultLabel.text = text
 	%ResultLabel.add_theme_color_override("font_color", ThemeHelper.DANGER)
 	%MvpLabel.text = ""
-	%ReplayHintLabel.text = "不会自动重试；点击“再战”重新获取今日名单"
+	%ReplayHintLabel.text = "1 分钟后自动重试，也可立即点击按钮"
 	if not %ReplayButton.disabled:
 		%ReplayButton.grab_focus()
 
@@ -470,7 +512,7 @@ func _show_result() -> void:
 	var mvp_line := CombatLog.mvp_line(_tally.best())
 	%MvpLabel.text = mvp_line
 	%MvpLabel.add_theme_color_override("font_color", ThemeHelper.GOLD)
-	%ReplayHintLabel.text = "点击“再战”时才会重新获取今日名单"
+	%ReplayHintLabel.text = "1 分钟后自动再战，也可立即点击按钮"
 	if not %ReplayButton.disabled:
 		%ReplayButton.grab_focus()
 	_append_log(mvp_line)

@@ -57,7 +57,7 @@ func _run() -> void:
 	await _test_battle_playback()
 	await _test_result_copy()
 	_test_damage_tally()
-	await _test_manual_replay_cycle()
+	await _test_auto_replay_cycle()
 	_test_round_record()
 	await _test_record_board()
 	await _test_body_scale()
@@ -2916,8 +2916,8 @@ func _test_damage_tally() -> void:
 	_assert(CombatLog.mvp_line(empty.best()).find("空缺") >= 0, "空缺时也给一句说明")
 
 
-## 进场只取一次名单；一场打完或失败后停住，玩家按“再战”才允许重新取。
-func _test_manual_replay_cycle() -> void:
+## 一场打完 → 按钮倒计时；到点自动再战，玩家也能点击按钮提前开始。
+func _test_auto_replay_cycle() -> void:
 	_remove_test_battle_record()
 	var packed := load("res://scenes/battle.tscn") as PackedScene
 	var battle: Node = packed.instantiate()
@@ -2925,14 +2925,21 @@ func _test_manual_replay_cycle() -> void:
 	battle.record_path = TEST_BATTLE_RECORD_PATH
 	root.add_child(battle)
 	await process_frame
+	_assert(battle.NEXT_ROUND_DELAY == 60.0, "打完一分钟后自动开下一轮")
 	var battle_src := FileAccess.get_file_as_string("res://scenes/battle.gd")
-	_assert(battle_src.find("NEXT_ROUND_DELAY") < 0, "对战场景没有 60 秒后台轮询间隔")
-	_assert(battle_src.find("func _round_loop") < 0, "对战场景没有自动轮次网络循环")
-	_assert(battle_src.find("func _on_replay_pressed") >= 0, "后续名单刷新只暴露在再战按钮处理器")
-	_assert(battle_src.count("await _load_once()") == 2, "只有首次进场和用户再战会触发一次加载")
+	_assert(battle_src.find("func _round_loop") >= 0, "轮次循环负责在倒计时后重新拉取名单")
+	_assert(battle_src.find("await _countdown(NEXT_ROUND_DELAY") >= 0, "每轮都等待声明的 60 秒再战间隔")
+	_assert(battle_src.count("await _load_and_run()") == 1, "自动到点和按钮提前再战共用唯一加载路径")
+	_assert(battle_src.find("_sync_record_to(str(result.get(\"date\"") >= 0, "每轮战绩绑定到接口实际聚合的日期")
+	var original_record_date: String = battle._record.date
+	battle._sync_record_to("2099-12-30")
+	_assert(battle._record.date == "2099-12-30", "战绩可以切到本轮捕获的明确日期")
+	battle._sync_record_to("2099-12-30")
+	_assert(battle._record.date == "2099-12-30", "同一天重复同步不会替换本轮战绩")
+	battle._sync_record_to(original_record_date)
 	var replay_button := battle.get_node("%ReplayButton") as Button
 	_assert(replay_button != null and replay_button.text == "再战", "结果面板提供明确的用户再战操作")
-	_assert(replay_button.pressed.get_connections().size() == 1, "再战按钮只绑定一个加载处理器")
+	_assert(replay_button.pressed.get_connections().size() == 1, "再战按钮只绑定一个倒计时跳过处理器")
 	var ranked: Array[RankedUser] = [_ranked("甲", 5000), _ranked("乙", 300), _ranked("丙", 300)]
 	var round_backdrop := battle.get_node("%BattleBackground") as BattleParallax
 	var champion_view := battle.get_node("%ChampionView") as FighterView
@@ -2945,14 +2952,25 @@ func _test_manual_replay_cycle() -> void:
 	_assert(battle.get_node("%ResultPanel").visible, "一场打完先出结果面板")
 	_assert(not battle.get_node("%MvpLabel").text.is_empty(), "结果面板带 MVP 一行")
 	_assert(battle.get_node("%BattleLog").get_parsed_text().find("MVP") >= 0, "MVP 也写进战报")
-	_assert(battle.get_node("%ReplayHintLabel").text.find("再战") >= 0, "结果明确说明再次读取需要用户操作")
-	await process_frame
-	_assert(battle.get_node("%ResultPanel").visible, "等待一帧不会自动收起结果或开始新请求")
+	_assert(battle.get_node("%ReplayHintLabel").text.find("自动再战") >= 0, "结果明确说明一分钟后自动再战")
+	var click_observation := {"button_text": ""}
+	var click_timer := create_timer(0.05)
+	click_timer.timeout.connect(func() -> void:
+		click_observation["button_text"] = replay_button.text
+		# 连点也只会改同一个布尔标记，轮次循环仍只醒一次。
+		replay_button.pressed.emit()
+		replay_button.pressed.emit()
+	)
+	await battle._countdown(2.0, "再战")
+	_assert(str(click_observation["button_text"]).find("再战（2 秒）") >= 0, "剩余秒数显示在再战按钮上")
+	_assert(not battle._waiting_for_replay and replay_button.text == "再战", "点击按钮会立即结束等待并恢复按钮文案")
+	await battle._countdown(0.05, "再战")
+	_assert(not battle._waiting_for_replay, "无人点击时倒计时到点也会自行结束等待")
 	battle._reset_for_replay()
-	_assert(battle.get_node("%BattleLog").get_parsed_text().is_empty(), "用户再战前会清空上一场战报")
-	_assert(not battle.get_node("%ResultPanel").visible, "用户再战前结果面板收起")
+	_assert(battle.get_node("%BattleLog").get_parsed_text().is_empty(), "再战前会清空上一场战报")
+	_assert(not battle.get_node("%ResultPanel").visible, "再战前结果面板收起")
 	_assert(battle.get_node("%ChampionSlot").get_child_count() == 1, "固定擂主视图留在场景树里")
-	_assert(not battle.get_node("%ChampionView").visible and not battle.get_node("%OpponentView").visible, "再战前两个固定角色视图已复位并隐藏")
+	_assert(not battle.get_node("%ChampionView").visible and not battle.get_node("%OpponentView").visible, "下一轮前两个固定角色视图已复位并隐藏")
 	_assert(battle._war == null and battle._tally == null, "上一场的状态被丢弃")
 	await battle._start_war(ranked)
 	_assert(champion_view.get_instance_id() == champion_view_id, "第二轮复用同一个擂主 FighterView")
