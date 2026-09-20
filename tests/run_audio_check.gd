@@ -13,8 +13,10 @@ extends SceneTree
 
 ## 判定阈值。真有波形时是 -5 dB 上下，完全静音读回来是 -200 dB，中间宽得很。
 const AUDIBLE_DB := -60.0
-## 一条 one-shot 最多等多少帧。音频在混音线程上走，play() 当帧量不到峰值。
-const SETTLE_FRAMES := 40
+## 一次测量的窗口。音频在混音线程上走，play() 当帧量不到峰值。
+const MEASURE_FRAMES := 40
+## 等总线安静下来的上限。五条 WAV 都是 2 秒长，60fps 下 4 秒足够放完。
+const QUIET_TIMEOUT_FRAMES := 240
 
 
 func _initialize() -> void:
@@ -26,14 +28,14 @@ func _run() -> void:
 		printerr("AUDIO_DRIVER_IS_DUMMY")
 		quit(1)
 		return
-	var music_bus := AudioServer.get_bus_index("Music")
-	var sfx_bus := AudioServer.get_bus_index("SFX")
+	var music_bus := AudioServer.get_bus_index(AppSettings.MUSIC_BUS)
+	var sfx_bus := AudioServer.get_bus_index(AppSettings.SFX_BUS)
 	if music_bus < 0 or sfx_bus < 0:
 		printerr("AUDIO_BUSES_MISSING")
 		quit(1)
 		return
 	# 量的是「链路通不通」，不是用户当前的混音，所以两条总线都先推满。
-	AppSettings.apply_audio(1.0, 1.0)
+	AppSettings.apply_mix(1.0, 1.0)
 
 	var pool: Node = root.get_node_or_null("CombatSfxPool")
 	var music: Node = root.get_node_or_null("MusicManager")
@@ -43,38 +45,24 @@ func _run() -> void:
 		return
 
 	# BGM：autoload 一起来就在播金冠铃。
-	var music_peak := await _peak_over(music_bus, SETTLE_FRAMES)
-	if music_peak < AUDIBLE_DB:
-		printerr("BGM_SILENT peak=%.1f dB" % music_peak)
-		quit(1)
+	if not await _require_audible(music_bus, "BGM"):
 		return
-	print("BGM_AUDIBLE peak=%.1f dB" % music_peak)
 
 	# 五条 SE 逐条过一遍：漏一条就是漏一条，别拿「至少有一条响了」蒙混过去。
 	for clip_name in CombatSfx.CLIP_PATHS:
 		var name := str(clip_name)
-		var clips := PackedStringArray([name])
-		pool.play_clips(clips)
-		var peak := await _peak_over(sfx_bus, SETTLE_FRAMES)
-		if peak < AUDIBLE_DB:
-			printerr("SFX_SILENT clip=%s peak=%.1f dB" % [name, peak])
-			quit(1)
+		pool.play_clips(PackedStringArray([name]))
+		if not await _require_audible(sfx_bus, "SFX", "clip=%s" % name):
 			return
-		print("SFX_AUDIBLE clip=%s peak=%.1f dB" % [name, peak])
-		# 等这条放完再量下一条，否则峰值是上一条的尾巴。
-		await _settle(SETTLE_FRAMES)
+		await _await_quiet(sfx_bus)
 
 	# 战斗里真正的入口是 CombatSfx.play_event，组合音（命中+回血）也要出声。
 	var lifesteal := StrikeResult.new()
 	lifesteal.hit = true
 	lifesteal.lifesteal = true
 	CombatSfx.play_event(lifesteal)
-	var combo_peak := await _peak_over(sfx_bus, SETTLE_FRAMES)
-	if combo_peak < AUDIBLE_DB:
-		printerr("SFX_EVENT_SILENT peak=%.1f dB" % combo_peak)
-		quit(1)
+	if not await _require_audible(sfx_bus, "SFX_EVENT"):
 		return
-	print("SFX_EVENT_AUDIBLE peak=%.1f dB" % combo_peak)
 
 	# SE 响完之后 BGM 还得在。以前 SE 会把 BGM 的声部抢走。
 	if not music.is_playing():
@@ -84,6 +72,19 @@ func _run() -> void:
 
 	print("AUDIO_CHECK_OK")
 	quit(0)
+
+
+## 量一段窗口里的峰值：出声打一行标记，静音就 printerr 并退 1。
+## 返回是否继续往下跑，调用方一律 `if not await ...: return`。
+func _require_audible(bus: int, marker: String, detail: String = "") -> bool:
+	var peak := await _peak_over(bus, MEASURE_FRAMES)
+	var tail := (" %s" % detail if not detail.is_empty() else "") + (" peak=%.1f dB" % peak)
+	if peak < AUDIBLE_DB:
+		printerr("%s_SILENT%s" % [marker, tail])
+		quit(1)
+		return false
+	print("%s_AUDIBLE%s" % [marker, tail])
+	return true
 
 
 ## 接下来 frames 帧里这条总线的最大峰值（左右取大的那个）。
@@ -96,6 +97,10 @@ func _peak_over(bus: int, frames: int) -> float:
 	return peak
 
 
-func _settle(frames: int) -> void:
-	for i in frames:
+## 等这条总线真的安静下来再量下一条。固定等若干帧是不够的：
+## 五条 WAV 都是 2 秒长，上一条的尾巴会把下一条托过阈值，静音的片段也就蒙混过关了。
+func _await_quiet(bus: int) -> void:
+	for i in QUIET_TIMEOUT_FRAMES:
 		await process_frame
+		if AudioServer.get_bus_peak_volume_left_db(bus, 0) < AUDIBLE_DB and AudioServer.get_bus_peak_volume_right_db(bus, 0) < AUDIBLE_DB:
+			return

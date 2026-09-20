@@ -69,7 +69,3 @@ static func play_event(event: StrikeResult) -> void:
 	var pool := tree.root.get_node_or_null("CombatSfxPool")
 	if pool != null:
 		pool.play_clips(last_clips)
-	var music := tree.root.get_node_or_null("MusicManager")
-	if music != null:
-		music.keep_alive()
-		music.call_deferred("keep_alive")

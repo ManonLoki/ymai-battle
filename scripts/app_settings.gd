@@ -30,6 +30,11 @@ const VOLUME_MAX := 1.0
 const VOLUME_SILENCE_DB := -80.0
 const MUSIC_BUS := &"Music"
 const SFX_BUS := &"SFX"
+## 所有音频播放器的播放方式。Sample 播放只有 Web 的驱动实现了：CoreAudio / Android 上
+## AudioServer 只 warning 一句就把这次播放丢掉，而 playing 仍是 true、位置停在 0，
+## 也就是整台机器听不到声音。project.godot 的 default_playback_type.web 默认恰恰是
+## Sample，所以不能省掉这行交给默认值——那样 Web 上 BGM 又会被 SE 抢走声部。
+const PLAYBACK_TYPE := AudioServer.PLAYBACK_TYPE_STREAM
 
 
 # ============================== 窗口模式 ==============================
@@ -308,19 +313,21 @@ static func volume_percent(linear: float) -> int:
 	return int(round(sanitize_volume(linear) * 100.0))
 
 
-static func _load_volume(key: String, fallback: float, path: String) -> float:
-	var raw: Variant = JsonStore.read_dict(path).get(key, fallback)
+## 从一份已经读出来的存档里取一个音量。收 Dictionary 而不是 path，
+## apply_audio 才能两个音量共用一次 read_dict。
+static func _volume_from(data: Dictionary, key: String, fallback: float) -> float:
+	var raw: Variant = data.get(key, fallback)
 	if typeof(raw) != TYPE_INT and typeof(raw) != TYPE_FLOAT:
 		return sanitize_volume(fallback)
 	return sanitize_volume(float(raw))
 
 
 static func load_music_volume(path: String = SAVE_PATH) -> float:
-	return _load_volume(MUSIC_VOLUME_KEY, DEFAULT_MUSIC_VOLUME, path)
+	return _volume_from(JsonStore.read_dict(path), MUSIC_VOLUME_KEY, DEFAULT_MUSIC_VOLUME)
 
 
 static func load_sfx_volume(path: String = SAVE_PATH) -> float:
-	return _load_volume(SFX_VOLUME_KEY, DEFAULT_SFX_VOLUME, path)
+	return _volume_from(JsonStore.read_dict(path), SFX_VOLUME_KEY, DEFAULT_SFX_VOLUME)
 
 
 static func save_music_volume(value: float, path: String = SAVE_PATH) -> bool:
@@ -331,12 +338,20 @@ static func save_sfx_volume(value: float, path: String = SAVE_PATH) -> bool:
 	return JsonStore.patch_dict(path, {SFX_VOLUME_KEY: sanitize_volume(value)})
 
 
-## 把线性音量推到 Music / SFX 总线。不传就读存档。
-static func apply_audio(music: float = -1.0, sfx: float = -1.0, path: String = SAVE_PATH) -> void:
-	var music_linear := load_music_volume(path) if music < 0.0 else sanitize_volume(music)
-	var sfx_linear := load_sfx_volume(path) if sfx < 0.0 else sanitize_volume(sfx)
-	_set_bus_volume(MUSIC_BUS, music_linear)
-	_set_bus_volume(SFX_BUS, sfx_linear)
+## 把存档里的混音推到两条总线。整份存档只读一次，不是一个音量读一遍。
+static func apply_audio(path: String = SAVE_PATH) -> void:
+	var data := JsonStore.read_dict(path)
+	apply_mix(
+		_volume_from(data, MUSIC_VOLUME_KEY, DEFAULT_MUSIC_VOLUME),
+		_volume_from(data, SFX_VOLUME_KEY, DEFAULT_SFX_VOLUME),
+	)
+
+
+## 把两个线性音量直接推到总线，不碰存档。滑块调整走这条：
+## 值就在手上，没理由存完再从盘上读回来。
+static func apply_mix(music: float, sfx: float) -> void:
+	_set_bus_volume(MUSIC_BUS, music)
+	_set_bus_volume(SFX_BUS, sfx)
 
 
 static func _set_bus_volume(bus_name: StringName, linear: float) -> void:

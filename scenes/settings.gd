@@ -17,6 +17,10 @@ const DEFAULT_SERVER_LABEL := "使用默认服务器"
 var _leaving := false
 ## 当前选中的模式，用来刷新说明。
 var _mode := AppSettings.DEFAULT_MODE
+## 两个滑块当前的线性音量。留着是为了推总线时不必再读一次存档——
+## 值本来就在 value_changed 的参数里，另一路的值也只在进页面时读过一次。
+var _music_linear := AppSettings.DEFAULT_MUSIC_VOLUME
+var _sfx_linear := AppSettings.DEFAULT_SFX_VOLUME
 ## 测试可在节点入树前换成隔离存档；正式运行使用全局设置文件。
 var settings_path: String = AppSettings.SAVE_PATH
 
@@ -110,16 +114,21 @@ func _on_mode_selected(index: int) -> void:
 ## 背景音乐 / 音效两个滑块。0–100，步进 5，电视上左右键就是调音量。
 func _bind_audio_controls() -> void:
 	%AudioTitle.add_theme_color_override("font_color", ThemeHelper.TEXT)
-	%MusicLabel.add_theme_color_override("font_color", ThemeHelper.TEXT)
-	%SfxLabel.add_theme_color_override("font_color", ThemeHelper.TEXT)
-	ThemeHelper.style_slider(%MusicSlider)
-	ThemeHelper.style_slider(%SfxSlider)
-	%MusicSlider.set_value_no_signal(float(AppSettings.volume_percent(AppSettings.load_music_volume(settings_path))))
-	%SfxSlider.set_value_no_signal(float(AppSettings.volume_percent(AppSettings.load_sfx_volume(settings_path))))
+	_music_linear = AppSettings.load_music_volume(settings_path)
+	_sfx_linear = AppSettings.load_sfx_volume(settings_path)
+	_bind_volume_slider(%MusicSlider, %MusicLabel, _music_linear)
+	_bind_volume_slider(%SfxSlider, %SfxLabel, _sfx_linear)
 	_refresh_audio_labels()
 	%MusicSlider.value_changed.connect(_on_music_volume_changed)
 	%SfxSlider.value_changed.connect(_on_sfx_volume_changed)
-	AppSettings.apply_audio(-1.0, -1.0, settings_path)
+	AppSettings.apply_mix(_music_linear, _sfx_linear)
+
+
+## 一个音量滑块的配色、样式和初值。两个滑块在这一层没有任何区别。
+func _bind_volume_slider(slider: HSlider, label: Label, linear: float) -> void:
+	label.add_theme_color_override("font_color", ThemeHelper.TEXT)
+	ThemeHelper.style_slider(slider)
+	slider.set_value_no_signal(float(AppSettings.volume_percent(linear)))
 
 
 func _refresh_audio_labels() -> void:
@@ -128,15 +137,18 @@ func _refresh_audio_labels() -> void:
 
 
 func _on_music_volume_changed(value: float) -> void:
-	AppSettings.save_music_volume(value / 100.0, settings_path)
-	AppSettings.apply_audio(-1.0, -1.0, settings_path)
+	_music_linear = value / 100.0
+	AppSettings.save_music_volume(_music_linear, settings_path)
+	AppSettings.apply_mix(_music_linear, _sfx_linear)
 	_refresh_audio_labels()
 
 
 func _on_sfx_volume_changed(value: float) -> void:
-	AppSettings.save_sfx_volume(value / 100.0, settings_path)
-	AppSettings.apply_audio(-1.0, -1.0, settings_path)
+	_sfx_linear = value / 100.0
+	AppSettings.save_sfx_volume(_sfx_linear, settings_path)
+	AppSettings.apply_mix(_music_linear, _sfx_linear)
 	_refresh_audio_labels()
+	# 音效滑块自带试听：调完立刻听到这一档是什么响度，不用退出去打一场。
 	var preview := StrikeResult.new()
 	preview.hit = true
 	CombatSfx.play_event(preview)

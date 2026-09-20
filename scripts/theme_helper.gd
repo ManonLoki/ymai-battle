@@ -145,15 +145,23 @@ static func style_slider(slider: HSlider) -> void:
 	slider.add_theme_stylebox_override("grabber_area", make_flat(ACCENT, 8))
 	slider.add_theme_stylebox_override("grabber_area_highlight", make_flat(ACCENT.lightened(0.12), 8))
 	slider.add_theme_stylebox_override("focus", make_focus(10))
-	slider.add_theme_icon_override("grabber", _slider_grabber())
-	slider.add_theme_icon_override("grabber_highlight", _slider_grabber())
-	slider.add_theme_icon_override("grabber_disabled", _slider_grabber())
+	# 三种状态是同一张纯色贴图，三个 override 共用一张，别各建各的。
+	var grabber := _slider_grabber()
+	slider.add_theme_icon_override("grabber", grabber)
+	slider.add_theme_icon_override("grabber_highlight", grabber)
+	slider.add_theme_icon_override("grabber_disabled", grabber)
+
+
+## 滑块的金色把手。纯色实底不随滑块变化，所以整个进程只建一张。
+static var _grabber_texture: Texture2D
 
 
 static func _slider_grabber() -> Texture2D:
-	var img := Image.create(22, 36, false, Image.FORMAT_RGBA8)
-	img.fill(GOLD)
-	return ImageTexture.create_from_image(img)
+	if _grabber_texture == null:
+		var img := Image.create(22, 36, false, Image.FORMAT_RGBA8)
+		img.fill(GOLD)
+		_grabber_texture = ImageTexture.create_from_image(img)
+	return _grabber_texture
 
 
 ## 浮在明亮背景 / 半透明底板上的文字：加一圈深色描边，免得被背景吞掉。

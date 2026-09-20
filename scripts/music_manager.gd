@@ -10,8 +10,9 @@ const LOUNGE := preload("res://assets/audio/gold_crown_bell.ogg")
 const BATTLE := preload("res://assets/audio/tournament_clash.ogg")
 ## 切场景时的交叉淡化。太短会跳，太长两首叠在一起发糊。
 const CROSSFADE := 0.8
-## Godot 的线性静音近似值；0 转 dB 是 -inf，tween 不能用。
-const SILENCE_DB := -80.0
+## 线性静音近似值；0 转 dB 是 -inf，tween 不能用。
+## 和滑块拉到 0 时的静音是同一个数，所以取 AppSettings 那一份，别再写一遍。
+const SILENCE_DB := AppSettings.VOLUME_SILENCE_DB
 
 var _player_a: AudioStreamPlayer
 var _player_b: AudioStreamPlayer
@@ -30,18 +31,15 @@ func _ready() -> void:
 
 
 func _input(event: InputEvent) -> void:
-	# Web 浏览器会拦住自动播放。第一次手势只把已选中的曲子接着播，不从头再来。
+	# Web 浏览器会拦住自动播放，_ready 里那次 play() 是静默失败的。
+	# 第一次手势把已选中的曲子接着播，不从头再来。这是 keep_alive 现在唯一的用处：
+	# SE 曾经会抢走 BGM 的 Sample 声部，但两边都改走 Stream 之后那条路不存在了。
 	if event.is_pressed():
 		keep_alive()
 
 
-func _process(_delta: float) -> void:
-	# SE 抢走声部常常发生在 play() 返回之后的混音回调里，当帧 keep_alive 还看得到 playing=true。
-	keep_alive()
-
-
+## 被浏览器拦下时 playing 是 false，但 stream 还在。从当前位置接着播，不要切回金冠铃。
 func keep_alive() -> void:
-	# Sample 声部被 SE 抢走时 playing 会变 false，但 stream 还在。从当前位置接着播，不要切回金冠铃。
 	if _active_player == null or _active_player.stream == null or _active_player.playing:
 		return
 	var pos := _active_player.get_playback_position()
@@ -91,7 +89,7 @@ func _play(stream: AudioStream) -> void:
 		return
 	_enable_loop(stream)
 	# 已经在播同一首就别动，否则进出排行/设置会把金冠铃掐回开头。
-	# 被 SE 掐掉时 playing 为 false：从当前位置续上，不要 play() 从头再来。
+	# 被浏览器拦下时 playing 为 false：从当前位置续上，不要 play() 从头再来。
 	if _active_player.stream == stream:
 		if not _active_player.playing:
 			keep_alive()
@@ -127,11 +125,10 @@ func _crossfade_to(stream: AudioStream) -> void:
 
 func _make_player() -> AudioStreamPlayer:
 	var player := AudioStreamPlayer.new()
-	player.bus = "Music"
+	player.bus = AppSettings.MUSIC_BUS
 	player.volume_db = SILENCE_DB
-	# Sample 播放只有 Web 的驱动实现了，CoreAudio / Android 上会变成静音。
-	# BGM 和 CombatSfxPool 都固定走 Stream，才在每个平台上都出得了声。
-	player.playback_type = AudioServer.PLAYBACK_TYPE_STREAM
+	# 播放方式的理由写在 AppSettings.PLAYBACK_TYPE 上，CombatSfxPool 取的是同一个值。
+	player.playback_type = AppSettings.PLAYBACK_TYPE
 	player.max_polyphony = 2
 	add_child(player)
 	return player

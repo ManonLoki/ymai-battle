@@ -1664,31 +1664,31 @@ func _test_settings() -> void:
 	_assert(is_equal_approx(AppSettings.volume_to_db(0.0), AppSettings.VOLUME_SILENCE_DB), "zero volume is a finite mute, not -inf")
 	_assert(AppSettings.volume_to_db(AppSettings.DEFAULT_MUSIC_VOLUME) > AppSettings.volume_to_db(AppSettings.DEFAULT_SFX_VOLUME), "default mix keeps SFX quieter than BGM: the WAVs are mastered hot, the OGGs are not")
 	_assert(is_equal_approx(AppSettings.volume_to_db(AppSettings.DEFAULT_MUSIC_VOLUME), 0.0), "a full BGM slider is bus 0 dB, not a boost")
-	AppSettings.apply_audio(AppSettings.DEFAULT_MUSIC_VOLUME, AppSettings.DEFAULT_SFX_VOLUME)
-	var music_bus := AudioServer.get_bus_index("Music")
-	var sfx_bus := AudioServer.get_bus_index("SFX")
+	AppSettings.apply_mix(AppSettings.DEFAULT_MUSIC_VOLUME, AppSettings.DEFAULT_SFX_VOLUME)
+	var music_bus := AudioServer.get_bus_index(AppSettings.MUSIC_BUS)
+	var sfx_bus := AudioServer.get_bus_index(AppSettings.SFX_BUS)
 	_assert(music_bus >= 0 and sfx_bus >= 0, "Music and SFX buses exist")
-	_assert(is_equal_approx(AudioServer.get_bus_volume_db(music_bus), AppSettings.volume_to_db(AppSettings.DEFAULT_MUSIC_VOLUME)), "apply_audio sets the Music bus from the linear mix")
-	_assert(is_equal_approx(AudioServer.get_bus_volume_db(sfx_bus), AppSettings.volume_to_db(AppSettings.DEFAULT_SFX_VOLUME)), "apply_audio sets the SFX bus from the linear mix")
+	_assert(is_equal_approx(AudioServer.get_bus_volume_db(music_bus), AppSettings.volume_to_db(AppSettings.DEFAULT_MUSIC_VOLUME)), "apply_mix sets the Music bus from the linear mix")
+	_assert(is_equal_approx(AudioServer.get_bus_volume_db(sfx_bus), AppSettings.volume_to_db(AppSettings.DEFAULT_SFX_VOLUME)), "apply_mix sets the SFX bus from the linear mix")
 	var music_slider := scene.get_node_or_null("%MusicSlider") as HSlider
 	var sfx_slider := scene.get_node_or_null("%SfxSlider") as HSlider
 	_assert(music_slider != null and sfx_slider != null, "Settings has music and sfx sliders")
 	_assert(is_equal_approx(music_slider.value, 100.0) and is_equal_approx(sfx_slider.value, 25.0), "sliders open on the default mix")
 	_assert(music_slider.focus_mode == Control.FOCUS_ALL and sfx_slider.focus_mode == Control.FOCUS_ALL, "volume sliders can take TV remote focus")
 	_assert(is_equal_approx(music_slider.step, 5.0) and is_equal_approx(sfx_slider.step, 5.0), "remote left/right moves volume in 5% steps")
-	# BGM 默认就在满刻度，只有 ui_left 推得动它；SE 在 25%，两个方向都有余量。
+	# BGM 默认就在满刻度，只有左键推得动它；SE 在 25%，两个方向都有余量。
+	# 走 _press_key 而不是直接塞 InputEventAction：真实遥控器发的是按键，
+	# 绕过 InputMap 的话，哪天方向键映射被改坏了这两条断言也照样绿。
 	sfx_slider.grab_focus()
 	_assert(sfx_slider.has_focus(), "the sfx slider can be focused")
 	var sfx_before := sfx_slider.value
-	scene.get_viewport().push_input(_ui_action(&"ui_right"))
-	await process_frame
-	_assert(is_equal_approx(sfx_slider.value, sfx_before + sfx_slider.step), "ui_right raises the focused sfx slider by one step")
+	await _press_key(KEY_RIGHT)
+	_assert(is_equal_approx(sfx_slider.value, sfx_before + sfx_slider.step), "the right key raises the focused sfx slider by one step")
 	music_slider.grab_focus()
 	_assert(music_slider.has_focus(), "the music slider can be focused")
 	var music_before := music_slider.value
-	scene.get_viewport().push_input(_ui_action(&"ui_left"))
-	await process_frame
-	_assert(is_equal_approx(music_slider.value, music_before - music_slider.step), "ui_left lowers the focused music slider by one step")
+	await _press_key(KEY_LEFT)
+	_assert(is_equal_approx(music_slider.value, music_before - music_slider.step), "the left key lowers the focused music slider by one step")
 	# 服务器那一栏：音量滑块下面，旁有维护按钮；增删改都在面板里。
 	var select := scene.get_node_or_null("%ServerSelect") as OptionButton
 	var input := scene.get_node_or_null("%ServerAddInput") as LineEdit
@@ -2133,23 +2133,23 @@ func _test_bgm() -> void:
 	await process_frame
 	_assert(manager.is_battle(), "battle scene switches to the battle track")
 	_assert(battle_stream.loop, "battle track loops")
-	var music_src := FileAccess.get_file_as_string("res://scripts/music_manager.gd")
-	_assert(music_src.find("PLAYBACK_TYPE_STREAM") >= 0, "battle BGM uses Stream playback so SFX cannot steal its voice")
-	_assert(music_src.find("func _process") >= 0, "MusicManager resumes BGM if SE stopped it after play() returned")
-	_assert(manager.music_playback_type() == AudioServer.PLAYBACK_TYPE_STREAM, "live BGM player is Stream")
-	_assert(manager.music_bus() == &"Music", "BGM plays on the Music bus")
+	# 先把常量本身钉死，再查每个播放器是否照办：只查「大家一致」的话，
+	# 谁把这个常量改回 Sample，下面的断言会一起变绿。
+	_assert(AppSettings.PLAYBACK_TYPE == AudioServer.PLAYBACK_TYPE_STREAM, "the shared playback type is Stream: only the Web driver implements Sample playback")
+	_assert(manager.music_playback_type() == AppSettings.PLAYBACK_TYPE, "live BGM player is Stream")
+	_assert(manager.music_bus() == AppSettings.MUSIC_BUS, "BGM plays on the Music bus")
 	var pool: Node = root.get_node_or_null("CombatSfxPool")
 	_assert(pool != null, "CombatSfxPool autoload is present")
-	# Sample 播放只有 Web 的驱动实现了：CoreAudio / Android 上 AudioServer 只会 warning 一句
-	# 然后静音（playing 仍为 true，位置停在 0）。指定 Sample 等于在电视和桌面上没有音效。
-	var pool_src := FileAccess.get_file_as_string("res://scripts/combat_sfx_pool.gd")
-	_assert(pool_src.find("PLAYBACK_TYPE_SAMPLE") < 0, "SE never asks for Sample playback: only the Web driver implements it")
-	_assert(pool.sfx_playback_type() == AudioServer.PLAYBACK_TYPE_STREAM, "live SE players are Stream, like the BGM")
-	_assert(pool.sfx_playback_type() == manager.music_playback_type(), "SE and BGM share one playback path on every platform")
-	_assert(pool.sfx_bus() == &"SFX", "SE plays on the SFX bus")
+	_assert(pool.sfx_playback_type() == AppSettings.PLAYBACK_TYPE, "live SE players use the shared playback type")
+	_assert(pool.sfx_bus() == AppSettings.SFX_BUS, "SE plays on the SFX bus")
+	# 逐个查两个 autoload 名下的播放器，而不是只查第一个：Sample 播放只有 Web 的驱动
+	# 实现了，别处 AudioServer 只 warning 一句就把这次播放丢掉，而 playing 仍是 true、
+	# 位置停在 0——静静地没声音。以后谁再加一个播放器，漏设也会在这里挂。
+	_assert_players_stream(manager, "BGM")
+	_assert_players_stream(pool, "SE")
 	CombatSfx.play_event(_sfx_event({&"hit": true}))
 	_assert(manager.is_battle(), "playing a combat one-shot does not replace the battle BGM")
-	_assert(manager.music_playback_type() == AudioServer.PLAYBACK_TYPE_STREAM, "SE does not switch BGM off Stream")
+	_assert(manager.music_playback_type() == AppSettings.PLAYBACK_TYPE, "SE does not switch BGM off Stream")
 	if manager.has_method("keep_alive"):
 		manager.keep_alive()
 	_assert(manager.is_battle(), "keep_alive leaves the battle track selected")
@@ -2164,12 +2164,16 @@ func _test_bgm() -> void:
 	await process_frame
 
 
-## 一次遥控器按键。push_input 要的是已按下的 InputEventAction。
-func _ui_action(action: StringName) -> InputEventAction:
-	var event := InputEventAction.new()
-	event.action = action
-	event.pressed = true
-	return event
+## 一个 autoload 名下的每个 AudioStreamPlayer 都必须走共用的播放方式。
+func _assert_players_stream(owner: Node, who: String) -> void:
+	var seen := 0
+	for child in owner.get_children():
+		var player := child as AudioStreamPlayer
+		if player == null:
+			continue
+		seen += 1
+		_assert(player.playback_type == AppSettings.PLAYBACK_TYPE, "%s player #%d uses the shared playback type" % [who, seen])
+	_assert(seen > 0, "%s actually owns AudioStreamPlayers" % who)
 
 
 ## 深度优先找出第一个 Sprite2D，用来取视差层的贴图。
