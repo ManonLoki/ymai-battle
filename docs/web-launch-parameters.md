@@ -56,7 +56,7 @@ ID 不区分大小写并忽略首尾空白；未知值会被忽略。`battle` �
 - 从 HTTPS 页面访问 HTTP 接口会被浏览器按混合内容拦截，生产环境应使用 HTTPS 服务。
 - 接口服务仍需允许 Web 页面的 Origin（CORS）。
 - 对战完成或名单读取失败后会在 60 秒倒计时结束时重新读取今日名单；“再战/重试”按钮会显示剩余秒数，也可点击立即开始。
-- `/api/v1/token-usage` 的 Web 请求以 Fetch `redirect: "error"` 拒绝重定向，并用 `AbortController` 在超限、取消或释放请求时中止网络读取；响应体上限为 8 MiB，越界时结果面板会显示对应错误。桌面端与 Android 仍使用 Godot 原生传输实现。
+- `/api/v2/token-usage/dashboard` 的 Web 请求以 Fetch `redirect: "error"` 拒绝重定向，并用 `AbortController` 在超限、取消或释放请求时中止网络读取；响应体上限为 16 MiB（对齐看板序列化预算），越界时结果面板会显示对应错误。桌面端与 Android 仍使用 Godot 原生传输实现。请求带当天闭区间 `from`/`to`（`YYYY-MM-DD`）。
 - 查询参数可能进入浏览器历史、访问日志或监控系统，不应放入密钥或令牌。
 
 桥接层回归可用 `python3 -m unittest -v tests/test_web_fetch_bridge.py` 运行；生成产物再用 `python3 tools/export_web.py --verify-only` 校验。安装了 Chromium 系浏览器时，可运行 `python3 tests/browser_web_fetch_bridge_smoke.py Release/web-embedded/index.js`，以真实浏览器访问本机 3xx 和流式端点，证明重定向目标未被访问且取消后连接关闭。

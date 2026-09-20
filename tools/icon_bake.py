@@ -411,6 +411,20 @@ def bake() -> None:
     fill(img, 22, 8, 3, 6, high)
     icons["skill_awaken"] = img
 
+    # 反弹：身前竖盾 + 向外弹出的波，和绝对防御的板甲盾、反击的回勾都分开。
+    img = family_tile("technique", (12, 28, 48))
+    mirror = (210, 235, 255, 255)
+    rim = (140, 210, 255, 255)
+    wave_col = (180, 240, 255, 255)
+    diamond(img, 12, 16, 6, 9, rim)
+    diamond(img, 12, 16, 4, 6, mirror)
+    fill(img, 10, 12, 2, 8, (255, 255, 255, 255))
+    line(img, 18, 10, 26, 16, wave_col, 2)
+    line(img, 18, 22, 26, 16, wave_col, 2)
+    line(img, 20, 8, 27, 16, (230, 250, 255, 255), 1)
+    line(img, 20, 24, 27, 16, (230, 250, 255, 255), 1)
+    icons["skill_reflect"] = img
+
     os.makedirs(OUT, exist_ok=True)
     for name, image in icons.items():
         path = os.path.join(OUT, f"{name}.png")

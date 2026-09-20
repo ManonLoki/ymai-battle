@@ -31,6 +31,12 @@ const LEGACY_CRIT_AMOUNT := 28
 @onready var _stun_fx: Node2D = $Visual/StunFx
 @onready var _skull_fx: Node2D = $Visual/SkullFx
 @onready var _guard_fx: Node2D = $Visual/GuardFx
+@onready var _reflect_fx: Node2D = $Visual/ReflectFx
+@onready var _reflect_shield: Node2D = $Visual/ReflectFx/Shield
+@onready var _reflect_wave: Node2D = $Visual/ReflectFx/Wave
+@onready var _rebirth_fx: Node2D = $Visual/RebirthFx
+@onready var _rebirth_fire: CPUParticles2D = $Visual/RebirthFx/FeetFire
+@onready var _rebirth_phoenix: Node2D = $Visual/RebirthFx/Phoenix
 @onready var anim_player: AnimationPlayer = $AnimationPlayer
 @onready var ui: Node2D = $UI
 @onready var status_row: HBoxContainer = $UI/StatusRow
@@ -43,8 +49,8 @@ const LEGACY_CRIT_AMOUNT := 28
 @onready var tip_panel: PanelContainer = $UI/TipPanel
 @onready var tip_label: Label = $UI/TipPanel/TipLabel
 @onready var slash: Polygon2D = $Visual/Slash
-@onready var _overlays: Array[Node2D] = [_stun_fx, _skull_fx, _guard_fx]
-@onready var _bursts: Array[CPUParticles2D] = [_crit_fx, _poison_fx, _paralyze_fx]
+@onready var _overlays: Array[Node2D] = [_stun_fx, _skull_fx, _guard_fx, _reflect_fx, _rebirth_fx]
+@onready var _bursts: Array[CPUParticles2D] = [_crit_fx, _poison_fx, _paralyze_fx, _rebirth_fire]
 
 ## 三种姿势的立绘，bind 时一次性生成好，播动画时直接换。
 var _idle_tex: Texture2D
@@ -277,6 +283,41 @@ func play_guard_fx() -> void:
 	_tint(CombatFx.GUARD_TINT, 0.32, true)
 
 
+## 反弹：身前一面反光盾，再朝对手方向射出一道波。
+## Visual 已按朝向翻转，局部 +x 始终朝向被反弹方。
+func play_reflect_fx() -> void:
+	_reflect_fx.visible = true
+	_reflect_fx.position = Vector2(CombatFx.REFLECT_SHIELD_X, 0.0)
+	_reflect_shield.visible = true
+	_reflect_shield.modulate = Color.WHITE
+	_reflect_wave.visible = true
+	_reflect_wave.position = Vector2.ZERO
+	_reflect_wave.modulate = Color.WHITE
+	var shield_tw := _own(&"reflect", CombatFx.pop_fade(_reflect_shield, 0.55, 0.12, 0.22, 0.18, 1.12))
+	shield_tw.tween_callback(_hide_reflect_if_idle)
+	var wave := _own(&"reflect_wave", create_tween())
+	wave.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	wave.tween_property(_reflect_wave, "position:x", CombatFx.REFLECT_WAVE_TRAVEL, 0.32)
+	wave.parallel().tween_property(_reflect_wave, "modulate:a", 0.0, 0.32)
+	wave.tween_callback(func() -> void:
+		if is_instance_valid(_reflect_wave):
+			_reflect_wave.visible = false
+			_reflect_wave.modulate = Color.WHITE
+			_reflect_wave.position = Vector2.ZERO
+		_hide_reflect_if_idle()
+	)
+	_tint(CombatFx.REFLECT_TINT, 0.28, true)
+
+
+func _hide_reflect_if_idle() -> void:
+	if is_instance_valid(_reflect_shield) and _reflect_shield.visible:
+		return
+	if is_instance_valid(_reflect_wave) and _reflect_wave.visible:
+		return
+	if is_instance_valid(_reflect_fx):
+		_reflect_fx.visible = false
+
+
 ## 幻影刺杀：在对方身上盖红色画了 X 的骷髅。
 func play_assassinate_fx() -> void:
 	_own(&"skull", CombatFx.pop_fade(_skull_fx, 0.6, 0.18, 0.45, 0.2))
@@ -297,6 +338,16 @@ func play_heal_fx() -> void:
 			fx.queue_free()
 	)
 	_tint(CombatFx.HEAL_TINT, 0.35, false)
+
+
+## 浴火重生：脚底火焰 + 头顶凤凰。毒跳血复活也走这一套。
+func play_rebirth_fx() -> void:
+	_rebirth_fx.visible = true
+	_rebirth_phoenix.visible = true
+	CombatFx.burst(_rebirth_fire)
+	_stop_burst_later(&"rebirth_fire_stop", _rebirth_fire)
+	_own(&"phoenix", CombatFx.pop_fade(_rebirth_phoenix, 0.4, 0.18, 0.4, 0.28, 1.18))
+	_tint(Color(1.0, 0.55, 0.2), 0.4, true)
 
 
 ## 立绘染色：立刻变成 from，再在 duration 内回到白。
@@ -405,6 +456,14 @@ func _hide_transient_fx() -> void:
 			overlay.modulate = Color.WHITE
 			overlay.scale = Vector2.ONE
 			overlay.rotation = 0.0
+	if is_instance_valid(_reflect_shield):
+		_reflect_shield.visible = true
+		_reflect_shield.modulate = Color.WHITE
+		_reflect_shield.scale = Vector2.ONE
+	if is_instance_valid(_reflect_wave):
+		_reflect_wave.visible = false
+		_reflect_wave.modulate = Color.WHITE
+		_reflect_wave.position = Vector2.ZERO
 	for fx in _bursts:
 		if is_instance_valid(fx):
 			fx.emitting = false

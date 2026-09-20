@@ -3,7 +3,7 @@ extends RefCounted
 
 ## 战斗结算。这里的设计底线：任何一次判定都是掷骰子，
 ## 没有把结果写死的效果——唯一例外是掷中的【幻影刺杀】，
-## 它仍要先过按身份分的骰子，中了才无视闪避把对方打到 0 血。
+## 它仍要先过按身份分的骰子，中了才无视闪避：擂主打目标最大生命，挑战者打一半。
 ## 战力差、技能数值和概率共同决定胜负，胜率永远留在 [30%, 70%] 之间。
 
 ## 谁出手都从这个命中率起步，再按双方的命中 / 闪避加成和这一场的胜率偏移调整。
@@ -40,7 +40,7 @@ const HITS_PER_DUEL := 4
 ## 那些场次仍按“多 3.5 张”计价，凭空多吃一口。改成按张计价之后，
 ## WheelWar 把这一场真实的张数差喂进来，发牌区间就成了自由参数。
 ## 数值仍由 tests 里的蒙特卡洛回归标定，改技能池本身时要重新跑。
-const CHAMPION_SKILL_EDGE_PER_SKILL := 0.030
+const CHAMPION_SKILL_EDGE_PER_SKILL := 0.018
 
 ## 人越多，擂主越吃亏：每位挑战者都是满血新人，他的血条却要一路连着算下去。
 ## 基础命中提到 90% 之后这份吃亏更明显——一场仗的挥击次数少了一半，
@@ -55,8 +55,8 @@ const CHAMPION_SKILL_EDGE_PER_SKILL := 0.030
 ## 这是「让实测追上目标」的一侧；定目标的那一侧是 CROWD_PRESSURE_*（人越多目标越低）。
 ## 两边都按人数走但单位不同（这里是命中率，那里是胜率），改任意一边都要重跑蒙特卡洛。
 const CHAMPION_CROWD_RELIEF_BASE := 3
-const CHAMPION_CROWD_RELIEF_PER_DOUBLING := 0.010
-const CHAMPION_CROWD_RELIEF_CAP := 0.060
+const CHAMPION_CROWD_RELIEF_PER_DOUBLING := 0.040
+const CHAMPION_CROWD_RELIEF_CAP := 0.070
 
 ## 擂主的 buff 命中当量每比挑战者平均高 1 点，命中率就让出这么多。
 ## 「命中当量」怎么算见下面那三个权重常量（AGENT_BUFF_WEIGHT_*）。
@@ -136,7 +136,7 @@ const HEAL_SHARE_CHALLENGER := 0.10
 ## 治疗触发后的闪避：不是掷骰，是直到下一次行动前的满闪（幻影刺杀除外）。
 const HEAL_GUARD_DODGE := 1.0
 
-## 潜能激发：5% 触发；扣 10% 最大生命，本次主动出手命中 / 暴击 / 伤害各 +50%。
+## 潜能激发：5% 触发；扣 10% 最大生命，本手内出手命中 / 暴击 / 伤害各 +50%。
 ## 当前生命必须严格大于扣费，否则不掷——付完之后还要能站着打出去。
 const AWAKEN_CHANCE := 0.05
 const AWAKEN_HP_SHARE := 0.10
@@ -144,10 +144,10 @@ const AWAKEN_HIT_BONUS := 0.50
 const AWAKEN_CRIT_BONUS := 0.50
 const AWAKEN_DAMAGE_BONUS := 0.50
 
-## 幻影刺杀：擂主 1% 秒杀；挑战者 2% 打对方最大生命的 50%。
-## 两边都无视闪避。技能表上的 assassinate_chance 只表示“有这招”，真正掷骰看这里。
+## 幻影刺杀：擂主 / 挑战者都是 1% 必中。擂主打目标最大生命，挑战者打最大生命的 50%。
+## 主动出手的每一刀都掷；还手不掷。技能表上的 assassinate_chance 只表示“有这招”，真正掷骰看这里。
 const ASSASSINATE_CHANCE_CHAMPION := 0.01
-const ASSASSINATE_CHANCE_CHALLENGER := 0.02
+const ASSASSINATE_CHANCE_CHALLENGER := 0.01
 const ASSASSINATE_SHARE_CHALLENGER := 0.50
 
 ## 胜率曲线的两个锚点，按**人均**战力比 s = 擂主 / 挑战者人均战力（RMS 口径）定：
@@ -289,10 +289,11 @@ static func assassinate_chance(fighter: Fighter) -> float:
 	return ASSASSINATE_CHANCE_CHAMPION if fighter.is_champion else ASSASSINATE_CHANCE_CHALLENGER
 
 
-## 幻影刺杀的伤害：擂主打到 0 血，挑战者打最大生命的一半。
+## 幻影刺杀的伤害按**原进攻目标**的最大生命算：擂主打满条，挑战者打一半。
+## 反弹只换承受方，不改这包伤害。
 static func assassinate_damage(attacker: Fighter, defender: Fighter) -> int:
 	if attacker.is_champion:
-		return maxi(defender.hp, 1)
+		return maxi(defender.max_hp, 1)
 	return maxi(1, int(round(float(defender.max_hp) * ASSASSINATE_SHARE_CHALLENGER)))
 
 
@@ -391,7 +392,7 @@ static func steer_weight(net_edge: float) -> float:
 ## MAX_HIT_CHANCE，推不出必中；而净差满 FULL_HIT_EDGE 挣来的那个 100%，
 ## 偏移的权重此时已经是 0，谁也拿不走。
 ##
-## 凌波微步不在这条算式里——它是挨打时另掷一次的被动，见 _one_strike。
+## 反弹 / 凌波微步不在这条算式里——它们是挨打时另掷的被动，见 _one_strike。
 static func hit_chance(attacker: Fighter, defender: Fighter, champion_steer_amount: float, extra_accuracy: float = 0.0) -> float:
 	var net_edge := net_hit_edge(attacker, defender, extra_accuracy)
 	var earned := hit_chance_before_steer(net_edge)
@@ -415,7 +416,9 @@ static func _rolls(rng: RollSource, chance: float) -> bool:
 static func resolve_action(actor: Fighter, defender: Fighter, champion_steer_amount: float, rng: RollSource) -> Array[StrikeResult]:
 	var events: Array[StrikeResult] = []
 	# 自己的新行动开始，上一手治疗留下的 100% 闪避到此结束。
+	# 上一手潜能激发也在这里到期：对手行动期间的还手还能吃到，轮到自己再清。
 	actor.heal_guard = false
+	actor.clear_awaken()
 	# 中毒先掉血，毒死了这一步就结束，连手都出不了。
 	if actor.poison_turns > 0:
 		events.append(_resolve_poison_tick(actor))
@@ -444,6 +447,7 @@ static func resolve_action(actor: Fighter, defender: Fighter, champion_steer_amo
 			target = actor
 			self_hit = true
 	# 打自己时连击和反击都不该发生，这两条 resolve_strikes 自己按 defender != attacker 拦着。
+	# 潜能激发在 resolve_strikes 出手前掷；麻痹 / 治疗跳过走不到那里。
 	var strikes := resolve_strikes(actor, target, champion_steer_amount, rng)
 	for strike in strikes:
 		strike.self_hit = self_hit
@@ -454,60 +458,94 @@ static func resolve_action(actor: Fighter, defender: Fighter, champion_steer_amo
 	return events
 
 
-## 一次出手的完整结算：潜能激发 → 首击 →（二连 / 三连追击）→ 对方反击。
+## 一次出手的完整结算：同一回合里的若干刀进攻 → 对方还手。
 ##
-## is_counter=true 表示这一手本身就是反击：既不再引发反击的反击，也不许掷连击，
-## 于是连击只会从主动出手里长出来，不会在反击链上继续滚雪球。
+## 二连 / 三连是「我先连打」，每一刀都是完整进攻（可凌波、反弹、绝对防御）。
+## 还手发生在这些刀之后：被凌波躲开的那一刀跟一次凌波反击，被命中的那一刀可掷普通反击。
+## is_counter=true 表示这一手本身就是还手：既不再引发反击的反击，也不许再开二连 / 三连。
+## 潜能激发的骰子在 resolve_action 里已经掷过，这里只读行动者身上挂着的加成。
 static func resolve_strikes(
 	attacker: Fighter,
 	defender: Fighter,
 	champion_steer_amount: float,
 	rng: RollSource,
 	is_counter: bool = false,
+	certain_hit: bool = false,
 ) -> Array[StrikeResult]:
 	var events: Array[StrikeResult] = []
-	var extra_hit := 0.0
-	var extra_crit := 0.0
-	var extra_damage := 0.0
-	var awakened := false
-	var paid := 0
-	# 潜能激发只在主动出手上掷；反击和追击都不另开一轮。
-	if not is_counter and can_awaken(attacker) and _rolls(rng, AWAKEN_CHANCE):
-		paid = awaken_cost(attacker)
-		attacker.apply_damage(paid)
-		awakened = true
-		extra_hit = AWAKEN_HIT_BONUS
-		extra_crit = AWAKEN_CRIT_BONUS
-		extra_damage = AWAKEN_DAMAGE_BONUS
-	# extra_index=0 标记这是首击。追击和反击都不许再掷连击类（含幻影刺杀 / 凌波微步）。
-	var first := _one_strike(attacker, defender, champion_steer_amount, rng, 0, not is_counter, extra_hit, extra_crit, extra_damage)
-	if awakened:
+	# 主动出手前掷一次；还手不另掷，只读身上还挂着的加成。
+	if not is_counter:
+		_try_awaken(attacker, rng)
+	var extra_hit := attacker.awaken_accuracy_bonus
+	var extra_crit := attacker.awaken_crit_bonus
+	var extra_damage := attacker.awaken_damage_bonus
+	var bounce_events: Array[StrikeResult] = []
+	var first := _one_strike(attacker, defender, champion_steer_amount, rng, 0, not is_counter, extra_hit, extra_crit, extra_damage, bounce_events, certain_hit)
+	if not is_counter and attacker.awaken_cost_paid > 0:
 		first.awakened = true
-		first.awaken_cost = paid
+		first.awaken_cost = attacker.awaken_cost_paid
+	events.append_array(bounce_events)
 	events.append(first)
-	# 打空、把人打死了、或者这一手是打自己，都不进连击。
+	var landings: Array = []
+	var bounce_count := bounce_events.size()
+	var first_receiver := defender if bounce_count % 2 == 0 else attacker
+	var first_sender := attacker if bounce_count % 2 == 0 else defender
+	landings.append([first, first_sender, first_receiver])
+	# 首击打空、打死、或打自己，都不再追加。追击一旦打出就是完整进攻。
 	if not is_counter and first.hit and (not first.defender_died) and defender != attacker:
 		for i in range(_roll_extra_strikes(attacker, rng)):
-			if not defender.is_alive():
+			if not defender.is_alive() or not attacker.is_alive():
 				break
-			# 追击同样要过命中判定，连击只是多给机会，不是保证打中。
-			# allow_techniques=false：追击不再掷任何连击类。
-			events.append(_one_strike(attacker, defender, champion_steer_amount, rng, i + 1, false, extra_hit, extra_crit, extra_damage))
-	# 反击：凌波微步在未成击时也还一下；普通反击只看首击有没有打中。
-	# 挨打的人得还站着。打自己时没有“对方”，也就没有反击。
-	var should_counter := false
-	if not is_counter and defender != attacker and defender.is_alive():
-		if first.lingbo:
-			should_counter = true
-		elif first.hit and _rolls(rng, defender.stacked_counter()):
-			should_counter = true
-	if should_counter:
-		# 反击既不能再反击，也不能掷连击：只还一下。
-		var counters := resolve_strikes(defender, attacker, champion_steer_amount, rng, true)
+			var extra_bounces: Array[StrikeResult] = []
+			var extra := _one_strike(attacker, defender, champion_steer_amount, rng, i + 1, true, extra_hit, extra_crit, extra_damage, extra_bounces)
+			events.append_array(extra_bounces)
+			events.append(extra)
+			var extra_count := extra_bounces.size()
+			var extra_receiver := defender if extra_count % 2 == 0 else attacker
+			var extra_sender := attacker if extra_count % 2 == 0 else defender
+			landings.append([extra, extra_sender, extra_receiver])
+			if extra.defender_died:
+				break
+	if is_counter:
+		return events
+	# 我的刀全部打完，再按刀序还手。还手是单刀，不再开连击。
+	for i in landings.size():
+		var landing: Array = landings[i]
+		var swing: StrikeResult = landing[0]
+		var sender: Fighter = landing[1]
+		var receiver: Fighter = landing[2]
+		if receiver == sender or not receiver.is_alive() or not sender.is_alive():
+			continue
+		var reply := false
+		if swing.lingbo:
+			reply = true
+		elif swing.hit and _rolls(rng, receiver.stacked_counter()):
+			reply = true
+		if not reply:
+			continue
+		var counters := resolve_strikes(receiver, sender, champion_steer_amount, rng, true, swing.lingbo)
 		for counter in counters:
 			counter.countered = true
 		events.append_array(counters)
+		if not sender.is_alive() or not receiver.is_alive():
+			break
 	return events
+
+
+## 本手开始、出手之前掷一次。已经挂着加成就不再掷、不再扣费。
+static func _try_awaken(actor: Fighter, rng: RollSource) -> void:
+	if actor.has_awaken_bonus():
+		return
+	if not can_awaken(actor):
+		return
+	if not _rolls(rng, AWAKEN_CHANCE):
+		return
+	var paid := awaken_cost(actor)
+	actor.apply_damage(paid)
+	actor.awaken_cost_paid = paid
+	actor.awaken_accuracy_bonus = AWAKEN_HIT_BONUS
+	actor.awaken_crit_bonus = AWAKEN_CRIT_BONUS
+	actor.awaken_damage_bonus = AWAKEN_DAMAGE_BONUS
 
 
 ## 首击命中后追加几下。三连和二连各掷各的，可同时成功：
@@ -554,20 +592,23 @@ static func _skip_event(actor: Fighter, reason: String) -> StrikeResult:
 	return result
 
 
-## 一次单独的挥击：命中判定 →（幻影刺杀 / 治疗闪避 / 凌波微步）→ 绝对防御 →（秒杀 / 伤害）→ 吸血 → 复活 → 挂状态。
+## 一次单独的挥击：命中判定 → 反弹链 →（幻影刺杀 / 治疗闪避 / 凌波微步）→ 绝对防御 →（刺杀伤害 / 普通伤害）→ 吸血 → 复活 → 挂状态。
 ##
-## allow_techniques 只在主动首击上为真。追击和反击都不许再掷幻影刺杀、凌波微步。
-## extra_* 是潜能激发给这一串出手的临时加成。
+## allow_techniques 在主动进攻的每一刀上都为真（含二连 / 三连追击），还手为假。
+## 幻影刺杀在 allow_techniques 的每一刀上都掷。extra_* 是潜能激发给这一串出手的临时加成。
+## bounce_events 用来收集反弹链上的战报；调用方必须传入自己的数组，这里不会另建一份。
 static func _one_strike(
 	attacker: Fighter,
 	defender: Fighter,
 	champion_steer_amount: float,
 	rng: RollSource,
 	extra_index: int,
-	allow_techniques: bool = true,
-	extra_accuracy: float = 0.0,
-	extra_crit: float = 0.0,
-	extra_damage: float = 0.0,
+	allow_techniques: bool,
+	extra_accuracy: float,
+	extra_crit: float,
+	extra_damage: float,
+	bounce_events: Array[StrikeResult],
+	certain_hit: bool = false,
 ) -> StrikeResult:
 	var result := StrikeResult.new()
 	result.attacker_name = attacker.username
@@ -577,90 +618,123 @@ static func _one_strike(
 	result.combo = extra_index > 0
 	result.extra_index = extra_index
 
-	var chance := hit_chance(attacker, defender, champion_steer_amount, extra_accuracy)
 	var roll := rng.randf()
 	# 幻影刺杀在命中骰之后掷，这样“本会闪掉的点数”仍然进队列，测试能证明它无视闪避。
 	var assassinated := false
 	if allow_techniques and attacker != defender and attacker.stacked_assassinate() > 0.0 and _rolls(rng, assassinate_chance(attacker)):
 		assassinated = true
-	# 治疗留下的 100% 闪避：普通挥击全部当闪避，不走凌波微步；幻影刺杀仍能打中。
-	if not assassinated and defender.heal_guard:
+	# 反弹在凌波 / 治疗满闪 / 普通闪避之前。混乱自伤（攻守同一人）不掷。
+	# 伤害和附加效果按原进攻者对**原目标**结算，只换最终承受方。
+	var receiver := defender
+	if allow_techniques and attacker != defender:
+		var incoming: Fighter = attacker
+		while bounce_events.size() < 16:
+			if not _rolls(rng, receiver.stacked_reflect()):
+				break
+			bounce_events.append(_reflect_event(incoming, receiver, bounce_events.size()))
+			var next_receiver: Fighter = incoming
+			incoming = receiver
+			receiver = next_receiver
+	result.reflect_count = bounce_events.size()
+	result.defender_name = receiver.username
+	# 反弹链在某一侧停住后，这一包伤害必定打中最终目标：不再闪、不凌波、不吃治疗满闪。
+	var landing_certain := bounce_events.size() > 0
+	var chance := hit_chance(attacker, receiver, champion_steer_amount, extra_accuracy)
+	# 治疗留下的 100% 闪避：普通挥击和还手全部当闪避，不走凌波微步；幻影刺杀仍能打中。
+	# 治疗本身跳过进攻，不会触发凌波。
+	if not assassinated and not landing_certain and receiver.heal_guard:
 		result.dodged = true
-		result.defender_hp_after = defender.hp
+		result.defender_hp_after = receiver.hp
 		result.attacker_hp_after = attacker.hp
-		result.defender_died = not defender.is_alive()
+		result.defender_died = not receiver.is_alive()
 		return result
-	# 凌波微步：非追击挥击打来时掷中，本下记为闪避并稍后还击。刺杀已中则无视闪避，不再掷。
-	if not assassinated and allow_techniques and attacker != defender and _rolls(rng, defender.stacked_lingbo()):
+	# 凌波微步：主动进攻的每一刀都可以掷；还手不再掷。刺杀已中则无视闪避。
+	if not assassinated and not landing_certain and allow_techniques and attacker != defender and _rolls(rng, receiver.stacked_lingbo()):
 		result.dodged = true
 		result.lingbo = true
-		result.defender_hp_after = defender.hp
+		result.defender_hp_after = receiver.hp
 		result.attacker_hp_after = attacker.hp
-		result.defender_died = not defender.is_alive()
+		result.defender_died = not receiver.is_alive()
 		return result
-	if not assassinated and roll >= chance:
+	# 凌波还手必中：命中骰仍进队列（证明本会 miss 的点数也被无视），但不闪。
+	# 治疗满闪在上面已经挡掉；普通反击 certain_hit=false，仍走这条。
+	if not assassinated and not landing_certain and not certain_hit and roll >= chance:
 		# 没打中只有闪避，没有失手。凌波微步走上面的分支。
 		result.dodged = true
-		result.defender_hp_after = defender.hp
+		result.defender_hp_after = receiver.hp
 		result.attacker_hp_after = attacker.hp
-		result.defender_died = not defender.is_alive()
+		result.defender_died = not receiver.is_alive()
 		return result
 	result.hit = true
 
 	# 绝对防御：打中了但伤害归零，不挂中毒/麻痹/混乱，也不吸血。
 	# 每一次打中的挥击都掷一次——首击、连击追击、反击、混乱自伤，以及幻影刺杀：
 	# 刺杀无视的是**闪避**，不是防御，所以它掷中之后仍要过这一关。
-	if _rolls(rng, defender.stacked_guard()):
+	if _rolls(rng, receiver.stacked_guard()):
 		result.guarded = true
 		result.damage = 0
-		result.defender_hp_after = defender.hp
+		result.defender_hp_after = receiver.hp
 		result.attacker_hp_after = attacker.hp
 		return result
 
 	if assassinated:
 		result.assassinated = true
-		# 擂主秒杀打到 0 血；挑战者打最大生命的一半。再走浴火重生。
+		# 伤害按原目标最大生命打包；反弹只换人挨打。再走浴火重生。
 		result.damage = assassinate_damage(attacker, defender)
-		defender.apply_damage(result.damage)
-		result.revived = defender.try_rebirth()
-		result.defender_hp_after = defender.hp
+		receiver.apply_damage(result.damage)
+		result.revived = receiver.try_rebirth()
+		result.defender_hp_after = receiver.hp
 		result.attacker_hp_after = attacker.hp
-		result.defender_died = not defender.is_alive()
-		_apply_on_hit_status(attacker, defender, rng, result)
+		result.defender_died = not receiver.is_alive()
+		_apply_on_hit_status(attacker, receiver, rng, result)
 		return result
 
-	# 伤害：基准值 →（暴击 ×2）→ 增伤 → 对方减伤。
+	# 伤害：进攻者对**原目标**打出的那一包（基准按原目标血条），暴击/增伤跟进攻者，减伤跟最终承受方。
 	var damage := float(strike_damage(defender))
 	var crit_chance := attacker.stacked_crit() + extra_crit
 	if _rolls(rng, crit_chance):
 		result.crit = true
 		damage *= CRIT_MULTIPLIER
 	damage *= 1.0 + attacker.stacked_damage_bonus() + extra_damage
-	damage *= 1.0 - defender.stacked_damage_reduction()
+	damage *= 1.0 - receiver.stacked_damage_reduction()
 	# 至少打掉 1 点，减伤再高也不会变成挠痒痒。
 	result.damage = maxi(1, int(round(damage)))
-	defender.apply_damage(result.damage)
-	if attacker.has_lifesteal() and attacker != defender:
+	receiver.apply_damage(result.damage)
+	if attacker.has_lifesteal() and attacker != receiver:
 		# 先把这一击折算成“相当于自己的多少次普通命中”，再按比例回血，
 		# 否则打小号造成的伤害换算到自己那条长血条上会是笔巨款。
-		var scale := float(strike_damage(attacker)) / float(maxi(1, strike_damage(defender)))
+		var scale := float(strike_damage(attacker)) / float(maxi(1, strike_damage(receiver)))
 		var stolen := maxi(1, int(round(float(result.damage) * lifesteal_ratio(attacker) * scale)))
 		result.heal_amount = attacker.apply_heal(stolen)
 		# 血满了就吸不进去，这时候不算触发吸血。
 		result.lifesteal = result.heal_amount > 0
 	# 掉到 0 血时试一次浴火重生，成功就不算死。
-	result.revived = defender.try_rebirth()
-	result.defender_hp_after = defender.hp
+	result.revived = receiver.try_rebirth()
+	result.defender_hp_after = receiver.hp
 	result.attacker_hp_after = attacker.hp
-	result.defender_died = not defender.is_alive()
-	_apply_on_hit_status(attacker, defender, rng, result)
+	result.defender_died = not receiver.is_alive()
+	_apply_on_hit_status(attacker, receiver, rng, result)
 	return result
+
+
+## 反弹链上的一条战报。attacker 是把这一击送过来的人，defender 是反弹的人。
+static func _reflect_event(incoming: Fighter, bouncer: Fighter, index: int) -> StrikeResult:
+	var bounce := StrikeResult.new()
+	bounce.attacker_name = incoming.username
+	bounce.defender_name = bouncer.username
+	bounce.attacker_is_champion = incoming.is_champion
+	bounce.reflected = true
+	bounce.reflect_index = index
+	bounce.reflect_count = index + 1
+	bounce.defender_hp_after = bouncer.hp
+	bounce.attacker_hp_after = incoming.hp
+	return bounce
 
 
 ## 命中之后逐个掷骰，看是否挂上中毒 / 麻痹 / 混乱。
 static func _apply_on_hit_status(attacker: Fighter, defender: Fighter, rng: RollSource, result: StrikeResult) -> void:
-	# 混乱自伤时不给自己上状态。
-	if attacker == defender:
+	# 混乱自伤时不给自己上状态。反弹打回原攻方时攻守是同一个人，仍要挂附加效果。
+	if attacker == defender and result.reflect_count % 2 == 0:
 		return
 	for status in ON_HIT_STATUSES:
 		if not _rolls(rng, attacker.stacked(str(status[0]))):

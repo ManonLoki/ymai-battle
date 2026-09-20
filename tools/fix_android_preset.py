@@ -11,8 +11,11 @@ import sys
 PATH = sys.argv[1] if len(sys.argv) > 1 else "export_presets.cfg"
 
 WANTED = {
-    "include_filter": '"*.png,*.woff2"',
-    "exclude_filter": '"Release/*"',
+    "include_filter": '"*.png,*.woff2,*.ogg,*.wav"',
+    # 非运行时资源一律挡在包外：导出产物、文档、测试脚本，以及测试每轮
+    # 生成的 assets/characters 预览图（只给人肉看和 bake_chrome 用，运行时
+    # 的立绘是 SpriteFactory 现画的）。
+    "exclude_filter": '"Release/*,docs/*,tests/*,assets/characters/*"',
     "architectures/armeabi-v7a": "true",
     "architectures/arm64-v8a": "true",
     "gradle_build/use_gradle_build": "true",

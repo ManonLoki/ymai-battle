@@ -40,7 +40,7 @@ static func pick_skills(count: int, rng: RollSource) -> Array[SkillDef]:
 	return picked
 
 
-## 这一场发几张技能。擂主 6~8 张、挑战者 2~4 张，每场重掷，
+## 这一场发几张技能。擂主 4~10 张、挑战者 2~6 张，每场重掷，
 ## 所以同一个人连着上场，手里的牌也是一场松一场紧，不会每次都发满。
 static func roll_skill_count(is_champion: bool, rng: RollSource) -> int:
 	if is_champion:

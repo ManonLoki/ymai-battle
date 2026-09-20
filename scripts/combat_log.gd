@@ -79,6 +79,11 @@ static func _body(event: StrikeResult) -> String:
 		elif event.defender_died:
 			self_line += "，倒下！"
 		return self_line
+	# 反弹是防守判定，单独一句；落地那一击还走后面的命中 / 闪避文案。
+	if event.reflected:
+		if event.reflect_index <= 0:
+			return "%s反弹了来自%s的攻击" % [event.defender_name, event.attacker_name]
+		return "%s反弹了%s的反弹" % [event.defender_name, event.attacker_name]
 	# 没打中只有凌波微步和闪避，没有失手。
 	if event.lingbo:
 		return _awaken_prefix(event) + "%s以【凌波微步】闪避了%s的伤害" % [event.defender_name, event.attacker_name]
@@ -89,7 +94,10 @@ static func _body(event: StrikeResult) -> String:
 	if event.awakened:
 		chunks.append(_awaken_line(event).rstrip("\n"))
 	if event.assassinated:
-		chunks.append("%s对%s发动【幻影刺杀】" % [event.attacker_name, event.defender_name])
+		if event.attacker_is_champion:
+			chunks.append("%s对%s发动【幻影刺杀】，造成最大生命伤害" % [event.attacker_name, event.defender_name])
+		else:
+			chunks.append("%s对%s发动【幻影刺杀】" % [event.attacker_name, event.defender_name])
 	if event.crit:
 		chunks.append("%s对%s造成【暴击】伤害" % [event.attacker_name, event.defender_name])
 	var statuses: PackedStringArray = PackedStringArray()

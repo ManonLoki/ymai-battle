@@ -20,10 +20,16 @@ var attacker_is_champion: bool = false
 var hit: bool = false
 ## 没打中且是被对方闪避挡下的（含普通闪避；凌波微步也会把这个标上）。
 var dodged: bool = false
-## 这一下触发了幻影刺杀：无视闪避，把对方打到 0 血后再结算浴火重生。
+## 这一下触发了幻影刺杀：无视闪避。擂主打目标最大生命，挑战者打一半；再结算浴火重生。
 var assassinated: bool = false
 ## 这一下被凌波微步闪掉，随后会跟一条反击。
 var lingbo: bool = false
+## 这一条是反弹本身（不是落地的那一击）。文案和特效都读它。
+var reflected: bool = false
+## 反弹链上的第几次：0 是第一次反弹，之后是反弹的反弹。
+var reflect_index: int = 0
+## 落地这一击之前发生了几次反弹。奇数表示打回了原攻方。
+var reflect_count: int = 0
 ## 是否暴击。
 var crit: bool = false
 ## 这一下是不是连击追加出来的（首击为 false）。

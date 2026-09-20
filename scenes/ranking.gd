@@ -22,6 +22,8 @@ var _shown_date := ""
 
 func _ready() -> void:
 	TvRemote.install()
+	# 排行和主菜单同一首，切过来不要把金冠铃掐回开头。
+	MusicManager.play_lounge()
 	ThemeHelper.apply(self, 18)
 	%Background.color = ThemeHelper.BG
 	# 背景本身保持像素画最近邻采样；深色遮罩和半透明内容板在 scene 中固定

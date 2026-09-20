@@ -12,10 +12,12 @@ const NEXT_ROUND_DELAY := 60.0
 ## 人数不够时的说明，状态栏和结果面板用的是同一句。
 const SHORT_ROSTER_MSG := "上榜人数不足，无法开战（需要至少 2 人）"
 ## 每条战报事件之间的停顿，太快看不清、太慢一场打不完。
-const TURN_BEAT := 0.12
+const TURN_BEAT := 0.15
 ## 挥击动画挥到一半的时刻，挨打方在这里结算才像被打中。
 ## 跟着 FighterView 的出手动画长度走，和上面那条战报节奏是两回事，别合成一个。
-const HIT_IMPACT_DELAY := 0.12
+const HIT_IMPACT_DELAY := 0.15
+## 反弹盾+波播完再进落地判定，比挥击冲击稍长一点。
+const REFLECT_BEAT := 0.45
 
 var _war: WheelWar
 var _rng: RollSource
@@ -44,6 +46,8 @@ var record_path := RoundRecord.SAVE_PATH
 
 func _ready() -> void:
 	TvRemote.install()
+	# 战斗曲只在这个场景；离开时由主菜单/排行/设置把金冠铃接回去。
+	MusicManager.play_battle()
 	# HUD 和结果面板各自是一棵子树，字体要分别套。
 	ThemeHelper.apply(%HUD.get_node("Margin") as Control, 18)
 	ThemeHelper.apply(%ResultPanel, 18)
@@ -362,16 +366,21 @@ func _turn_loop() -> void:
 func _play_event(event: StrikeResult, champion: Fighter, opponent: Fighter) -> void:
 	if not _is_live():
 		return
+	# 五条 one-shot 按事件字段组合；Dummy 驱动测的是点名，不是扬声器。
+	CombatSfx.play_event(event)
 	# 擂主在左、挑战者在右；自伤时攻守是同一个视图。
 	var attacker_view := _champion_view if event.attacker_is_champion else _opponent_view
 	var attacker := champion if event.attacker_is_champion else opponent
 	var defender_view := _opponent_view if event.attacker_is_champion else _champion_view
 	var defender := opponent if event.attacker_is_champion else champion
-	if event.self_hit:
+	if event.self_hit or event.attacker_name == event.defender_name:
 		defender_view = attacker_view
 		defender = attacker
 	if event.poison_tick or event.skip_reason != "":
 		_play_tick(event, attacker_view, attacker)
+		return
+	if event.reflected:
+		await _play_reflect(event, defender_view)
 		return
 	await _play_strike(event, attacker_view, attacker, defender_view, defender)
 
@@ -390,10 +399,18 @@ func _play_tick(event: StrikeResult, attacker_view: FighterView, attacker: Fight
 		attacker_view.set_hp(event.attacker_hp_after, attacker.max_hp)
 	_append_log(_event_text(event))
 	if event.revived:
+		attacker_view.play_rebirth_fx()
 		attacker_view.play_idle()
 		attacker_view.set_hp(event.defender_hp_after, attacker.max_hp)
 	elif event.defender_died:
 		attacker_view.play_death()
+
+
+## 反弹：反弹方面前出盾，波射向被反弹方。不播挥击。
+func _play_reflect(event: StrikeResult, bouncer_view: FighterView) -> void:
+	bouncer_view.play_reflect_fx()
+	_append_log(_event_text(event))
+	await _wait(REFLECT_BEAT)
 
 
 ## 真正挥一下的那条：出招 → 等挥到一半 → 挨打方的反应 → 文字 → 等动画收尾。
@@ -419,6 +436,7 @@ func _play_strike(
 		# 复活 / 倒下 / 挡下 / 普通挨打，四种反应互斥。
 		if event.revived:
 			defender_view.play_hurt()
+			defender_view.play_rebirth_fx()
 			defender_view.play_idle()
 		elif event.defender_died:
 			defender_view.play_death()

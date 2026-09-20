@@ -65,8 +65,8 @@ custom_minimum_size = Vector2(0, 8)
 layout_mode = 2
 
 [node name="ModeSection" type="VBoxContainer" parent="Margin/VBox"]
+unique_name_in_owner = true
 layout_mode = 2
-size_flags_vertical = 3
 theme_override_constants/separation = 10
 
 [node name="ModeSelect" type="OptionButton" parent="Margin/VBox/ModeSection"]
@@ -80,28 +80,29 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 14
 
-[node name="ServerSection" type="VBoxContainer" parent="Margin/VBox"]
+[node name="ServerSection" type="VBoxContainer" parent="Margin/VBox/ModeSection"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="ServerTitle" type="Label" parent="Margin/VBox/ServerSection"]
+[node name="ServerTitle" type="Label" parent="Margin/VBox/ModeSection/ServerSection"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 20
 text = "榜单服务器"
 
-[node name="ServerHint" type="Label" parent="Margin/VBox/ServerSection"]
+[node name="ServerHint" type="Label" parent="Margin/VBox/ModeSection/ServerSection"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 14
 autowrap_mode = 3
 
-[node name="ServerSelectRow" type="HBoxContainer" parent="Margin/VBox/ServerSection"]
+[node name="ServerSelectRow" type="HBoxContainer" parent="Margin/VBox/ModeSection/ServerSection"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="ServerSelect" type="OptionButton" parent="Margin/VBox/ServerSection/ServerSelectRow"]
+[node name="ServerSelect" type="OptionButton" parent="Margin/VBox/ModeSection/ServerSection/ServerSelectRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -109,30 +110,100 @@ focus_mode = 2
 clip_text = true
 fit_to_longest_item = false
 
-[node name="ServerDelete" type="Button" parent="Margin/VBox/ServerSection/ServerSelectRow"]
+[node name="ServerMaintain" type="Button" parent="Margin/VBox/ModeSection/ServerSection/ServerSelectRow"]
 unique_name_in_owner = true
 layout_mode = 2
 focus_mode = 2
-text = "删除选中"
+text = "维护"
 
-[node name="ServerAddRow" type="HBoxContainer" parent="Margin/VBox/ServerSection"]
+[node name="ServerStatus" type="Label" parent="Margin/VBox/ModeSection/ServerSection"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+autowrap_mode = 3
+
+[node name="RestSpacer" type="Control" parent="Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="MaintainOverlay" type="ColorRect" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.02, 0.03, 0.05, 0.72)
+
+[node name="MaintainPanel" type="PanelContainer" parent="MaintainOverlay"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(640, 420)
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -320.0
+offset_top = -210.0
+offset_right = 320.0
+offset_bottom = 210.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Margin" type="MarginContainer" parent="MaintainOverlay/MaintainPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 16
+
+[node name="VBox" type="VBoxContainer" parent="MaintainOverlay/MaintainPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="MaintainOverlay/MaintainPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="MaintainTitle" type="Label" parent="MaintainOverlay/MaintainPanel/Margin/VBox/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 22
+text = "维护服务器"
+
+[node name="MaintainClose" type="Button" parent="MaintainOverlay/MaintainPanel/Margin/VBox/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 40)
+layout_mode = 2
+focus_mode = 2
+text = "关闭"
+
+[node name="ServerAddRow" type="HBoxContainer" parent="MaintainOverlay/MaintainPanel/Margin/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="ServerAddInput" type="LineEdit" parent="Margin/VBox/ServerSection/ServerAddRow"]
+[node name="ServerAddInput" type="LineEdit" parent="MaintainOverlay/MaintainPanel/Margin/VBox/ServerAddRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="ServerAdd" type="Button" parent="Margin/VBox/ServerSection/ServerAddRow"]
+[node name="ServerAdd" type="Button" parent="MaintainOverlay/MaintainPanel/Margin/VBox/ServerAddRow"]
 unique_name_in_owner = true
 layout_mode = 2
 focus_mode = 2
 text = "增加"
 
-[node name="ServerStatus" type="Label" parent="Margin/VBox/ServerSection"]
+[node name="ListScroll" type="ScrollContainer" parent="MaintainOverlay/MaintainPanel/Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ServerList" type="VBoxContainer" parent="MaintainOverlay/MaintainPanel/Margin/VBox/ListScroll"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 14
-autowrap_mode = 3
+size_flags_horizontal = 3
+theme_override_constants/separation = 8

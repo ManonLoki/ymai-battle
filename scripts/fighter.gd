@@ -21,7 +21,7 @@ var channels: PackedStringArray = PackedStringArray()
 ## 每个用过的 agent 各自换来一个独立 buff：用了 3 个 agent 就带 3 个 buff。
 ## 和 skills 分开存，是因为战报和头像上要单独标出它们。
 var agent_buffs: Array[SkillDef] = []
-## 本场随机抽到的技能，擂主 6~8 张、挑战者 2~4 张。
+## 本场随机抽到的技能，擂主 4~10 张、挑战者 2~6 张。
 var skills: Array[SkillDef] = []
 ## 是不是这一场的擂主（榜首）。体型、技能位、先天加成都看它。
 var is_champion: bool = false
@@ -55,6 +55,22 @@ var confuse_turns: int = 0
 var rebirth_available: bool = false
 ## 上一手治疗触发后，直到自己下一次行动开始前 100% 闪避（幻影刺杀除外）。
 var heal_guard: bool = false
+## 本手潜能激发留下的临时加成。自己下一次行动开始时清掉，还手仍可读。
+var awaken_accuracy_bonus: float = 0.0
+var awaken_crit_bonus: float = 0.0
+var awaken_damage_bonus: float = 0.0
+var awaken_cost_paid: int = 0
+
+
+func clear_awaken() -> void:
+	awaken_accuracy_bonus = 0.0
+	awaken_crit_bonus = 0.0
+	awaken_damage_bonus = 0.0
+	awaken_cost_paid = 0
+
+
+func has_awaken_bonus() -> bool:
+	return awaken_accuracy_bonus > 0.0 or awaken_crit_bonus > 0.0 or awaken_damage_bonus > 0.0
 
 
 ## 从排行榜条目建一名上场角色。技能和 buff 由 SkillGrant 另行发放。
@@ -164,6 +180,10 @@ func stacked_assassinate() -> float:
 
 func stacked_lingbo() -> float:
 	return stacked("lingbo_chance")
+
+
+func stacked_reflect() -> float:
+	return stacked("reflect_chance")
 
 
 func stacked_guard() -> float:

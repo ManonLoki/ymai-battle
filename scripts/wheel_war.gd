@@ -113,9 +113,9 @@ func _champion_buff_edge() -> float:
 	return CombatResolver.agent_buff_hit_value(champion.agent_buffs) - total / float(waiting.size())
 
 
-## 擂主这一场的技能张数比挑战者平均多几张。发牌张数每场重掷（擂主 6~8、挑战者 2~4），
+## 擂主这一场的技能张数比挑战者平均多几张。发牌张数每场重掷（擂主 4~10、挑战者 2~6），
 ## 所以这个差值每场都不一样，必须现算——按平均值硬编的话，
-## 擂主手气差只摸到 6 张的那些场次会按“多 3.5 张”被扣命中率，白亏。
+## 擂主手气差只摸到下限的那些场次会按“平均多几张”被扣命中率，白亏。
 func _champion_skill_edge() -> float:
 	if waiting.is_empty():
 		return 0.0

@@ -1,10 +1,10 @@
 [gd_scene format=3 uid="uid://pl4j5r38is58"]
 
-[ext_resource type="Script" path="res://scenes/battle.gd" id="1_battle"]
-[ext_resource type="Script" path="res://scripts/battle_parallax.gd" id="2_parallax"]
-[ext_resource type="Shader" path="res://shaders/battle_parallax.gdshader" id="3_shader"]
-[ext_resource type="Texture2D" path="res://assets/battle_backgrounds/ember_forge.png" id="4_preview"]
-[ext_resource type="PackedScene" path="res://scenes/fighter_view.tscn" id="5_fighter"]
+[ext_resource type="Script" uid="uid://dbjx0q32el4jh" path="res://scenes/battle.gd" id="1_battle"]
+[ext_resource type="Script" uid="uid://c17gjardqwbeq" path="res://scripts/battle_parallax.gd" id="2_parallax"]
+[ext_resource type="Shader" uid="uid://nww2pc66w0ac" path="res://shaders/battle_parallax.gdshader" id="3_shader"]
+[ext_resource type="Texture2D" uid="uid://8ijan3kkbekp" path="res://assets/battle_backgrounds/ember_forge.png" id="4_preview"]
+[ext_resource type="PackedScene" uid="uid://1qkvbrlj52k7" path="res://scenes/fighter_view.tscn" id="5_fighter"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_battle_parallax"]
 shader = ExtResource("3_shader")
@@ -16,13 +16,13 @@ shader_parameter/scroll_cycle_seconds = 32.0
 shader_parameter/scroll_direction = 1.0
 shader_parameter/edge_guard_px = 2.0
 
-[node name="Battle" type="Node"]
+[node name="Battle" type="Node" unique_id=866222965]
 script = ExtResource("1_battle")
 
-[node name="BackgroundLayer" type="CanvasLayer" parent="."]
+[node name="BackgroundLayer" type="CanvasLayer" parent="." unique_id=844276269]
 layer = 0
 
-[node name="Backdrop" type="ColorRect" parent="BackgroundLayer"]
+[node name="Backdrop" type="ColorRect" parent="BackgroundLayer" unique_id=725049215]
 unique_name_in_owner = true
 anchors_preset = 15
 anchor_right = 1.0
@@ -32,8 +32,9 @@ grow_vertical = 2
 mouse_filter = 2
 color = Color(0.051, 0.067, 0.09, 1)
 
-[node name="BattleBackground" type="TextureRect" parent="BackgroundLayer"]
+[node name="BattleBackground" type="TextureRect" parent="BackgroundLayer" unique_id=123305795]
 unique_name_in_owner = true
+texture_filter = 1
 material = SubResource("ShaderMaterial_battle_parallax")
 anchors_preset = 15
 anchor_right = 1.0
@@ -41,13 +42,12 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-texture_filter = 1
 texture = ExtResource("4_preview")
 expand_mode = 1
 stretch_mode = 6
 script = ExtResource("2_parallax")
 
-[node name="ArenaTint" type="ColorRect" parent="BackgroundLayer"]
+[node name="ArenaTint" type="ColorRect" parent="BackgroundLayer" unique_id=780791609]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -56,7 +56,7 @@ offset_bottom = -268.0
 mouse_filter = 2
 color = Color(0.035, 0.055, 0.09, 0.24)
 
-[node name="Floor" type="ColorRect" parent="BackgroundLayer"]
+[node name="Floor" type="ColorRect" parent="BackgroundLayer" unique_id=1945234877]
 anchors_preset = 12
 anchor_top = 1.0
 anchor_right = 1.0
@@ -67,26 +67,25 @@ grow_vertical = 0
 mouse_filter = 2
 color = Color(0.025, 0.035, 0.055, 0.46)
 
-[node name="Fighters" type="CanvasLayer" parent="."]
-layer = 1
+[node name="Fighters" type="CanvasLayer" parent="." unique_id=1697545668]
 
-[node name="ChampionSlot" type="Marker2D" parent="Fighters"]
+[node name="ChampionSlot" type="Marker2D" parent="Fighters" unique_id=282465620]
 unique_name_in_owner = true
 position = Vector2(320, 330)
 
-[node name="ChampionView" parent="Fighters/ChampionSlot" instance=ExtResource("5_fighter")]
+[node name="ChampionView" parent="Fighters/ChampionSlot" unique_id=644643022 instance=ExtResource("5_fighter")]
 unique_name_in_owner = true
 visible = false
 
-[node name="OpponentSlot" type="Marker2D" parent="Fighters"]
+[node name="OpponentSlot" type="Marker2D" parent="Fighters" unique_id=1540969712]
 unique_name_in_owner = true
 position = Vector2(960, 330)
 
-[node name="OpponentView" parent="Fighters/OpponentSlot" instance=ExtResource("5_fighter")]
+[node name="OpponentView" parent="Fighters/OpponentSlot" unique_id=960763946 instance=ExtResource("5_fighter")]
 unique_name_in_owner = true
 visible = false
 
-[node name="VsLabel" type="Label" parent="Fighters"]
+[node name="VsLabel" type="Label" parent="Fighters" unique_id=1585592896]
 offset_left = 590.0
 offset_top = 180.0
 offset_right = 690.0
@@ -97,11 +96,11 @@ text = "VS"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="HUD" type="CanvasLayer" parent="."]
+[node name="HUD" type="CanvasLayer" parent="." unique_id=2102662625]
 unique_name_in_owner = true
 layer = 2
 
-[node name="Margin" type="MarginContainer" parent="HUD"]
+[node name="Margin" type="MarginContainer" parent="HUD" unique_id=82416662]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -113,116 +112,110 @@ theme_override_constants/margin_top = 16
 theme_override_constants/margin_right = 24
 theme_override_constants/margin_bottom = 16
 
-[node name="VBox" type="VBoxContainer" parent="HUD/Margin"]
+[node name="VBox" type="VBoxContainer" parent="HUD/Margin" unique_id=1111607056]
 layout_mode = 2
 mouse_filter = 2
 theme_override_constants/separation = 8
 
-[node name="TopBar" type="HBoxContainer" parent="HUD/Margin/VBox"]
+[node name="TopBar" type="HBoxContainer" parent="HUD/Margin/VBox" unique_id=1305046158]
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="BackButton" type="Button" parent="HUD/Margin/VBox/TopBar"]
+[node name="BackButton" type="Button" parent="HUD/Margin/VBox/TopBar" unique_id=624064991]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(120, 40)
 layout_mode = 2
-focus_mode = 2
 text = "返回"
 
-[node name="MatchupLabel" type="Label" parent="HUD/Margin/VBox/TopBar"]
+[node name="MatchupLabel" type="Label" parent="HUD/Margin/VBox/TopBar" unique_id=1149435932]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 22
 text = "准备开战"
 
-[node name="RoundLabel" type="Label" parent="HUD/Margin/VBox/TopBar"]
+[node name="RoundLabel" type="Label" parent="HUD/Margin/VBox/TopBar" unique_id=2103011373]
 unique_name_in_owner = true
 layout_mode = 2
 text = "今日第 0 场"
 
-[node name="RemainingLabel" type="Label" parent="HUD/Margin/VBox/TopBar"]
+[node name="RemainingLabel" type="Label" parent="HUD/Margin/VBox/TopBar" unique_id=1315768396]
 unique_name_in_owner = true
 layout_mode = 2
 text = "右侧剩余 —"
 
-[node name="SideLabels" type="HBoxContainer" parent="HUD/Margin/VBox"]
+[node name="SideLabels" type="HBoxContainer" parent="HUD/Margin/VBox" unique_id=422046838]
 layout_mode = 2
 
-[node name="LeftTag" type="Label" parent="HUD/Margin/VBox/SideLabels"]
+[node name="LeftTag" type="Label" parent="HUD/Margin/VBox/SideLabels" unique_id=253194195]
 visible = false
 layout_mode = 2
 size_flags_horizontal = 3
-text = ""
 
-[node name="RightTag" type="Label" parent="HUD/Margin/VBox/SideLabels"]
+[node name="RightTag" type="Label" parent="HUD/Margin/VBox/SideLabels" unique_id=772747104]
 visible = false
 layout_mode = 2
 size_flags_horizontal = 3
-text = ""
 horizontal_alignment = 2
 
-[node name="Spacer" type="Control" parent="HUD/Margin/VBox"]
+[node name="Spacer" type="Control" parent="HUD/Margin/VBox" unique_id=1736185696]
 layout_mode = 2
 size_flags_vertical = 3
 mouse_filter = 2
 
-[node name="BottomRow" type="HBoxContainer" parent="HUD/Margin/VBox"]
+[node name="BottomRow" type="HBoxContainer" parent="HUD/Margin/VBox" unique_id=1443923648]
 layout_mode = 2
 mouse_filter = 2
 theme_override_constants/separation = 16
 
-[node name="BattleLog" type="RichTextLabel" parent="HUD/Margin/VBox/BottomRow"]
+[node name="BattleLog" type="RichTextLabel" parent="HUD/Margin/VBox/BottomRow" unique_id=1800324950]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 240)
 layout_mode = 2
 size_flags_horizontal = 3
 mouse_filter = 2
-bbcode_enabled = false
-text = ""
 scroll_following = true
 
-[node name="RecordPanel" type="PanelContainer" parent="HUD/Margin/VBox/BottomRow"]
+[node name="RecordPanel" type="PanelContainer" parent="HUD/Margin/VBox/BottomRow" unique_id=786139880]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(400, 240)
 layout_mode = 2
 mouse_filter = 2
 
-[node name="RecordMargin" type="MarginContainer" parent="HUD/Margin/VBox/BottomRow/RecordPanel"]
+[node name="RecordMargin" type="MarginContainer" parent="HUD/Margin/VBox/BottomRow/RecordPanel" unique_id=701632709]
 layout_mode = 2
 theme_override_constants/margin_left = 14
 theme_override_constants/margin_top = 10
 theme_override_constants/margin_right = 14
 theme_override_constants/margin_bottom = 10
 
-[node name="RecordBox" type="VBoxContainer" parent="HUD/Margin/VBox/BottomRow/RecordPanel/RecordMargin"]
+[node name="RecordBox" type="VBoxContainer" parent="HUD/Margin/VBox/BottomRow/RecordPanel/RecordMargin" unique_id=1239360020]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="RecordTitle" type="Label" parent="HUD/Margin/VBox/BottomRow/RecordPanel/RecordMargin/RecordBox"]
+[node name="RecordTitle" type="Label" parent="HUD/Margin/VBox/BottomRow/RecordPanel/RecordMargin/RecordBox" unique_id=719487172]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 16
 text = "今日榜一战绩"
 
-[node name="RecordScroll" type="ScrollContainer" parent="HUD/Margin/VBox/BottomRow/RecordPanel/RecordMargin/RecordBox"]
+[node name="RecordScroll" type="ScrollContainer" parent="HUD/Margin/VBox/BottomRow/RecordPanel/RecordMargin/RecordBox" unique_id=443004521]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="RecordList" type="VBoxContainer" parent="HUD/Margin/VBox/BottomRow/RecordPanel/RecordMargin/RecordBox/RecordScroll"]
+[node name="RecordList" type="VBoxContainer" parent="HUD/Margin/VBox/BottomRow/RecordPanel/RecordMargin/RecordBox/RecordScroll" unique_id=1931488170]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="RecordEmptyLabel" type="Label" parent="HUD/Margin/VBox/BottomRow/RecordPanel/RecordMargin/RecordBox/RecordScroll/RecordList"]
+[node name="RecordEmptyLabel" type="Label" parent="HUD/Margin/VBox/BottomRow/RecordPanel/RecordMargin/RecordBox/RecordScroll/RecordList" unique_id=1488866574]
 unique_name_in_owner = true
 layout_mode = 2
-mouse_filter = 2
 theme_override_font_sizes/font_size = 15
 text = "还没有人打完一场"
 
-[node name="ResultPanel" type="PanelContainer" parent="HUD"]
+[node name="ResultPanel" type="PanelContainer" parent="HUD" unique_id=2103246163]
 unique_name_in_owner = true
 visible = false
 anchors_preset = 8
@@ -237,11 +230,11 @@ offset_bottom = 140.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="ResultBox" type="VBoxContainer" parent="HUD/ResultPanel"]
+[node name="ResultBox" type="VBoxContainer" parent="HUD/ResultPanel" unique_id=1575390770]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="ResultLabel" type="Label" parent="HUD/ResultPanel/ResultBox"]
+[node name="ResultLabel" type="Label" parent="HUD/ResultPanel/ResultBox" unique_id=967058461]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
@@ -251,27 +244,24 @@ horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 3
 
-[node name="MvpLabel" type="Label" parent="HUD/ResultPanel/ResultBox"]
+[node name="MvpLabel" type="Label" parent="HUD/ResultPanel/ResultBox" unique_id=1208914796]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 22
-text = ""
 horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 3
 
-[node name="ReplayHintLabel" type="Label" parent="HUD/ResultPanel/ResultBox"]
+[node name="ReplayHintLabel" type="Label" parent="HUD/ResultPanel/ResultBox" unique_id=2019326182]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
-text = ""
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="ReplayButton" type="Button" parent="HUD/ResultPanel/ResultBox"]
+[node name="ReplayButton" type="Button" parent="HUD/ResultPanel/ResultBox" unique_id=2089518672]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(180, 44)
 layout_mode = 2
 size_flags_horizontal = 4
-focus_mode = 2
 text = "再战"

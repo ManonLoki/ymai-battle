@@ -217,6 +217,30 @@ static func add_base_url(text: String, path: String = SAVE_PATH) -> bool:
 	return add_and_select_base_url(text, path)
 
 
+## 把已保存的一条基址改成另一条合法基址并落盘。
+## 旧地址不在列表里或新地址不合法都失败；改的是当前选择时选择跟着走。
+## 新地址已经在列表里则删掉旧的、选中既有项，避免出现重复候选。
+static func replace_base_url(old_text: String, new_text: String, path: String = SAVE_PATH) -> bool:
+	var old_base := normalize_base_url(old_text)
+	var new_base := normalize_base_url(new_text)
+	if old_base.is_empty() or new_base.is_empty():
+		return false
+	var urls := load_base_urls(path)
+	var index := urls.find(old_base)
+	if index < 0:
+		return false
+	if old_base == new_base:
+		return true
+	if urls.has(new_base):
+		urls.remove_at(index)
+	else:
+		urls[index] = new_base
+	var selected := load_base_url(path)
+	if selected == old_base:
+		selected = new_base
+	return save_base_urls(urls, selected, path)
+
+
 ## 从本地列表删除指定基址。删的是当前选择才回到默认；删除其他候选时保留选择。
 ## 不存在的地址视为幂等成功，也不会意外清空当前选择。
 static func remove_base_url(text: String, path: String = SAVE_PATH) -> bool:

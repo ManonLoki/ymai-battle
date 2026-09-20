@@ -46,6 +46,11 @@ func _run() -> void:
 		quit(1)
 		return
 	print("MAIN_MENU_OK")
+	var music := root.get_node_or_null("MusicManager")
+	if music == null or not music.is_lounge():
+		printerr("LOUNGE_BGM_MISSING")
+		quit(1)
+		return
 	main.queue_free()
 	# 再等一帧，让上一个场景真的被释放掉再摆下一个。
 	await process_frame
@@ -64,6 +69,10 @@ func _run() -> void:
 		quit(1)
 		return
 	print("RANKING_SCENE_OK")
+	if music == null or not music.is_lounge():
+		printerr("LOUNGE_BGM_CHANGED")
+		quit(1)
+		return
 	ranking.queue_free()
 	await process_frame
 
@@ -83,6 +92,10 @@ func _run() -> void:
 		quit(1)
 		return
 	print("BATTLE_SCENE_OK")
+	if music == null or not music.is_battle():
+		printerr("BATTLE_BGM_MISSING")
+		quit(1)
+		return
 	battle.queue_free()
 	await process_frame
 
@@ -110,12 +123,26 @@ func _run() -> void:
 		printerr("SETTINGS_MODE_INITIAL_STATE_INVALID")
 		quit(1)
 		return
-	# 服务器地址那一栏：下拉、增加输入和增删按钮都得在。
-	if settings.get_node_or_null("%ServerSelect") == null or settings.get_node_or_null("%ServerAddInput") == null or settings.get_node_or_null("%ServerAdd") == null or settings.get_node_or_null("%ServerDelete") == null:
+	# 服务器地址那一栏：下拉紧挨窗口模式，后面是维护按钮；增删改在面板里。
+	var server_select := settings.get_node_or_null("%ServerSelect") as OptionButton
+	var server_maintain := settings.get_node_or_null("%ServerMaintain") as Button
+	if server_select == null or server_maintain == null or settings.get_node_or_null("%ServerAddInput") == null or settings.get_node_or_null("%ServerAdd") == null or settings.get_node_or_null("%MaintainOverlay") == null:
 		printerr("SETTINGS_SERVER_CONTROLS_MISSING")
 		quit(1)
 		return
+	if server_select.global_position.y <= mode_select.global_position.y or server_select.global_position.y - mode_select.global_position.y >= 240.0:
+		printerr("SETTINGS_SERVER_LAYOUT_INVALID")
+		quit(1)
+		return
+	if settings.get_node_or_null("%ServerDelete") != null:
+		printerr("SETTINGS_OLD_INLINE_DELETE_PRESENT")
+		quit(1)
+		return
 	print("SETTINGS_SCENE_OK")
+	if music == null or not music.is_lounge():
+		printerr("LOUNGE_BGM_NOT_RESTORED")
+		quit(1)
+		return
 	print("LAUNCH_SMOKE_PASSED")
 	_remove_test_record()
 	quit(0)

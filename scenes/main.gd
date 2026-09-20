@@ -17,6 +17,8 @@ func _ready() -> void:
 	# 光标由 CursorController autoload 全局接管（装贴图 + 每个事件切换），
 	# 这里不用再管；遥控器映射是幂等的，每个场景都装一次。
 	TvRemote.install()
+	# 金冠铃是非战斗三页共用；已经在播时 MusicManager 不会重开。
+	MusicManager.play_lounge()
 	ThemeHelper.apply(self, 22)
 	# 主菜单是唯一的启动入口，所以上次选的窗口模式在这里应用一次就够了，
 	# 从设置页返回时顺带再确认一遍，代价只是一次幂等的 DisplayServer 调用。

@@ -11,20 +11,21 @@ extends RefCounted
 const ICON_DIR := "res://assets/icons/"
 ## 每场随机抽几张技能，不是每次都发满——同一个人连着当擂主，
 ## 手里的牌也会一场松一场紧，观感上每场都不一样。
-## 擂主以一敌众，区间整体比挑战者高一档，这是他扛住车轮战的主要本钱。
-const CHAMPION_SKILL_MIN := 6
-const CHAMPION_SKILL_CAP := 8
+## 擂主以一敌众，区间整体比挑战者宽、上限更高，这是他扛住车轮战的主要本钱。
+const CHAMPION_SKILL_MIN := 4
+const CHAMPION_SKILL_CAP := 10
 const CHALLENGER_SKILL_MIN := 2
-const CHALLENGER_SKILL_CAP := 4
+const CHALLENGER_SKILL_CAP := 6
 ## 中毒 / 麻痹 / 混乱的触发概率，三个状态技共用一个值。
 const STATUS_CHANCE := 0.20
 ## 暴击 / 命中 / 增伤 / 闪避 / 减伤 / 绝对防御。
 const SELF_BUFF_CHANCE := 0.10
-## 连击 / 反击 / 凌波：池子里的字面量只在这里出现一次，结算读 stacked，tooltip 读 {pct}。
+## 连击 / 反击 / 凌波 / 反弹：池子里的字面量只在这里出现一次，结算读 stacked，tooltip 读 {pct}。
 const DOUBLE_CHANCE := 0.20
 const TRIPLE_CHANCE := 0.10
 const COUNTER_CHANCE := 0.20
 const LINGBO_CHANCE := 0.05
+const REFLECT_CHANCE := 0.10
 
 ## 图标边框五族。烘焙和测试都读这一份，避免边框颜色各写各的。
 const FAMILY_SELF := "self"
@@ -95,9 +96,10 @@ const SPECS := [
 	{"id": "skill_counter", "name": "反击", "desc": "被命中后 {pct} 反击一次", "family": FAMILY_TECHNIQUE, "prop": "counter_chance", "value": COUNTER_CHANCE},
 	{"id": "skill_lifesteal", "name": "吸血", "desc": "命中后按伤害吸血：擂主 {lifesteal_champion}，挑战者 {lifesteal_challenger}", "family": FAMILY_RECOVER, "prop": "lifesteal", "value": true},
 	{"id": "skill_heal", "name": "治疗", "desc": "触发时回血且不进攻，本回合 {heal_guard} 闪避（幻影刺杀除外）：擂主 {heal_chance_champion} 回 {heal_share_champion} 生命，挑战者 {heal_chance_challenger} 回 {heal_share_challenger} 生命", "family": FAMILY_RECOVER, "prop": "heal_chance", "value": CombatResolver.HEAL_CHANCE_CHAMPION},
-	{"id": "skill_assassinate", "name": "幻影刺杀", "desc": "非追击时无视闪避：擂主 {assassinate_chance_champion} 秒杀并结算浴火重生，挑战者 {assassinate_chance_challenger} 造成 {assassinate_share_challenger} 最大生命伤害", "family": FAMILY_TECHNIQUE, "prop": "assassinate_chance", "value": CombatResolver.ASSASSINATE_CHANCE_CHAMPION},
-	{"id": "skill_lingbo", "name": "凌波微步", "desc": "非追击被攻击时 {pct} 闪避并立刻反击一次", "family": FAMILY_TECHNIQUE, "prop": "lingbo_chance", "value": LINGBO_CHANCE},
-	{"id": "skill_awaken", "name": "潜能激发", "desc": "{pct} 触发时损失 {awaken_hp} 最大生命，本次攻击命中 +{awaken_hit}、暴击 +{awaken_crit}、伤害 +{awaken_damage}；当前生命不足时不触发", "family": FAMILY_TECHNIQUE, "prop": "awaken_chance", "value": CombatResolver.AWAKEN_CHANCE},
+	{"id": "skill_assassinate", "name": "幻影刺杀", "desc": "主动每一刀：擂主 {assassinate_chance_champion} 必中，造成目标最大生命伤害并结算浴火重生；挑战者 {assassinate_chance_challenger} 必中，造成 {assassinate_share_challenger} 最大生命伤害", "family": FAMILY_TECHNIQUE, "prop": "assassinate_chance", "value": CombatResolver.ASSASSINATE_CHANCE_CHAMPION},
+	{"id": "skill_lingbo", "name": "凌波微步", "desc": "被攻击时 {pct} 闪避并立刻反击一次（反击必中）", "family": FAMILY_TECHNIQUE, "prop": "lingbo_chance", "value": LINGBO_CHANCE},
+	{"id": "skill_awaken", "name": "潜能激发", "desc": "{pct} 触发时损失 {awaken_hp} 最大生命，本手内出手（含连击与还手）命中 +{awaken_hit}、暴击 +{awaken_crit}、伤害 +{awaken_damage}；当前生命不足时不触发", "family": FAMILY_TECHNIQUE, "prop": "awaken_chance", "value": CombatResolver.AWAKEN_CHANCE},
+	{"id": "skill_reflect", "name": "反弹", "desc": "被攻击时 {pct} 把本次攻击和附加效果反弹给对方，可连环反弹", "family": FAMILY_TECHNIQUE, "prop": "reflect_chance", "value": REFLECT_CHANCE},
 ]
 
 ## 说明模板里除 {pct} 和 {turns} 之外的占位符，一律指向 CombatResolver 的标定常量，
@@ -137,7 +139,7 @@ const AGENT_BUFF_SPECS := {
 ## id -> 在 SPECS 里的行号，查表 O(1)。
 static var _rank_by_id: Dictionary = {}
 ## 行号 -> 渲染好的说明文案。模板和 DESC_CONSTANTS 全是常量，渲染结果不会变，
-## 所以整个进程只拼一次——pool() 每场都要建一整副牌，别把 18 份文案重拼一遍。
+## 所以整个进程只拼一次——pool() 每场都要建一整副牌，别把每条说明重拼一遍。
 static var _desc_by_rank: PackedStringArray = PackedStringArray()
 
 

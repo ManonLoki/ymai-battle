@@ -10,7 +10,12 @@ const CRIT_TINT := Color(1.0, 0.92, 0.35)
 const POISON_TINT := Color(1.0, 0.35, 0.32)
 const PARALYZE_TINT := Color(1.0, 0.95, 0.35)
 const GUARD_TINT := Color(0.7, 0.95, 1.0)
+const REFLECT_TINT := Color(0.85, 0.95, 1.0)
 const HEAL_TINT := Color(0.55, 1.0, 0.7)
+## 反弹波从盾前方向对手方向射出的位移（Visual 局部 +x，翻转后仍朝向对方）。
+const REFLECT_WAVE_TRAVEL := 240.0
+## 反弹盾在身前的局部 x，正数表示朝向对手。
+const REFLECT_SHIELD_X := 64.0
 ## 刀光：平时是冷白，暴击那一下换成金的。
 const SLASH_COLOR := Color(0.95, 0.95, 1.0, 0.95)
 const CRIT_SLASH_COLOR := Color(1.0, 0.85, 0.2, 0.95)

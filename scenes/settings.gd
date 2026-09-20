@@ -5,11 +5,11 @@ extends Control
 ## 窗口模式用一个下拉框选择；选项按 AppSettings.MODES 的顺序生成，metadata
 ## 保存真实模式值，不把下拉索引当成模式。选择后立即保存、应用并刷新说明。
 ##
-## 服务器那一栏把 Web 启动参数或本地存档解析出的列表摆进下拉框；选空项走内置
-## 地址，选某一项就把它记作当前服务器。本地列表可以增删，Web 注入列表只读。
+## 服务器下拉紧挨窗口模式下拉下方。本地列表的增删改都在「维护」面板里完成；
+## Web 注入列表只读，不能改本地存档。
 
 const MAIN_SCENE := "res://scenes/main.tscn"
-## “增加 / 删除选中”按钮比主按钮窄，给地址和下拉框留空间。
+## “维护 / 增加 / 删除 / 保存”按钮比主按钮窄，给地址和下拉框留空间。
 const SERVER_BUTTON_MIN_SIZE := Vector2(140, 48)
 const DEFAULT_SERVER_LABEL := "使用默认服务器"
 
@@ -23,6 +23,8 @@ var settings_path: String = AppSettings.SAVE_PATH
 
 func _ready() -> void:
 	TvRemote.install()
+	# 设置页也走共用曲；从战斗返回主菜单再进这里时，由主菜单切回金冠铃。
+	MusicManager.play_lounge()
 	ThemeHelper.apply(self, 18)
 	%Background.color = ThemeHelper.BG
 	%Title.add_theme_color_override("font_color", ThemeHelper.TEXT)
@@ -47,7 +49,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		_on_back_pressed()
 	elif TvRemote.is_navigation(event):
 		# 焦点万一掉了，方向键会全哑，这里补回去。
-		TvRemote.ensure_focus(%BackButton)
+		if %MaintainOverlay.visible:
+			TvRemote.ensure_focus(%MaintainClose)
+		else:
+			TvRemote.ensure_focus(%BackButton)
 
 
 ## 用 AppSettings 的定义填充模式下拉框。metadata 存真实模式值，
@@ -101,35 +106,47 @@ func _on_mode_selected(index: int) -> void:
 	_refresh_mode_description()
 
 
-## 绑定服务器下拉、增加、删除和状态行。Web 参数提供列表时，列表是只读数据源；
+## 绑定服务器下拉、维护面板和状态行。Web 参数提供列表时，列表是只读数据源；
 ## 没提供时才允许维护本地列表。
 func _bind_server_controls() -> void:
 	%ServerTitle.add_theme_color_override("font_color", ThemeHelper.TEXT)
 	%ServerHint.add_theme_color_override("font_color", ThemeHelper.MUTED)
+	%MaintainTitle.add_theme_color_override("font_color", ThemeHelper.TEXT)
 	ThemeHelper.style_button(%ServerSelect, true)
-	ThemeHelper.style_button(%ServerDelete, false, SERVER_BUTTON_MIN_SIZE)
+	ThemeHelper.style_button(%ServerMaintain, false, SERVER_BUTTON_MIN_SIZE)
+	ThemeHelper.style_back_button(%MaintainClose)
 	ThemeHelper.style_line_edit(%ServerAddInput)
 	ThemeHelper.style_button(%ServerAdd, false, SERVER_BUTTON_MIN_SIZE)
 	%ServerAddInput.placeholder_text = AppSettings.SERVER_PLACEHOLDER
 	%ServerSelect.item_selected.connect(_on_server_selected)
+	%ServerMaintain.pressed.connect(_on_server_maintain_pressed)
+	%MaintainClose.pressed.connect(_close_maintain_panel)
 	# 电视遥控器按 OK 收完键盘会发 text_submitted，等同于按“增加”。
 	%ServerAddInput.text_submitted.connect(_on_server_add_submitted)
 	%ServerAdd.pressed.connect(_on_server_add_pressed)
-	%ServerDelete.pressed.connect(_on_server_delete_pressed)
 	var injected := WebLaunchConfig.has_base_urls_override()
 	%ServerAddRow.visible = not injected
 	%ServerAddInput.editable = not injected
 	%ServerAdd.disabled = injected
-	%ServerDelete.visible = not injected
+	%ServerMaintain.visible = not injected
+	%ServerMaintain.disabled = injected
 	%ServerHint.text = (
 		"服务器列表由网页启动参数提供；选择空项使用内置地址。"
 		if injected
-		else "从下拉框选择服务器；选择空项使用内置地址。输入 %s 可增加本地服务器。" % AppSettings.SERVER_PLACEHOLDER
+		else "从下拉框选择服务器；选择空项使用内置地址。点维护可增删改本地服务器。"
 	)
+	_style_maintain_panel()
 	_refresh_server_view()
 
 
-## 用当前数据源重建下拉，并把状态行刷成真正会访问的 endpoint。
+func _style_maintain_panel() -> void:
+	var box := ThemeHelper.make_flat(ThemeHelper.PANEL, 12)
+	box.set_border_width_all(1)
+	box.border_color = ThemeHelper.ACCENT
+	%MaintainPanel.add_theme_stylebox_override("panel", box)
+
+
+## 用当前数据源重建下拉，状态行只显示主机或「默认」，不把接口路径摊给用户。
 func _refresh_server_view(note: String = "", color: Color = ThemeHelper.MUTED) -> void:
 	var selected := WebLaunchConfig.effective_base_url(settings_path)
 	# 空串那一项代表“用内置地址”，和真实地址一样把值存进 metadata。
@@ -140,13 +157,13 @@ func _refresh_server_view(note: String = "", color: Color = ThemeHelper.MUTED) -
 		%ServerSelect,
 		bases,
 		func(base: Variant) -> String: return DEFAULT_SERVER_LABEL if str(base).is_empty() else str(base),
-		func(base: Variant) -> String: return TokenUsageApi.usage_url(str(base)),
+		func(base: Variant) -> String: return TokenUsageApi.display_host(str(base)),
 		selected,
 	)
-	%ServerDelete.disabled = WebLaunchConfig.has_base_urls_override() or selected.is_empty()
-	var label := "默认" if selected.is_empty() else selected
-	var line := "当前：%s · %s" % [label, TokenUsageApi.usage_url(selected)]
+	var line := "当前：%s" % TokenUsageApi.display_host(selected)
 	_set_server_status(line if note.is_empty() else "%s　%s" % [note, line], color)
+	if %MaintainOverlay.visible:
+		_refresh_maintain_list()
 
 
 ## 状态行。报错走 DANGER，其余都是灰字。
@@ -162,6 +179,69 @@ func _on_server_selected(index: int) -> void:
 		_refresh_server_view("选择未能保存。", ThemeHelper.DANGER)
 		return
 	_refresh_server_view("已切换。")
+
+
+func _on_server_maintain_pressed() -> void:
+	if WebLaunchConfig.has_base_urls_override():
+		return
+	%MaintainOverlay.visible = true
+	_refresh_maintain_list()
+	%ServerAddInput.grab_focus()
+
+
+func _close_maintain_panel() -> void:
+	%MaintainOverlay.visible = false
+	%ServerSelect.grab_focus()
+
+
+## 维护面板顶部的列表：每一行可改可删。
+func _refresh_maintain_list() -> void:
+	NodeUtil.clear_children(%ServerList)
+	if WebLaunchConfig.has_base_urls_override():
+		return
+	for base in AppSettings.load_base_urls(settings_path):
+		%ServerList.add_child(_make_server_row(str(base)))
+
+
+func _make_server_row(base: String) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	var edit := LineEdit.new()
+	edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	edit.text = base
+	edit.set_meta("original", base)
+	ThemeHelper.style_line_edit(edit)
+	var save_btn := Button.new()
+	save_btn.text = "保存"
+	ThemeHelper.style_button(save_btn, false, SERVER_BUTTON_MIN_SIZE)
+	save_btn.pressed.connect(_on_server_row_save_pressed.bind(edit))
+	var delete_btn := Button.new()
+	delete_btn.text = "删除"
+	ThemeHelper.style_button(delete_btn, false, SERVER_BUTTON_MIN_SIZE)
+	delete_btn.pressed.connect(_on_server_row_delete_pressed.bind(base))
+	row.add_child(edit)
+	row.add_child(save_btn)
+	row.add_child(delete_btn)
+	return row
+
+
+func _on_server_row_save_pressed(edit: LineEdit) -> void:
+	if WebLaunchConfig.has_base_urls_override():
+		return
+	var old_base := str(edit.get_meta("original", ""))
+	if not AppSettings.replace_base_url(old_base, edit.text, settings_path):
+		_set_server_status("地址格式不对或存不下来，服务器未修改", ThemeHelper.DANGER)
+		return
+	_refresh_server_view("已修改。")
+
+
+func _on_server_row_delete_pressed(base: String) -> void:
+	if WebLaunchConfig.has_base_urls_override():
+		return
+	if not AppSettings.remove_base_url(base, settings_path):
+		_set_server_status("存不下来，服务器未删除", ThemeHelper.DANGER)
+		return
+	_refresh_server_view("已删除。")
 
 
 ## 输入框回车 / 遥控器 OK 等同于按“增加”。
@@ -184,21 +264,10 @@ func _on_server_add_pressed() -> void:
 	_refresh_server_view("已增加并切换。")
 
 
-## 删除本地当前项；AppSettings 同时清空选择，因此请求立即回到默认地址。
-func _on_server_delete_pressed() -> void:
-	if WebLaunchConfig.has_base_urls_override():
-		return
-	var base := WebLaunchConfig.effective_base_url(settings_path)
-	if base.is_empty():
-		return
-	if not AppSettings.remove_base_url(base, settings_path):
-		_set_server_status("存不下来，服务器未删除", ThemeHelper.DANGER)
-		return
-	_refresh_server_view("已删除，改用默认服务器。")
-	%ServerSelect.grab_focus()
-
-
 func _on_back_pressed() -> void:
+	if %MaintainOverlay.visible:
+		_close_maintain_panel()
+		return
 	if _leaving:
 		return
 	_leaving = TvRemote.leave_to(self, MAIN_SCENE)
