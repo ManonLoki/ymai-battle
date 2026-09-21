@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Authoritative standard and embedded Web exporter for YMAIBattle."""
+"""Authoritative embedded Web exporter for YMAIBattle."""
 
 from __future__ import annotations
 
@@ -17,10 +17,8 @@ from web_fetch_bridge import BridgePatchError, patch_file, verify_file
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RELEASE_ROOT = PROJECT_ROOT / "Release"
-EXPORTS = (
-    ("Web", RELEASE_ROOT / "web", False),
-    ("Web Embedded", RELEASE_ROOT / "web-embedded", True),
-)
+PRESET = "Web Embedded"
+OUTPUT = RELEASE_ROOT / "web-embedded"
 EMBEDDED_FILES = {
     "index.apple-touch-icon.png",
     "index.audio.position.worklet.js",
@@ -31,15 +29,6 @@ EMBEDDED_FILES = {
     "index.pck",
     "index.png",
     "index.wasm",
-}
-STANDARD_REQUIRED_FILES = EMBEDDED_FILES | {
-    "index.144x144.png",
-    "index.180x180.png",
-    "index.512x512.png",
-    "index.manifest.json",
-    "index.offline.html",
-    "index.service.worker.js",
-    "index.side.wasm",
 }
 
 
@@ -73,43 +62,30 @@ def _godot_config(html_path: Path) -> tuple[dict[str, object], bool]:
     return config, thread_value == "true"
 
 
-def verify_export(output: Path, embedded: bool) -> str:
-    """Verify one complete generated output and return its PCK digest."""
+def verify_export(output: Path) -> str:
+    """Verify the complete embedded output and return its PCK digest."""
 
     if not output.is_dir():
         raise ExportVerificationError(f"missing export directory: {output}")
     names = {path.name for path in output.iterdir() if path.is_file()}
-    if embedded:
-        if names != EMBEDDED_FILES:
-            missing = sorted(EMBEDDED_FILES - names)
-            extra = sorted(names - EMBEDDED_FILES)
-            raise ExportVerificationError(
-                f"embedded export must contain exactly {len(EMBEDDED_FILES)} files; "
-                f"missing={missing}, extra={extra}"
-            )
-    else:
-        missing = sorted(STANDARD_REQUIRED_FILES - names)
-        if missing:
-            raise ExportVerificationError(
-                f"standard Web export is missing required files: {missing}"
-            )
+    if names != EMBEDDED_FILES:
+        missing = sorted(EMBEDDED_FILES - names)
+        extra = sorted(names - EMBEDDED_FILES)
+        raise ExportVerificationError(
+            f"embedded export must contain exactly {len(EMBEDDED_FILES)} files; "
+            f"missing={missing}, extra={extra}"
+        )
 
     verify_file(output / "index.js")
     config, threads_enabled = _godot_config(output / "index.html")
-    if embedded:
-        if threads_enabled:
-            raise ExportVerificationError("embedded export unexpectedly enables threads")
-        if config.get("ensureCrossOriginIsolationHeaders") is not False:
-            raise ExportVerificationError(
-                "embedded export unexpectedly requests cross-origin isolation"
-            )
-        if config.get("gdextensionLibs") != []:
-            raise ExportVerificationError("embedded export contains GDExtension libraries")
-    else:
-        if not threads_enabled:
-            raise ExportVerificationError("standard Web export unexpectedly disables threads")
-        if config.get("serviceWorker") != "index.service.worker.js":
-            raise ExportVerificationError("standard Web export lost its service worker")
+    if threads_enabled:
+        raise ExportVerificationError("embedded export unexpectedly enables threads")
+    if config.get("ensureCrossOriginIsolationHeaders") is not False:
+        raise ExportVerificationError(
+            "embedded export unexpectedly requests cross-origin isolation"
+        )
+    if config.get("gdextensionLibs") != []:
+        raise ExportVerificationError("embedded export contains GDExtension libraries")
 
     file_sizes = config.get("fileSizes")
     if not isinstance(file_sizes, dict):
@@ -169,8 +145,8 @@ def _export(godot: Path, preset: str, output: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Export and harden both YMAIBattle Web variants. Raw Godot Web exports "
-            "are not publication-ready."
+            "Export and harden YMAIBattle's embedded Web build. Raw Godot Web "
+            "exports are not publication-ready."
         )
     )
     parser.add_argument("--godot", help="path to the Godot 4.7 executable")
@@ -204,19 +180,11 @@ def main() -> int:
                  str(PROJECT_ROOT / "export_presets.cfg")],
                 check=True,
             )
-            for preset, output, _embedded in EXPORTS:
-                _export(godot, preset, output)
+            _export(godot, PRESET, OUTPUT)
 
-        digests: dict[str, str] = {}
-        for preset, output, embedded in EXPORTS:
-            digest = verify_export(output, embedded)
-            digests[preset] = digest
-            count = sum(1 for path in output.iterdir() if path.is_file())
-            print(f"verified {preset}: files={count}, index.pck sha256={digest}")
-        if len(set(digests.values())) != 1:
-            raise ExportVerificationError(
-                "standard and embedded exports contain different index.pck bytes"
-            )
+        digest = verify_export(OUTPUT)
+        count = sum(1 for path in OUTPUT.iterdir() if path.is_file())
+        print(f"verified {PRESET}: files={count}, index.pck sha256={digest}")
     except (
         BridgePatchError,
         ExportVerificationError,

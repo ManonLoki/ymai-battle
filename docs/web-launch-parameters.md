@@ -58,8 +58,8 @@ ID 不区分大小写并忽略首尾空白；未知值会被忽略。`battle` �
 
 ## 部署注意事项
 
-- Web 发布必须在仓库根目录运行 `python3 tools/export_web.py`。这个包装器会分别生成标准 `Release/web/index.html` 与内嵌专用 `Release/web-embedded/index.html`，再对 Godot 4.7.2 的 Fetch 桥接层做精确、失败关闭的安全修补与产物校验；直接运行 `godot --export-release` 得到的是未修补产物，不可发布。
-- 内嵌专用导出固定为 9 个文件、单线程、无 GDExtension、无 PWA/Service Worker，供宿主原样取用；标准 Web 导出继续保留线程、GDExtension 与 PWA 配置。
+- Web 发布必须在仓库根目录运行 `python3 tools/export_web.py`。这个包装器只生成内嵌专用的 `Release/web-embedded/index.html`，再对 Godot 4.7.2 的 Fetch 桥接层做精确、失败关闭的安全修补与产物校验；直接运行 `godot --export-release` 得到的是未修补产物，不可发布。
+- 内嵌导出固定为 9 个文件、单线程、无 GDExtension、无 PWA/Service Worker，供宿主原样取用；项目不再提供标准 Web 预设。
 - 从 HTTPS 页面访问 HTTP 接口会被浏览器按混合内容拦截，生产环境应使用 HTTPS 服务。
 - 接口服务仍需允许 Web 页面的 Origin（CORS）。
 - 对战完成或名单读取失败后会在 60 秒倒计时结束时重新读取今日名单；“再战/重试”按钮会显示剩余秒数，也可点击立即开始。

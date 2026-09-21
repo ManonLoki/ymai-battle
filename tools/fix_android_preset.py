@@ -7,7 +7,7 @@ Godot 每次导出结束会重写这个文件，实测会把包名、架构、le
 
 两类键分开处理：
 
-* SHARED —— 「什么进包、什么不进包」这条策略，**五个预设必须完全一致**。
+* SHARED —— 「什么进包、什么不进包」这条策略，**四个预设必须完全一致**。
   以前只有 Android 排除了 docs / tests / assets/characters，结果 Windows、
   macOS、Web 的包里一直躺着 192 张角色检视图；`include_filter` 里的 `*.png`
   还会主动把 docs 下的截图也拉进去。策略写在一处、套到所有预设，才不会再次走散。
@@ -21,7 +21,7 @@ import sys
 
 PATH = sys.argv[1] if len(sys.argv) > 1 else "export_presets.cfg"
 
-# 五个预设共用的打包策略。**这是唯一一份**，改哪些东西进包只改这里。
+# 四个预设共用的打包策略。**这是唯一一份**，改哪些东西进包只改这里。
 SHARED = {
     # include_filter 会把 Godot 不认识的原始文件也**主动拉进**包里。
     # 这里要 *.png 是为了图标和光标，但它同时会捞走 docs 下的截图，

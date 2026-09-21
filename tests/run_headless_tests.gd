@@ -2129,22 +2129,22 @@ func _test_main_menu() -> void:
 		_assert(line.find("*.wav") >= 0, "export include_filter includes *.wav: %s" % line)
 	_assert(include_filters >= 1, "export_presets.cfg declares include_filter lines")
 	# include_filter 里的 *.png 会把 Godot 不认识的原始图也主动拉进包，所以
-	# exclude_filter 必须跟着一起维护，而且**五个预设要完全一致**——以前只有
+	# exclude_filter 必须跟着一起维护，而且**四个预设要完全一致**——以前只有
 	# Android 排除了 docs / tests / assets/characters，桌面和 Web 的包里就一直
 	# 躺着 192 张角色检视图。对齐由 tools/fix_android_preset.py 负责，这里钉住结果。
 	var exclude_filters: Array[String] = []
 	for line in FileAccess.get_file_as_string("res://export_presets.cfg").split("\n"):
 		if line.strip_edges().begins_with("exclude_filter="):
 			exclude_filters.append(line.strip_edges())
-	_assert(exclude_filters.size() == 5, "每个预设都声明了 exclude_filter（当前 %d 条）" % exclude_filters.size())
+	_assert(exclude_filters.size() == 4, "每个预设都声明了 exclude_filter（当前 %d 条）" % exclude_filters.size())
 	for excluded in ["Release/*", "docs/*", "tests/*", "assets/characters/*"]:
 		for line in exclude_filters:
 			_assert(line.find(excluded) >= 0, "exclude_filter 挡住了 %s：%s" % [excluded, line])
 	for line in exclude_filters:
-		_assert(line == exclude_filters[0], "五个预设的 exclude_filter 完全一致：%s" % line)
+		_assert(line == exclude_filters[0], "四个预设的 exclude_filter 完全一致：%s" % line)
 	_assert(FileAccess.get_file_as_string("res://tools/fix_android_preset.py").find("assets/characters/*") >= 0, "预设对齐脚本带着同一份排除清单")
 	var presets_text := FileAccess.get_file_as_string("res://export_presets.cfg")
-	for preset_name in ["Windows Desktop", "macOS", "Android", "Web", "Web Embedded"]:
+	for preset_name in ["Windows Desktop", "macOS", "Android", "Web Embedded"]:
 		_assert(presets_text.find("name=\"%s\"" % preset_name) >= 0, "export_presets.cfg has preset %s" % preset_name)
 	_assert(ranking_script.find("application/config/version") >= 0, "the version is read from project settings, not hard-coded")
 	main.queue_free()
