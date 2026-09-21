@@ -1692,10 +1692,12 @@ func _test_settings() -> void:
 	# 服务器那一栏：音量滑块下面，旁有维护按钮；增删改都在面板里。
 	var select := scene.get_node_or_null("%ServerSelect") as OptionButton
 	var input := scene.get_node_or_null("%ServerAddInput") as LineEdit
+	var name_input := scene.get_node_or_null("%ServerAddName") as LineEdit
 	var maintain := scene.get_node_or_null("%ServerMaintain") as Button
 	_assert(select != null, "Settings has a server selector")
 	_assert(maintain != null, "Settings has a server maintain button next to the selector")
 	_assert(input != null, "Settings has a server add field in the maintain panel")
+	_assert(name_input != null and name_input.placeholder_text == AppSettings.SERVER_NAME_PLACEHOLDER, "the maintain panel has an optional server-name field")
 	_assert(input.placeholder_text == AppSettings.SERVER_PLACEHOLDER, "the add field shows the expected protocol://host:port/ form")
 	_assert(scene.get_node_or_null("%ServerAdd") != null, "Settings can add a local server")
 	_assert(scene.get_node_or_null("%MaintainOverlay") != null and scene.get_node_or_null("%ServerList") != null, "Settings has a maintain panel with a server list")
@@ -1737,6 +1739,9 @@ func _test_server_settings() -> void:
 	_assert(AppSettings.normalize_base_url("  HTTPS://Example.com:8443/ ") == "https://Example.com:8443", "normalize trims, lowercases the scheme and drops the trailing slash")
 	_assert(AppSettings.normalize_base_url("http://10.0.0.2:8080") == "http://10.0.0.2:8080", "an already normal base url survives unchanged")
 	_assert(AppSettings.normalize_base_url("nonsense") == "", "an unusable base url normalizes to the empty string")
+	_assert(AppSettings.base_url_host("https://Example.com:8443/") == "Example.com:8443", "the display host omits the scheme and keeps the port")
+	_assert(AppSettings.base_url_host("http://[::1]:9000") == "[::1]:9000", "the display host keeps bracketed IPv6 unambiguous")
+	_assert(AppSettings.base_url_host("nonsense").is_empty(), "an invalid base url has no display host")
 	var normalized_urls := AppSettings.normalize_base_urls([
 		" https://one.example/ ", "garbage", "https://one.example", "http://two.example:8080/", "",
 	])
@@ -1774,6 +1779,12 @@ func _test_server_settings() -> void:
 		"sentinel": "keep-me",
 	})
 	_assert(AppSettings.load_base_urls(path) == PackedStringArray(["https://legacy.example"]), "a legacy selected server migrates in memory as the sole candidate")
+	_assert(AppSettings.load_servers(path) == [{"url": "https://legacy.example", "name": ""}], "a legacy selected server migrates to the unified object shape")
+	JsonStore.write_dict(path, {
+		AppSettings.BASE_URL_KEY: "https://legacy.example",
+		AppSettings.BASE_URLS_KEY: ["https://old-list.example/"],
+	})
+	_assert(AppSettings.load_servers(path) == [{"url": "https://old-list.example", "name": ""}], "a legacy string-array list migrates to the unified object shape")
 	JsonStore.write_dict(path, {
 		AppSettings.BASE_URL_KEY: "https://legacy.example",
 		AppSettings.BASE_URLS_KEY: [],
@@ -1791,14 +1802,21 @@ func _test_server_settings() -> void:
 	_assert(AppSettings.load_base_urls(path) == PackedStringArray(["https://one.example", "http://two.example:8080"]), "the stored candidate list is normalized and deduplicated")
 	_assert(AppSettings.load_base_url(path) == "http://two.example:8080", "the selected candidate is stored normalized")
 	var stored := JsonStore.read_dict(path)
+	_assert(stored.get(AppSettings.BASE_URLS_KEY, []) == [
+		{"url": "https://one.example", "name": ""},
+		{"url": "http://two.example:8080", "name": ""},
+	], "local server candidates are persisted with the same {url, name} shape as Web input")
 	_assert(int(stored.get(AppSettings.MODE_KEY, -1)) == AppSettings.Mode.FULLSCREEN and str(stored.get("sentinel", "")) == "keep-me", "saving server candidates preserves every unrelated settings field")
 	_assert(AppSettings.add_base_url("https://three.example/", path), "a valid local server can be added")
 	_assert(AppSettings.load_base_urls(path) == PackedStringArray(["https://one.example", "http://two.example:8080", "https://three.example"]), "adding appends one normalized candidate")
 	_assert(AppSettings.load_base_url(path) == "https://three.example", "adding a server selects it immediately")
 	_assert(AppSettings.add_base_url(" https://three.example ", path), "adding an existing normalized server succeeds by selecting it")
 	_assert(AppSettings.load_base_urls(path).size() == 3, "adding a duplicate does not create another option")
+	_assert(AppSettings.replace_server("https://three.example", "https://three.example", "第三台", path), "a server name can be added without changing its URL")
+	_assert(AppSettings.load_servers(path)[2] == {"url": "https://three.example", "name": "第三台"}, "the optional local name is persisted")
 	_assert(AppSettings.replace_base_url("https://three.example", "https://three-renamed.example/", path), "a saved server can be replaced with another legal base")
 	_assert(AppSettings.load_base_urls(path) == PackedStringArray(["https://one.example", "http://two.example:8080", "https://three-renamed.example"]), "replacing rewrites the candidate in place")
+	_assert(str(AppSettings.load_servers(path)[2].get("name", "")) == "第三台", "the compatibility URL-only edit preserves the server name")
 	_assert(AppSettings.load_base_url(path) == "https://three-renamed.example", "replacing the selected server keeps it selected")
 	_assert(not AppSettings.replace_base_url("https://missing.example", "https://four.example", path), "replacing a server that is not saved fails")
 	_assert(not AppSettings.replace_base_url("https://three-renamed.example", "garbage", path), "replacing with an illegal base fails")
@@ -1846,19 +1864,44 @@ func _test_web_launch_config() -> void:
 	_assert(WebLaunchConfig.active_base_urls(path).is_empty(), "an explicitly empty Web BaseURL array does not fall back to local candidates")
 	_assert(WebLaunchConfig.effective_base_url(path).is_empty(), "no active candidate means the built-in server is effective")
 
-	var normalized := WebLaunchConfig.normalize_base_urls([
-		" https://web-a.example/ ", "bad", "https://web-a.example", 42,
-		"http://web-b.example:8080/", "https://web-c.example/path",
+	var normalized_servers := WebLaunchConfig.normalize_servers([
+		{"url": " https://web-a.example/ ", "name": " Web A "},
+		{"url": "bad", "name": "Bad"},
+		{"url": "https://web-a.example", "name": "Duplicate"},
+		{"url": 42, "name": "Wrong URL type"},
+		{"url": "http://web-b.example:8080/", "name": "  "},
+		{"url": "https://web-c.example/path", "name": "Bad path"},
+		"https://legacy-string.example",
 	])
-	_assert(normalized == ["https://web-a.example", "http://web-b.example:8080"], "Web BaseURL normalization filters invalid and non-string values, deduplicates and preserves order")
+	_assert(normalized_servers == [
+		{"url": "https://web-a.example", "name": "Web A"},
+		{"url": "http://web-b.example:8080", "name": ""},
+	], "Web BaseURL normalization validates object fields, trims names, deduplicates by URL and preserves order")
+	_assert(WebLaunchConfig.normalize_base_urls(normalized_servers) == ["https://web-a.example", "http://web-b.example:8080"], "the request-side BaseURL projection contains only normalized URLs")
+	_assert(WebLaunchConfig.normalize_servers(["https://legacy-string.example"]).is_empty(), "the legacy string BaseURL format is no longer accepted")
+	var query_servers := WebLaunchConfig._parse_server_query_values([
+		'{"url":"https://query.example","name":"Query"}',
+		"not-json",
+	])
+	_assert(query_servers == [{"url": "https://query.example", "name": "Query"}], "query BaseURL values decode from individual JSON objects")
 	WebLaunchConfig.configure(true, [
-		"https://web-a.example/", "invalid", "http://web-b.example:8080/", "https://web-a.example",
+		{"url": "https://web-a.example/", "name": "Web A"},
+		{"url": "invalid", "name": "Invalid"},
+		{"url": "http://web-b.example:8080/", "name": ""},
+		{"url": "https://web-a.example", "name": "Ignored duplicate"},
 	], [])
 	_assert(WebLaunchConfig.active_base_urls(path) == ["https://web-a.example", "http://web-b.example:8080"], "a provided Web list replaces rather than merges with local candidates")
+	_assert(WebLaunchConfig.active_servers(path) == [
+		{"url": "https://web-a.example", "name": "Web A"},
+		{"url": "http://web-b.example:8080", "name": ""},
+	], "active Web candidates retain their display names")
+	_assert(WebLaunchConfig.base_url_display_name("https://web-a.example", path) == "Web A", "a non-empty injected name is displayed")
+	_assert(WebLaunchConfig.base_url_display_name("http://web-b.example:8080", path) == "web-b.example:8080", "an empty injected name falls back to the URL Host")
+	_assert(WebLaunchConfig.effective_base_url(path) == "https://web-a.example", "an injected list ignores an out-of-list saved choice and defaults to its first server")
 	AppSettings.save_base_url("http://web-b.example:8080", path)
 	_assert(WebLaunchConfig.effective_base_url(path) == "http://web-b.example:8080", "a saved selection is effective when it belongs to the injected list")
 	AppSettings.save_base_url("https://local-a.example", path)
-	_assert(WebLaunchConfig.effective_base_url(path).is_empty(), "a saved selection outside the injected list falls back to the built-in server")
+	_assert(WebLaunchConfig.effective_base_url(path) == "https://web-a.example", "a saved selection outside the injected list falls back to the first injected server")
 	WebLaunchConfig.reset()
 	_assert(WebLaunchConfig.active_base_urls(path) == ["https://local-a.example", "https://local-b.example"], "resetting the Web override restores the untouched local source")
 	_assert(WebLaunchConfig.effective_base_url(path) == "https://local-a.example", "the local selection becomes effective again after the injected source is gone")
@@ -1882,7 +1925,10 @@ func _test_server_settings_ui() -> void:
 	var path := "user://test_server_settings_ui.json"
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	WebLaunchConfig.reset()
-	AppSettings.save_base_urls(["https://local-a.example", "https://local-b.example"], "https://local-b.example", path)
+	AppSettings.save_servers([
+		{"url": "https://local-a.example", "name": "本地 A"},
+		{"url": "https://local-b.example", "name": ""},
+	], "https://local-b.example", path)
 	var packed := load("res://scenes/settings.tscn") as PackedScene
 	var local_scene: Node = packed.instantiate()
 	local_scene.settings_path = path
@@ -1890,12 +1936,14 @@ func _test_server_settings_ui() -> void:
 	await process_frame
 	var local_select := local_scene.get_node("%ServerSelect") as OptionButton
 	var local_input := local_scene.get_node("%ServerAddInput") as LineEdit
+	var local_name_input := local_scene.get_node("%ServerAddName") as LineEdit
 	var local_add := local_scene.get_node("%ServerAdd") as Button
 	var local_maintain := local_scene.get_node("%ServerMaintain") as Button
 	var local_overlay := local_scene.get_node("%MaintainOverlay") as ColorRect
 	var local_mode := local_scene.get_node("%ModeSelect") as OptionButton
 	_assert(local_select.item_count == 3, "the local selector contains the virtual default plus every saved candidate")
 	_assert(str(local_select.get_item_metadata(local_select.selected)) == "https://local-b.example", "the selector highlights the saved effective server")
+	_assert(local_select.get_item_text(1) == "本地 A" and local_select.get_item_text(2) == "local-b.example", "local servers use the optional name with Host fallback")
 	_assert(local_maintain.visible and not local_maintain.disabled, "local-source controls allow list management")
 	_assert(local_select.global_position.y > local_mode.global_position.y, "the server selector is below the window-mode selector")
 	var local_sfx := local_scene.get_node("%SfxSlider") as HSlider
@@ -1905,24 +1953,31 @@ func _test_server_settings_ui() -> void:
 	local_scene.call("_on_server_maintain_pressed")
 	await process_frame
 	_assert(local_overlay.visible, "the maintain button opens the panel")
-	_assert(local_scene.get_node("%ServerAddRow").visible and local_input.editable and not local_add.disabled, "the maintain panel can add at the top")
+	_assert(local_scene.get_node("%MaintainPanel").size.x >= 900.0 and local_scene.get_node("%MaintainPanel").size.y >= 540.0, "the maintain panel provides enough room for names, URLs and actions")
+	_assert(local_scene.get_node("%ServerAddRow").visible and local_input.editable and local_name_input.editable and not local_add.disabled, "the maintain panel can add a named server at the top")
+	_assert(local_scene.get_node("%MaintainStatus") != null and local_scene.get_node("%ServerListTitle") != null, "the maintain panel keeps feedback and list context visible inside the dialog")
 	_assert(local_scene.get_node("%ServerList").get_child_count() == 2, "the maintain panel lists every saved server")
+	local_name_input.text = "本地 C"
 	local_input.text = "https://local-c.example/"
 	local_scene.call("_on_server_add_pressed")
 	await process_frame
 	_assert(AppSettings.load_base_urls(path).has("https://local-c.example"), "the Settings add action persists a normalized local candidate")
+	_assert(AppSettings.load_servers(path)[2] == {"url": "https://local-c.example", "name": "本地 C"}, "the Settings add action persists the optional name in the unified shape")
 	_assert(AppSettings.load_base_url(path) == "https://local-c.example", "the Settings add action immediately selects the new candidate")
 	_assert(str(local_select.get_item_metadata(local_select.selected)) == "https://local-c.example", "the selector refreshes to the newly added candidate")
+	_assert(local_select.get_item_text(local_select.selected) == "本地 C", "the selector immediately displays the newly added name")
 	_assert(local_scene.get_node("%ServerList").get_child_count() == 3, "adding also appends a row in the maintain panel")
 	var added_row := local_scene.get_node("%ServerList").get_child(2) as ServerRow
-	_assert(added_row != null and added_row.address.text == "https://local-c.example", "新增的那一行显示刚存下的地址")
+	_assert(added_row != null and added_row.address.text == "https://local-c.example" and added_row.server_name.text == "本地 C", "新增的那一行显示刚存下的名称和地址")
 	added_row.address.text = "https://local-c-renamed.example"
+	added_row.server_name.text = "本地 C2"
 	# 走行自己的“保存”按钮，把接线一起测了：行发信号、设置页落盘。
 	added_row.get_node("SaveButton").pressed.emit()
 	await process_frame
 	_assert(AppSettings.load_base_urls(path).has("https://local-c-renamed.example"), "the Settings save action rewrites a saved server")
 	_assert(not AppSettings.load_base_urls(path).has("https://local-c.example"), "the old address is gone after a rewrite")
 	_assert(AppSettings.load_base_url(path) == "https://local-c-renamed.example", "rewriting the selected server keeps it selected")
+	_assert(AppSettings.load_servers(path)[2] == {"url": "https://local-c-renamed.example", "name": "本地 C2"}, "editing a row saves its name and URL together")
 	local_scene.call("_on_server_row_delete_pressed", "https://local-c-renamed.example")
 	await process_frame
 	_assert(not AppSettings.load_base_urls(path).has("https://local-c-renamed.example"), "the Settings delete action removes the selected local candidate")
@@ -1931,31 +1986,41 @@ func _test_server_settings_ui() -> void:
 	await process_frame
 
 	# 同一份本地存档在 Web 注入模式下不应被合并或改写列表。
-	var local_before := AppSettings.load_base_urls(path)
-	WebLaunchConfig.configure(true, ["https://web-a.example/", "https://web-b.example"], [])
+	var local_before := AppSettings.load_servers(path)
+	WebLaunchConfig.configure(true, [
+		{"url": "https://web-a.example/", "name": "网页 A"},
+		{"url": "https://web-b.example", "name": ""},
+	], [])
 	var injected_scene: Node = packed.instantiate()
 	injected_scene.settings_path = path
 	root.add_child(injected_scene)
 	await process_frame
 	var injected_select := injected_scene.get_node("%ServerSelect") as OptionButton
 	var injected_input := injected_scene.get_node("%ServerAddInput") as LineEdit
+	var injected_name_input := injected_scene.get_node("%ServerAddName") as LineEdit
 	var injected_add := injected_scene.get_node("%ServerAdd") as Button
 	var injected_maintain := injected_scene.get_node("%ServerMaintain") as Button
-	_assert(injected_select.item_count == 3, "the injected selector contains the virtual default plus only Web candidates")
-	_assert(not injected_scene.get_node("%ServerAddRow").visible and not injected_input.editable and injected_add.disabled, "injected-source add controls are hidden and disabled")
+	_assert(injected_select.item_count == 2, "the injected selector contains only Web candidates and no local or built-in option")
+	_assert(injected_select.get_item_text(0) == "网页 A", "the injected selector displays a non-empty server name")
+	_assert(injected_select.get_item_text(1) == "web-b.example", "an unnamed injected server displays its URL Host")
+	_assert(injected_select.get_item_tooltip(0) == "https://web-a.example", "the injected selector keeps the normalized URL available as its tooltip")
+	_assert(str(injected_select.get_item_metadata(injected_select.selected)) == "https://web-a.example", "an invalid or empty saved choice selects the first injected server")
+	_assert(WebLaunchConfig.effective_base_url(path) == "https://web-a.example", "the first injected server is already effective without a user selection")
+	_assert(not injected_scene.get_node("%ServerAddRow").visible and not injected_input.editable and not injected_name_input.editable and injected_add.disabled, "injected-source add controls are hidden and disabled")
 	_assert(not injected_maintain.visible and injected_maintain.disabled, "injected-source maintain is hidden and disabled")
 	_assert((injected_scene.get_node("%ServerHint") as Label).text.find("网页启动参数") >= 0, "the read-only source is explained in the Settings hint")
-	injected_scene.call("_on_server_selected", 1)
+	injected_scene.call("_on_server_selected", 0)
 	await process_frame
 	_assert(AppSettings.load_base_url(path) == "https://web-a.example", "an injected candidate can still be selected and persisted")
 	_assert(WebLaunchConfig.effective_base_url(path) == "https://web-a.example", "the selected injected candidate takes effect immediately")
+	_assert((injected_scene.get_node("%ServerStatus") as Label).text.find("网页 A") >= 0, "the current-server status uses the injected display name")
 	injected_input.text = "https://must-not-save.example"
 	injected_scene.call("_on_server_add_pressed")
 	injected_scene.call("_on_server_maintain_pressed")
 	injected_scene.call("_on_server_row_delete_pressed", "https://local-a.example")
-	injected_scene.call("_on_server_row_save_pressed", "https://local-a.example", "https://must-not-save.example")
+	injected_scene.call("_on_server_row_save_pressed", "https://local-a.example", "https://must-not-save.example", "不能保存")
 	_assert(not injected_scene.get_node("%MaintainOverlay").visible, "maintain cannot open against an injected list")
-	_assert(AppSettings.load_base_urls(path) == local_before, "manual calls cannot mutate the local list while the injected source is active")
+	_assert(AppSettings.load_servers(path) == local_before, "manual calls cannot mutate the local list while the injected source is active")
 	injected_scene.queue_free()
 	await process_frame
 	WebLaunchConfig.reset()
@@ -2047,13 +2112,13 @@ func _test_main_menu() -> void:
 			android_version_code = int(line.strip_edges().trim_prefix("version/code="))
 		elif line.strip_edges().begins_with("version/name="):
 			android_version_name = line.strip_edges().trim_prefix("version/name=").trim_prefix("\"").trim_suffix("\"")
-	_assert(configured == "1.2.0", "project version is 1.2.0")
-	_assert(android_version_code >= 13, "Android versionCode is at least 13")
+	_assert(configured == "1.2.1", "project version is 1.2.1")
+	_assert(android_version_code >= 14, "Android versionCode is at least 14")
 	_assert(android_version_name.is_empty() or android_version_name == configured, "Android versionName inherits or matches the project version")
 	_assert(main.get_node_or_null("%Subtitle") == null, "the main menu subtitle is gone")
 	var version_label := main.get_node_or_null("%VersionLabel") as Label
 	_assert(version_label != null, "Main has a version label")
-	_assert(version_label != null and version_label.text == "v1.2.0", "the label shows v1.2.0")
+	_assert(version_label != null and version_label.text == "v1.2.1", "the label shows v1.2.1")
 	_assert(version_label.text == "v%s" % configured, "the label shows the configured version, prefixed with v")
 	var include_filters := 0
 	for line in FileAccess.get_file_as_string("res://export_presets.cfg").split("\n"):

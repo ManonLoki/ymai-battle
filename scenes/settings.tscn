@@ -203,17 +203,17 @@ color = Color(0.02, 0.03, 0.05, 0.72)
 
 [node name="MaintainPanel" type="PanelContainer" parent="MaintainOverlay"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(640, 420)
+custom_minimum_size = Vector2(920, 560)
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -320.0
-offset_top = -210.0
-offset_right = 320.0
-offset_bottom = 210.0
+offset_left = -460.0
+offset_top = -280.0
+offset_right = 460.0
+offset_bottom = 280.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_type_variation = &"DialogPanel"
@@ -248,28 +248,126 @@ focus_mode = 2
 theme_type_variation = &"SecondaryButton"
 text = "关闭"
 
+[node name="MaintainDescription" type="Label" parent="MaintainOverlay/MaintainPanel/Margin/VBox"]
+layout_mode = 2
+theme_type_variation = &"MutedLabel"
+theme_override_font_sizes/font_size = 14
+text = "名称用于下拉框显示，可不填；URL 只填写协议、主机和可选端口。修改后请点该行的保存。"
+autowrap_mode = 3
+
+[node name="AddTitle" type="Label" parent="MaintainOverlay/MaintainPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "添加服务器"
+
 [node name="ServerAddRow" type="HBoxContainer" parent="MaintainOverlay/MaintainPanel/Margin/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="ServerAddInput" type="LineEdit" parent="MaintainOverlay/MaintainPanel/Margin/VBox/ServerAddRow"]
+[node name="NameField" type="VBoxContainer" parent="MaintainOverlay/MaintainPanel/Margin/VBox/ServerAddRow"]
+custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Label" type="Label" parent="MaintainOverlay/MaintainPanel/Margin/VBox/ServerAddRow/NameField"]
+layout_mode = 2
+theme_type_variation = &"MutedLabel"
+theme_override_font_sizes/font_size = 13
+text = "名称（可选）"
+
+[node name="ServerAddName" type="LineEdit" parent="MaintainOverlay/MaintainPanel/Margin/VBox/ServerAddRow/NameField"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+focus_mode = 2
+tooltip_text = "留空时在下拉框显示 URL 的 Host"
+
+[node name="UrlField" type="VBoxContainer" parent="MaintainOverlay/MaintainPanel/Margin/VBox/ServerAddRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="Label" type="Label" parent="MaintainOverlay/MaintainPanel/Margin/VBox/ServerAddRow/UrlField"]
+layout_mode = 2
+theme_type_variation = &"MutedLabel"
+theme_override_font_sizes/font_size = 13
+text = "服务器 URL"
+
+[node name="ServerAddInput" type="LineEdit" parent="MaintainOverlay/MaintainPanel/Margin/VBox/ServerAddRow/UrlField"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
 size_flags_horizontal = 3
+focus_mode = 2
+tooltip_text = "例如 https://host:port/，不要填写接口路径"
 
 [node name="ServerAdd" type="Button" parent="MaintainOverlay/MaintainPanel/Margin/VBox/ServerAddRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(140, 48)
+custom_minimum_size = Vector2(120, 48)
 layout_mode = 2
+size_flags_vertical = 8
 focus_mode = 2
 theme_type_variation = &"SecondaryButton"
-text = "增加"
+text = "添加"
+
+[node name="MaintainStatus" type="Label" parent="MaintainOverlay/MaintainPanel/Margin/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 22)
+layout_mode = 2
+theme_type_variation = &"MutedLabel"
+theme_override_font_sizes/font_size = 14
+autowrap_mode = 3
+
+[node name="Separator" type="HSeparator" parent="MaintainOverlay/MaintainPanel/Margin/VBox"]
+layout_mode = 2
+
+[node name="ServerListTitle" type="Label" parent="MaintainOverlay/MaintainPanel/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "已保存服务器（0）"
+
+[node name="ColumnHeader" type="HBoxContainer" parent="MaintainOverlay/MaintainPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="NameLabel" type="Label" parent="MaintainOverlay/MaintainPanel/Margin/VBox/ColumnHeader"]
+custom_minimum_size = Vector2(180, 0)
+layout_mode = 2
+theme_type_variation = &"MutedLabel"
+theme_override_font_sizes/font_size = 13
+text = "名称（可选）"
+
+[node name="UrlLabel" type="Label" parent="MaintainOverlay/MaintainPanel/Margin/VBox/ColumnHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"MutedLabel"
+theme_override_font_sizes/font_size = 13
+text = "服务器 URL"
+
+[node name="ActionLabel" type="Label" parent="MaintainOverlay/MaintainPanel/Margin/VBox/ColumnHeader"]
+custom_minimum_size = Vector2(202, 0)
+layout_mode = 2
+theme_type_variation = &"MutedLabel"
+theme_override_font_sizes/font_size = 13
+text = "操作"
+horizontal_alignment = 1
+
+[node name="EmptyServerList" type="Label" parent="MaintainOverlay/MaintainPanel/Margin/VBox"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+theme_type_variation = &"MutedLabel"
+text = "还没有本地服务器，请先在上方添加。"
+horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="ListScroll" type="ScrollContainer" parent="MaintainOverlay/MaintainPanel/Margin/VBox"]
 layout_mode = 2
 size_flags_vertical = 3
+horizontal_scroll_mode = 0
 
 [node name="ServerList" type="VBoxContainer" parent="MaintainOverlay/MaintainPanel/Margin/VBox/ListScroll"]
 unique_name_in_owner = true

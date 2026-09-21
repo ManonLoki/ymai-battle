@@ -125,18 +125,24 @@ static func window_mode_for(mode: int) -> DisplayServer.WindowMode:
 #
 # 默认走 TokenUsageApi 里写死的那个线上地址；在设置页填一个
 # `协议://主机:端口/` 之后，取榜单就改走这台服务器（接口路径不变）。
-# 用户可以保存多个基址，另外用一个字段记住当前选中哪个。
+# 用户可以保存多个 {url, name} 服务器项，另外用一个字段记住当前选中哪个 URL。
 # 选中空值 = 还原默认；空值是界面上的虚拟选项，不放进候选列表。
 #
 # 只存**基址**，不存整条 URL：接口路径是代码的事，换服务器的人不该也不必知道。
 
 ## 存档里的当前选择。沿用旧字段名，旧版存档不需要改写就能继续用。
 const BASE_URL_KEY := "server_base_url"
-## 本地维护的候选基址列表。Web 启动参数是运行时数据源，不写入这里。
+## 本地维护的候选服务器列表。新格式和 Web 启动参数统一为 {url, name}；读取时
+## 仍兼容旧版字符串数组，下一次增删改就会按新格式写回。
 const BASE_URLS_KEY := "server_base_urls"
+const SERVER_URL_FIELD := "url"
+const SERVER_NAME_FIELD := "name"
 
 ## 输入框里的灰字示例，同时也是这一项的格式说明，测试照着它对。
 const SERVER_PLACEHOLDER := "https://host:port/"
+const SERVER_NAME_PLACEHOLDER := "名称（可选）"
+const SERVER_URL_MAX_LENGTH := 2048
+const SERVER_NAME_MAX_LENGTH := 128
 
 ## 允许的基址写法：http/https + 主机（域名、IPv4 或方括号里的 IPv6）+ 可选端口 + 可选结尾斜杠。
 ## 刻意不收路径、查询串和用户名密码——接口路径由代码拼，
@@ -172,6 +178,69 @@ static func normalize_base_url(text: String) -> String:
 	return base if port.is_empty() else "%s:%d" % [base, int(port)]
 
 
+## 从合法基址中取浏览器语义下的 Host（主机名 + 可选端口），供没有自定义名称的
+## 服务器选项显示。先走同一套 URL 归一化，避免显示层偷偷接受请求层会拒绝的地址。
+static func base_url_host(text: String) -> String:
+	var normalized := normalize_base_url(text)
+	if normalized.is_empty() or _url_regex == null:
+		return ""
+	var found := _url_regex.search(normalized)
+	if found == null:
+		return ""
+	var host := found.get_string(2)
+	var port := found.get_string(3)
+	return host if port.is_empty() else "%s:%d" % [host, int(port)]
+
+
+## 把一项服务器整理为统一的 {url, name}。正常调用只接受对象；读取旧存档时可
+## 显式允许字符串，把它迁移成 name 为空的对象。
+static func normalize_server(value: Variant, allow_legacy_string: bool = false) -> Dictionary:
+	var url_value: Variant
+	var name_value: Variant = ""
+	if typeof(value) == TYPE_DICTIONARY:
+		var item: Dictionary = value
+		url_value = item.get(SERVER_URL_FIELD, null)
+		name_value = item.get(SERVER_NAME_FIELD, "")
+	elif allow_legacy_string and typeof(value) == TYPE_STRING:
+		url_value = value
+	else:
+		return {}
+	if typeof(url_value) != TYPE_STRING or typeof(name_value) != TYPE_STRING:
+		return {}
+	var url_text := str(url_value)
+	var name := str(name_value).strip_edges()
+	if url_text.length() > SERVER_URL_MAX_LENGTH or name.length() > SERVER_NAME_MAX_LENGTH:
+		return {}
+	var base := normalize_base_url(url_text)
+	if base.is_empty():
+		return {}
+	return {SERVER_URL_FIELD: base, SERVER_NAME_FIELD: name}
+
+
+## 整理对象列表并按 URL 去重。名称和顺序都以第一次出现的项为准。
+static func normalize_servers(values: Variant, allow_legacy_strings: bool = false) -> Array[Dictionary]:
+	var normalized: Array[Dictionary] = []
+	if typeof(values) != TYPE_ARRAY and typeof(values) != TYPE_PACKED_STRING_ARRAY:
+		return normalized
+	var seen_urls: Dictionary = {}
+	for value in values:
+		var server := normalize_server(value, allow_legacy_strings)
+		if server.is_empty():
+			continue
+		var base := str(server.get(SERVER_URL_FIELD, ""))
+		if seen_urls.has(base):
+			continue
+		seen_urls[base] = true
+		normalized.append(server)
+	return normalized
+
+
+## 一项服务器给人看的标题：有名称用名称，否则用 URL 的 Host。
+static func server_display_name(server: Dictionary) -> String:
+	var name := str(server.get(SERVER_NAME_FIELD, "")).strip_edges()
+	return name if not name.is_empty() else base_url_host(str(server.get(SERVER_URL_FIELD, "")))
+
+
 ## 整理一份候选列表：过滤非法项和空值，规范化，再按首次出现的顺序去重。
 ## 参数故意收 Variant：JSON 读回来是普通 Array，界面则更适合传 PackedStringArray。
 static func normalize_base_urls(urls: Variant) -> PackedStringArray:
@@ -190,16 +259,24 @@ static func load_base_url(path: String = SAVE_PATH) -> String:
 	return normalize_base_url(str(JsonStore.read_dict(path).get(BASE_URL_KEY, "")))
 
 
-## 读出本地候选列表。旧存档只有 server_base_url 时，把它视为唯一候选；
-## 但只要新字段存在（即使是空数组），它就是权威数据，不再用旧值补回去。
-static func load_base_urls(path: String = SAVE_PATH) -> PackedStringArray:
+## 读出本地候选对象。旧字符串数组和更旧的单一 server_base_url 都在这里迁移；
+## 但只要列表字段存在（即使是空数组），它就是权威数据，不再用选择值补回去。
+static func load_servers(path: String = SAVE_PATH) -> Array[Dictionary]:
 	var data := JsonStore.read_dict(path)
 	if data.has(BASE_URLS_KEY):
-		return normalize_base_urls(data.get(BASE_URLS_KEY, []))
-	var urls := PackedStringArray()
+		return normalize_servers(data.get(BASE_URLS_KEY, []), true)
+	var servers: Array[Dictionary] = []
 	var legacy := normalize_base_url(str(data.get(BASE_URL_KEY, "")))
 	if not legacy.is_empty():
-		urls.append(legacy)
+		servers.append({SERVER_URL_FIELD: legacy, SERVER_NAME_FIELD: ""})
+	return servers
+
+
+## 只需要 URL 的旧调用仍可使用这个投影；权威数据结构是 load_servers()。
+static func load_base_urls(path: String = SAVE_PATH) -> PackedStringArray:
+	var urls := PackedStringArray()
+	for server in load_servers(path):
+		urls.append(str(server.get(SERVER_URL_FIELD, "")))
 	return urls
 
 
@@ -209,33 +286,53 @@ static func save_base_url(text: String, path: String = SAVE_PATH) -> bool:
 	return JsonStore.patch_dict(path, {BASE_URL_KEY: normalize_base_url(text)})
 
 
-## 一次存下候选列表和当前选择，避免只写成其中一项的中间状态。
+## 一次存下统一对象列表和当前选择，避免只写成其中一项的中间状态。
 ## 选择不在整理后的列表里时自动回到默认；Web 注入列表的选择只应调 save_base_url。
-static func save_base_urls(urls: Variant, selected: String = "", path: String = SAVE_PATH) -> bool:
-	var normalized := normalize_base_urls(urls)
+static func save_servers(servers: Variant, selected: String = "", path: String = SAVE_PATH) -> bool:
+	# allow_legacy_strings 只为兼容旧调用；落盘永远是对象数组。
+	var normalized := normalize_servers(servers, true)
 	var normalized_selected := normalize_base_url(selected)
-	if not normalized_selected.is_empty() and not normalized.has(normalized_selected):
+	var urls := PackedStringArray()
+	for server in normalized:
+		urls.append(str(server.get(SERVER_URL_FIELD, "")))
+	if not normalized_selected.is_empty() and not urls.has(normalized_selected):
 		normalized_selected = ""
-	# JSON 存普通数组，不把 PackedStringArray 这个运行时容器泄漏到存档格式。
-	var stored_urls: Array = []
-	for base in normalized:
-		stored_urls.append(base)
+	var stored_servers: Array = []
+	for server in normalized:
+		stored_servers.append(server.duplicate(true))
 	return JsonStore.patch_dict(path, {
-		BASE_URLS_KEY: stored_urls,
+		BASE_URLS_KEY: stored_servers,
 		BASE_URL_KEY: normalized_selected,
 	})
 
 
-## 把一个合法基址加入本地列表并立即选中；重复添加只会选中既有项。
+## 兼容只传 URL 的旧调用；写回时仍统一为 {url, name}。
+static func save_base_urls(urls: Variant, selected: String = "", path: String = SAVE_PATH) -> bool:
+	return save_servers(urls, selected, path)
+
+
+## 把一项合法服务器加入本地列表并立即选中；重复 URL 会更新名称而不产生第二行。
 ## 列表和选择同一次落盘，不会破坏共用 settings.json 里的窗口模式。
-static func add_and_select_base_url(text: String, path: String = SAVE_PATH) -> bool:
-	var base := normalize_base_url(text)
-	if base.is_empty():
+static func add_and_select_server(url_text: String, name: String = "", path: String = SAVE_PATH) -> bool:
+	var added := normalize_server({SERVER_URL_FIELD: url_text, SERVER_NAME_FIELD: name})
+	if added.is_empty():
 		return false
-	var urls := load_base_urls(path)
-	if not urls.has(base):
-		urls.append(base)
-	return save_base_urls(urls, base, path)
+	var servers := load_servers(path)
+	var base := str(added.get(SERVER_URL_FIELD, ""))
+	var replaced := false
+	for index in range(servers.size()):
+		if str(servers[index].get(SERVER_URL_FIELD, "")) == base:
+			servers[index] = added
+			replaced = true
+			break
+	if not replaced:
+		servers.append(added)
+	return save_servers(servers, base, path)
+
+
+## 兼容旧接口：没有名称就按空名称保存。
+static func add_and_select_base_url(text: String, path: String = SAVE_PATH) -> bool:
+	return add_and_select_server(text, "", path)
 
 
 ## 界面层的简写别名：“添加”的产品语义就是添加并选中。
@@ -243,28 +340,46 @@ static func add_base_url(text: String, path: String = SAVE_PATH) -> bool:
 	return add_and_select_base_url(text, path)
 
 
-## 把已保存的一条基址改成另一条合法基址并落盘。
+## 把已保存的一项改成新的 {url, name} 并落盘。
 ## 旧地址不在列表里或新地址不合法都失败；改的是当前选择时选择跟着走。
 ## 新地址已经在列表里则删掉旧的、选中既有项，避免出现重复候选。
-static func replace_base_url(old_text: String, new_text: String, path: String = SAVE_PATH) -> bool:
+static func replace_server(old_text: String, new_text: String, name: String = "", path: String = SAVE_PATH) -> bool:
 	var old_base := normalize_base_url(old_text)
-	var new_base := normalize_base_url(new_text)
-	if old_base.is_empty() or new_base.is_empty():
+	var replacement := normalize_server({SERVER_URL_FIELD: new_text, SERVER_NAME_FIELD: name})
+	if old_base.is_empty() or replacement.is_empty():
 		return false
-	var urls := load_base_urls(path)
-	var index := urls.find(old_base)
+	var new_base := str(replacement.get(SERVER_URL_FIELD, ""))
+	var servers := load_servers(path)
+	var index := -1
+	var duplicate_index := -1
+	for candidate_index in range(servers.size()):
+		var candidate_url := str(servers[candidate_index].get(SERVER_URL_FIELD, ""))
+		if candidate_url == old_base:
+			index = candidate_index
+		if candidate_url == new_base:
+			duplicate_index = candidate_index
 	if index < 0:
 		return false
-	if old_base == new_base:
-		return true
-	if urls.has(new_base):
-		urls.remove_at(index)
+	if duplicate_index >= 0 and duplicate_index != index:
+		servers[duplicate_index] = replacement
+		servers.remove_at(index)
 	else:
-		urls[index] = new_base
+		servers[index] = replacement
 	var selected := load_base_url(path)
 	if selected == old_base:
 		selected = new_base
-	return save_base_urls(urls, selected, path)
+	return save_servers(servers, selected, path)
+
+
+## 兼容旧接口：保留原来的名称，只改 URL。
+static func replace_base_url(old_text: String, new_text: String, path: String = SAVE_PATH) -> bool:
+	var name := ""
+	var old_base := normalize_base_url(old_text)
+	for server in load_servers(path):
+		if str(server.get(SERVER_URL_FIELD, "")) == old_base:
+			name = str(server.get(SERVER_NAME_FIELD, ""))
+			break
+	return replace_server(old_text, new_text, name, path)
 
 
 ## 从本地列表删除指定基址。删的是当前选择才回到默认；删除其他候选时保留选择。
@@ -273,15 +388,19 @@ static func remove_base_url(text: String, path: String = SAVE_PATH) -> bool:
 	var base := normalize_base_url(text)
 	if base.is_empty():
 		return false
-	var urls := load_base_urls(path)
-	var index := urls.find(base)
+	var servers := load_servers(path)
+	var index := -1
+	for candidate_index in range(servers.size()):
+		if str(servers[candidate_index].get(SERVER_URL_FIELD, "")) == base:
+			index = candidate_index
+			break
 	if index < 0:
 		return true
-	urls.remove_at(index)
+	servers.remove_at(index)
 	var selected := load_base_url(path)
 	if selected == base:
 		selected = ""
-	return save_base_urls(urls, selected, path)
+	return save_servers(servers, selected, path)
 
 
 ## 还原默认：把自定义地址清掉，之后取榜单又走 TokenUsageApi 里的默认地址。

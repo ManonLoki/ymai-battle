@@ -28,9 +28,9 @@ static func usage_url(base: String = WebLaunchConfig.effective_base_url()) -> St
 	return "%s?from=%s&to=%s" % [root, day, day]
 
 
-## 设置页给人看的主机。空基址是「默认」，自定义只显示规范化 BaseURL，不含接口路径和 query。
+## 设置页给人看的 Host。空基址是「默认」；自定义地址去掉协议，只保留主机和端口。
 static func display_host(base: String = WebLaunchConfig.effective_base_url()) -> String:
-	return "默认" if base.is_empty() else base
+	return "默认" if base.is_empty() else AppSettings.base_url_host(base)
 
 
 ## 每次请求都新建一个实例，并在发出前锁住所有网络边界。

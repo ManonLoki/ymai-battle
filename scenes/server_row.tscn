@@ -3,23 +3,32 @@
 [ext_resource type="Script" path="res://scenes/server_row.gd" id="1_server_row"]
 
 [node name="ServerRow" type="HBoxContainer"]
-theme_override_constants/separation = 12
+custom_minimum_size = Vector2(0, 52)
+theme_override_constants/separation = 10
 script = ExtResource("1_server_row")
+
+[node name="Name" type="LineEdit" parent="."]
+custom_minimum_size = Vector2(180, 48)
+layout_mode = 2
+focus_mode = 2
+tooltip_text = "显示名称（可选）；留空时显示 URL 的 Host"
 
 [node name="Address" type="LineEdit" parent="."]
 custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
 size_flags_horizontal = 3
+focus_mode = 2
+tooltip_text = "服务器基址，只填写协议、主机和可选端口"
 
 [node name="SaveButton" type="Button" parent="."]
-custom_minimum_size = Vector2(140, 48)
+custom_minimum_size = Vector2(96, 48)
 layout_mode = 2
 focus_mode = 2
 theme_type_variation = &"SecondaryButton"
 text = "保存"
 
 [node name="DeleteButton" type="Button" parent="."]
-custom_minimum_size = Vector2(140, 48)
+custom_minimum_size = Vector2(96, 48)
 layout_mode = 2
 focus_mode = 2
 theme_type_variation = &"SecondaryButton"

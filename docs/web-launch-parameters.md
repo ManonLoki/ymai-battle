@@ -8,22 +8,22 @@ Web 版可在 Godot 启动前通过页面全局对象或 URL 查询参数提供�
 <script>
 window.YMAIBattleConfig = {
   BaseURL: [
-    "https://battle-a.example.com",
-    "https://battle-b.example.com:8443"
+    { url: "https://battle-a.example.com", name: "华东" },
+    { url: "https://battle-b.example.com:8443", name: "" }
   ],
   CloseMenu: ["ranking", "settings", "quit"]
 };
 </script>
 ```
 
-`BaseURL` 和 `CloseMenu` 都必须是字符串数组，字段本身可省略。
+`BaseURL` 必须是对象数组，每项格式为 `{url: "", name: ""}`；`name` 可省略或留空。`CloseMenu` 是字符串数组。两个字段本身都可省略。
 
 ## URL 查询参数
 
-数组通过重复同名参数传入：
+数组通过重复同名参数传入。每个 `BaseURL` 值是一个 URL 编码后的 JSON 对象：
 
 ```text
-?BaseURL=https%3A%2F%2Fbattle-a.example.com&BaseURL=https%3A%2F%2Fbattle-b.example.com%3A8443&CloseMenu=ranking&CloseMenu=settings
+?BaseURL=%7B%22url%22%3A%22https%3A%2F%2Fbattle-a.example.com%22%2C%22name%22%3A%22%E5%8D%8E%E4%B8%9C%22%7D&BaseURL=%7B%22url%22%3A%22https%3A%2F%2Fbattle-b.example.com%3A8443%22%2C%22name%22%3A%22%22%7D&CloseMenu=ranking&CloseMenu=settings
 ```
 
 查询参数按字段覆盖页面全局对象。例如查询串只出现 `CloseMenu` 时，页面对象中的 `BaseURL` 仍然有效。只要查询串出现过 `BaseURL`，包括 `BaseURL=`，就以查询串结果为准；显式空值表示本次会话使用空候选列表，不回退到本地列表。
@@ -31,11 +31,18 @@ window.YMAIBattleConfig = {
 ## BaseURL
 
 - 只接受 `http://主机[:端口]` 或 `https://主机[:端口]`，不能包含路径、查询串或账号密码。
-- 无效项和重复项会被丢弃，剩余项保持首次出现的顺序。
-- Web 传入 `BaseURL` 时，它是本次会话设置页下拉框的完整数据源，不能在页面内增删。
-- 未传入时，下拉框使用本地保存的服务器列表，并允许增加或删除。
-- 下拉框第一项始终是“使用默认服务器”。选中的服务器会保存；只有它仍属于当前数据源时才生效，否则使用程序内置服务器。
+- `name` 去掉首尾空白后用于设置页显示；名称为空时显示 URL 的 Host（主机名和可选端口）。
+- 无效项和重复 URL 会被丢弃，剩余项保持首次出现的顺序；重复 URL 以第一次出现的名称为准。
+- 旧的字符串项（例如 `BaseURL: ["https://battle-a.example.com"]`）不再接受。
+- Web 传入 `BaseURL` 时，它是本次会话设置页下拉框的唯一数据源，既不混入本地保存项，也不增加“使用默认服务器”选项，且不能在页面内增删。
+- 外部数组非空时，已保存选择仍在数组中则继续使用；未选择或原选择不在数组中时，立即使用数组第一项。
+- 外部数组显式为空时没有可选服务器，使用程序内置服务器。
+- 未传入时，下拉框使用本地保存的服务器列表，并允许在维护面板中增加、修改名称和 URL 或删除；本地列表保留“使用默认服务器”选项。
 - Web 注入列表不会写进本地候选列表。
+
+## 本地服务器
+
+本地候选也按 `{url: "", name: ""}` 保存，与 Web 输入结构一致。旧版存档中的字符串数组会自动按 `name: ""` 读取，用户下一次增删改时再写回新结构。维护面板内的名称可选，留空时同样显示 URL 的 Host。
 
 ## CloseMenu
 

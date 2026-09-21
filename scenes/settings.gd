@@ -157,20 +157,28 @@ func _on_sfx_volume_changed(value: float) -> void:
 ## 没提供时才允许维护本地列表。
 func _bind_server_controls() -> void:
 	%ServerAddInput.placeholder_text = AppSettings.SERVER_PLACEHOLDER
+	%ServerAddName.placeholder_text = AppSettings.SERVER_NAME_PLACEHOLDER
+	%ServerAddName.max_length = AppSettings.SERVER_NAME_MAX_LENGTH
 	%ServerSelect.item_selected.connect(_on_server_selected)
 	%ServerMaintain.pressed.connect(_on_server_maintain_pressed)
 	%MaintainClose.pressed.connect(_close_maintain_panel)
-	# 电视遥控器按 OK 收完键盘会发 text_submitted，等同于按“增加”。
+	# 电视遥控器按 OK 收完键盘会发 text_submitted，等同于按“添加”。
 	%ServerAddInput.text_submitted.connect(_on_server_add_submitted)
+	%ServerAddName.text_submitted.connect(_on_server_add_name_submitted)
 	%ServerAdd.pressed.connect(_on_server_add_pressed)
 	var injected := WebLaunchConfig.has_base_urls_override()
 	%ServerAddRow.visible = not injected
 	%ServerAddInput.editable = not injected
+	%ServerAddName.editable = not injected
 	%ServerAdd.disabled = injected
 	%ServerMaintain.visible = not injected
 	%ServerMaintain.disabled = injected
 	%ServerHint.text = (
-		"服务器列表由网页启动参数提供；选择空项使用内置地址。"
+		(
+			"服务器列表完全由网页启动参数提供；未选择或原选择失效时使用第一项。"
+			if not WebLaunchConfig.active_base_urls(settings_path).is_empty()
+			else "网页启动参数没有可用服务器，将使用内置地址。"
+		)
 		if injected
 		else "从下拉框选择服务器；选择空项使用内置地址。点维护可增删改本地服务器。"
 	)
@@ -180,18 +188,21 @@ func _bind_server_controls() -> void:
 ## 用当前数据源重建下拉，状态行只显示主机或「默认」，不把接口路径摊给用户。
 func _refresh_server_view(note: String = "", is_error: bool = false) -> void:
 	var selected := WebLaunchConfig.effective_base_url(settings_path)
-	# 空串那一项代表“用内置地址”，和真实地址一样把值存进 metadata。
-	var bases: Array = [""]
-	for raw_base in WebLaunchConfig.active_base_urls(settings_path):
+	var active_bases := WebLaunchConfig.active_base_urls(settings_path)
+	var bases: Array = []
+	# 本地列表保留“内置地址”；外部列表非空时纯粹以它为准，不混入虚拟默认项。
+	if not WebLaunchConfig.has_base_urls_override() or active_bases.is_empty():
+		bases.append("")
+	for raw_base in active_bases:
 		bases.append(str(raw_base))
 	_fill_select(
 		%ServerSelect,
 		bases,
-		func(base: Variant) -> String: return DEFAULT_SERVER_LABEL if str(base).is_empty() else str(base),
-		func(base: Variant) -> String: return TokenUsageApi.display_host(str(base)),
+		func(base: Variant) -> String: return DEFAULT_SERVER_LABEL if str(base).is_empty() else WebLaunchConfig.base_url_display_name(str(base), settings_path),
+		func(base: Variant) -> String: return "使用内置服务器" if str(base).is_empty() else str(base),
 		selected,
 	)
-	var line := "当前：%s" % TokenUsageApi.display_host(selected)
+	var line := "当前：%s" % WebLaunchConfig.base_url_display_name(selected, settings_path)
 	_set_server_status(line if note.is_empty() else "%s　%s" % [note, line], is_error)
 	if %MaintainOverlay.visible:
 		_refresh_maintain_list()
@@ -200,13 +211,16 @@ func _refresh_server_view(note: String = "", is_error: bool = false) -> void:
 ## 状态行。报错标红；其余去掉覆盖，回到场景里的次要说明色。
 func _set_server_status(text: String, is_error: bool) -> void:
 	%ServerStatus.text = text
+	%MaintainStatus.text = text
 	if is_error:
 		%ServerStatus.add_theme_color_override("font_color", ThemeHelper.DANGER)
+		%MaintainStatus.add_theme_color_override("font_color", ThemeHelper.DANGER)
 	else:
 		%ServerStatus.remove_theme_color_override("font_color")
+		%MaintainStatus.remove_theme_color_override("font_color")
 
 
-## 下拉选择立即落盘；选第一项就是清空覆盖、恢复内置服务器。
+## 下拉选择立即落盘。本地数据源的第一项是内置服务器；外部数据源没有虚拟项。
 func _on_server_selected(index: int) -> void:
 	var base := str(%ServerSelect.get_item_metadata(index))
 	if not AppSettings.save_base_url(base, settings_path):
@@ -237,21 +251,24 @@ func _refresh_maintain_list() -> void:
 	NodeUtil.clear_children(%ServerList)
 	if WebLaunchConfig.has_base_urls_override():
 		return
-	for base in AppSettings.load_base_urls(settings_path):
+	var servers := AppSettings.load_servers(settings_path)
+	%ServerListTitle.text = "已保存服务器（%d）" % servers.size()
+	%EmptyServerList.visible = servers.is_empty()
+	for server in servers:
 		var row: ServerRow = SERVER_ROW.instantiate()
 		# 先进树再 bind：行自己的 @onready 要先拿到子节点。
 		%ServerList.add_child(row)
-		row.bind(str(base))
+		row.bind(server)
 		row.save_requested.connect(_on_server_row_save_pressed)
 		row.delete_requested.connect(_on_server_row_delete_pressed)
 
 
-## 某一行改了地址。original 是这一行原本的地址，用来在存档里找回它。
-func _on_server_row_save_pressed(original: String, text: String) -> void:
+## 某一行改了名称或地址。original 是原地址，用来在存档里找回它。
+func _on_server_row_save_pressed(original: String, text: String, name: String) -> void:
 	if WebLaunchConfig.has_base_urls_override():
 		return
-	if not AppSettings.replace_base_url(original, text, settings_path):
-		_set_server_status("地址格式不对或存不下来，服务器未修改", true)
+	if not AppSettings.replace_server(original, text, name, settings_path):
+		_set_server_status("名称过长、地址格式不对或存不下来，服务器未修改", true)
 		return
 	_refresh_server_view("已修改。")
 
@@ -267,9 +284,14 @@ func _on_server_row_delete_pressed(base: String) -> void:
 	_refresh_server_view("已删除。")
 
 
-## 输入框回车 / 遥控器 OK 等同于按“增加”。
+## 输入框回车 / 遥控器 OK 等同于按“添加”。
 func _on_server_add_submitted(_text: String) -> void:
 	_on_server_add_pressed()
+
+
+## 名称是可选项；在名称框按确认时转到必填的 URL，不会误提交空地址。
+func _on_server_add_name_submitted(_text: String) -> void:
+	%ServerAddInput.grab_focus()
 
 
 ## 本地模式增加一台服务器并立即选中；Web 注入模式下即使手动调用也不改存档。
@@ -277,14 +299,17 @@ func _on_server_add_pressed() -> void:
 	if WebLaunchConfig.has_base_urls_override():
 		return
 	var text := str(%ServerAddInput.text)
+	var name := str(%ServerAddName.text)
 	if AppSettings.normalize_base_url(text).is_empty():
 		_set_server_status("地址格式不对，应该是 %s" % AppSettings.SERVER_PLACEHOLDER, true)
 		return
-	if not AppSettings.add_and_select_base_url(text, settings_path):
-		_set_server_status("存不下来，服务器未增加", true)
+	if not AppSettings.add_and_select_server(text, name, settings_path):
+		_set_server_status("名称过长或存不下来，服务器未添加", true)
 		return
 	%ServerAddInput.clear()
-	_refresh_server_view("已增加并切换。")
+	%ServerAddName.clear()
+	_refresh_server_view("已添加并切换。")
+	%ServerAddInput.grab_focus()
 
 
 ## 返回键的两级行为：维护面板开着就只关面板，关着才真的回主菜单。
